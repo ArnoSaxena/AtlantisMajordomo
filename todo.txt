@@ -1,0 +1,18 @@
+- right click on unit skills 
+-- option to open a pop up window with the skill description
+-- option to go to skills tab with the respective skill selected
+
+- right click on region in the map
+-- option to open a pop up window with the region report in a scrollable text field.
+-- if battle happened in region, option to go to battle tab with battle in focus
+
+- right click on resource, for sale, wanted items or unit items (caution, not active for entertainment, taxes and wages in resources)
+-- option to open pop up window with item description
+-- option to go to items tab with the item preselected
+
+- when searching for unit, and the region is in focus, also set the searched for unit in focus.
+
+* when hovering over an empty region on the map, have the map coordinates display in the Hover area as well.
+
+- right click on warning
+-- option clear warning
