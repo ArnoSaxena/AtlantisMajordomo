@@ -19,7 +19,7 @@
  * File: AppConfig.hpp
  */
  
-﻿// 304c89c8-6d3c-4586-b0c4-fad2e67b2f65
+// 304c89c8-6d3c-4586-b0c4-fad2e67b2f65
 #pragma once
 
 #include <array>
@@ -213,8 +213,7 @@ private:
   static std::wstring getDefaultDataFilePath();
   static std::wstring getDefaultReportImportFolder();
   static std::wstring getDefaultExportOrdersFolder();
-  static std::wstring escapeJsonString(const std::wstring& value);
-  static std::wstring unescapeJsonString(const std::wstring& value);
+  /*
   static bool extractJsonFieldValue(const std::wstring& json,
                                     const std::wstring& fieldName,
                                     std::wstring& value);
@@ -227,6 +226,7 @@ private:
   static bool parseJsonInteger(const std::wstring& jsonValue, int& parsedValue);
   static bool parseRgbColorArray(const std::wstring& jsonArray,
                                 std::array<int, 3>& rgbColor);
+*/
 
   void applyDefaults();
 

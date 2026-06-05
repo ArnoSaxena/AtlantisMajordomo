@@ -19,12 +19,13 @@
  * File: AppConfig.cpp
  */
  
-﻿// 304c89c8-6d3c-4586-b0c4-fad2e67b2f65
+// 304c89c8-6d3c-4586-b0c4-fad2e67b2f65
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
 
 #include "AppConfig.hpp"
+#include "Function/JsonUtils.hpp"
 #include "Function/StringUtils.hpp"
 
 #include <cwctype>
@@ -60,14 +61,14 @@ bool AppConfig::load()
                             std::istreambuf_iterator<wchar_t>());
 
   std::wstring configuredSaveFilePath;
-  if (extractJsonStringField(content, L"saveFilePath", configuredSaveFilePath)
+  if (JsonUtils::extractJsonStringField(content, L"saveFilePath", configuredSaveFilePath)
       && !configuredSaveFilePath.empty())
   {
     saveFilePath_ = configuredSaveFilePath;
   }
 
   std::wstring configuredReportImportFolder;
-  if (extractJsonStringField(content, L"reportImportFolder", configuredReportImportFolder)
+  if (JsonUtils::extractJsonStringField(content, L"reportImportFolder", configuredReportImportFolder)
       && !configuredReportImportFolder.empty())
   {
     reportImportFolder_ = configuredReportImportFolder;
@@ -75,7 +76,7 @@ bool AppConfig::load()
 
   bool hasExportOrdersFolder = false;
   std::wstring configuredExportOrdersFolder;
-  if (extractJsonStringField(content, L"exportOrdersFolder", configuredExportOrdersFolder)
+  if (JsonUtils::extractJsonStringField(content, L"exportOrdersFolder", configuredExportOrdersFolder)
       && !configuredExportOrdersFolder.empty())
   {
     hasExportOrdersFolder = true;
@@ -84,7 +85,7 @@ bool AppConfig::load()
 
   bool hasDataFilePath = false;
   std::wstring configuredDataFilePath;
-  if (extractJsonStringField(content, L"dataFilePath", configuredDataFilePath)
+  if (JsonUtils::extractJsonStringField(content, L"dataFilePath", configuredDataFilePath)
       && !configuredDataFilePath.empty())
   {
     hasDataFilePath = true;
@@ -93,10 +94,10 @@ bool AppConfig::load()
 
   bool hasMainWindowWidth = false;
   std::wstring configuredMainWindowWidth;
-  if (extractJsonFieldValue(content, L"mainWindowWidth", configuredMainWindowWidth))
+  if (JsonUtils::extractJsonFieldValue(content, L"mainWindowWidth", configuredMainWindowWidth))
   {
     int parsedWidth = 0;
-    if (parseJsonInteger(configuredMainWindowWidth, parsedWidth) && parsedWidth > 0)
+    if (JsonUtils::parseJsonInteger(configuredMainWindowWidth, parsedWidth) && parsedWidth > 0)
     {
       hasMainWindowWidth = true;
       mainWindowWidth_ = parsedWidth;
@@ -105,10 +106,10 @@ bool AppConfig::load()
 
   bool hasMainWindowHeight = false;
   std::wstring configuredMainWindowHeight;
-  if (extractJsonFieldValue(content, L"mainWindowHeight", configuredMainWindowHeight))
+  if (JsonUtils::extractJsonFieldValue(content, L"mainWindowHeight", configuredMainWindowHeight))
   {
     int parsedHeight = 0;
-    if (parseJsonInteger(configuredMainWindowHeight, parsedHeight) && parsedHeight > 0)
+    if (JsonUtils::parseJsonInteger(configuredMainWindowHeight, parsedHeight) && parsedHeight > 0)
     {
       hasMainWindowHeight = true;
       mainWindowHeight_ = parsedHeight;
@@ -117,10 +118,10 @@ bool AppConfig::load()
 
   bool hasMapHexWidth = false;
   std::wstring configuredMapHexWidth;
-  if (extractJsonFieldValue(content, L"mapHexWidth", configuredMapHexWidth))
+  if (JsonUtils::extractJsonFieldValue(content, L"mapHexWidth", configuredMapHexWidth))
   {
     int parsedMapHexWidth = 0;
-    if (parseJsonInteger(configuredMapHexWidth, parsedMapHexWidth) && parsedMapHexWidth > 0)
+    if (JsonUtils::parseJsonInteger(configuredMapHexWidth, parsedMapHexWidth) && parsedMapHexWidth > 0)
     {
       hasMapHexWidth = true;
       mapHexWidth_ = parsedMapHexWidth;
@@ -129,7 +130,7 @@ bool AppConfig::load()
 
   bool hasOnlyLeaderCanTeach = false;
   std::wstring configuredOnlyLeaderCanTeach;
-  if (extractJsonFieldValue(content, L"onlyLeaderCanTeach", configuredOnlyLeaderCanTeach))
+  if (JsonUtils::extractJsonFieldValue(content, L"onlyLeaderCanTeach", configuredOnlyLeaderCanTeach))
   {
     const std::wstring normalized = StringUtils::trimWhitespace(configuredOnlyLeaderCanTeach);
     if (normalized == L"true")
@@ -146,7 +147,7 @@ bool AppConfig::load()
 
   bool hasLeaderMages = false;
   std::wstring configuredLeaderMages;
-  if (extractJsonFieldValue(content, L"leaderMages", configuredLeaderMages))
+  if (JsonUtils::extractJsonFieldValue(content, L"leaderMages", configuredLeaderMages))
   {
     const std::wstring normalized = StringUtils::trimWhitespace(configuredLeaderMages);
     if (normalized == L"true")
@@ -163,7 +164,7 @@ bool AppConfig::load()
 
   bool hasFlyingShipsCsv = false;
   std::wstring configuredFlyingShipsCsv;
-  if (extractJsonStringField(content, L"flyingShipsCsv", configuredFlyingShipsCsv))
+  if (JsonUtils::extractJsonStringField(content, L"flyingShipsCsv", configuredFlyingShipsCsv))
   {
     flyingShipsCsv_ = StringUtils::trimWhitespace(configuredFlyingShipsCsv);
     hasFlyingShipsCsv = true;
@@ -171,7 +172,7 @@ bool AppConfig::load()
 
   bool hasFullMonthOrdersCsv = false;
   std::wstring configuredFullMonthOrdersCsv;
-  if (extractJsonStringField(content, L"fullMonthOrdersCsv", configuredFullMonthOrdersCsv))
+  if (JsonUtils::extractJsonStringField(content, L"fullMonthOrdersCsv", configuredFullMonthOrdersCsv))
   {
     fullMonthOrdersCsv_ = configuredFullMonthOrdersCsv;
     hasFullMonthOrdersCsv = true;
@@ -179,7 +180,7 @@ bool AppConfig::load()
 
   bool hasMagicSkillTriggersCsv = false;
   std::wstring configuredMagicSkillTriggersCsv;
-  if (extractJsonStringField(content, L"magicSkillTriggersCsv", configuredMagicSkillTriggersCsv))
+  if (JsonUtils::extractJsonStringField(content, L"magicSkillTriggersCsv", configuredMagicSkillTriggersCsv))
   {
     magicSkillTriggersCsv_ = configuredMagicSkillTriggersCsv;
     hasMagicSkillTriggersCsv = true;
@@ -190,21 +191,21 @@ bool AppConfig::load()
   bool hasRoadEntry = false;
   bool hasStructureMarkerEntry = false;
   std::wstring coloursObject;
-  if (extractJsonObjectField(content, L"colours", coloursObject))
+  if (JsonUtils::extractJsonObjectField(content, L"colours", coloursObject))
   {
     hasColoursBlock = true;
 
     std::wstring regionsObject;
-    if (extractJsonObjectField(coloursObject, L"regions", regionsObject))
+    if (JsonUtils::extractJsonObjectField(coloursObject, L"regions", regionsObject))
     {
       hasRegionsBlock = true;
       for (auto& regionColor : regionColors_)
       {
         std::wstring jsonRgb;
-        if (extractJsonFieldValue(regionsObject, regionColor.first, jsonRgb))
+        if (JsonUtils::extractJsonFieldValue(regionsObject, regionColor.first, jsonRgb))
         {
           std::array<int, 3> parsedRgb { 0, 0, 0 };
-          if (parseRgbColorArray(jsonRgb, parsedRgb))
+          if (JsonUtils::parseRgbColorArray(jsonRgb, parsedRgb))
           {
             regionColor.second = parsedRgb;
           }
@@ -213,33 +214,33 @@ bool AppConfig::load()
     }
 
     std::wstring jsonRoadRgb;
-    if (extractJsonFieldValue(coloursObject, L"roads", jsonRoadRgb) ||
-      extractJsonFieldValue(coloursObject, L"road", jsonRoadRgb))
+    if (JsonUtils::extractJsonFieldValue(coloursObject, L"roads", jsonRoadRgb) ||
+      JsonUtils::extractJsonFieldValue(coloursObject, L"road", jsonRoadRgb))
     {
       hasRoadEntry = true;
       std::array<int, 3> parsedRgb { 0, 0, 0 };
-      if (parseRgbColorArray(jsonRoadRgb, parsedRgb))
+      if (JsonUtils::parseRgbColorArray(jsonRoadRgb, parsedRgb))
       {
         roadColor_ = parsedRgb;
       }
     }
 
     std::wstring jsonStructureMarkerRgb;
-    if (extractJsonFieldValue(coloursObject, L"structureMarker", jsonStructureMarkerRgb))
+    if (JsonUtils::extractJsonFieldValue(coloursObject, L"structureMarker", jsonStructureMarkerRgb))
     {
       hasStructureMarkerEntry = true;
       std::array<int, 3> parsedRgb { 0, 0, 0 };
-      if (parseRgbColorArray(jsonStructureMarkerRgb, parsedRgb))
+      if (JsonUtils::parseRgbColorArray(jsonStructureMarkerRgb, parsedRgb))
       {
         structureMarkerColor_ = parsedRgb;
       }
     }
 
     std::wstring jsonSelectedBorderRgb;
-    if (extractJsonFieldValue(coloursObject, L"selectedRegionBorder", jsonSelectedBorderRgb))
+    if (JsonUtils::extractJsonFieldValue(coloursObject, L"selectedRegionBorder", jsonSelectedBorderRgb))
     {
       std::array<int, 3> parsedRgb { 0, 0, 0 };
-      if (parseRgbColorArray(jsonSelectedBorderRgb, parsedRgb))
+      if (JsonUtils::parseRgbColorArray(jsonSelectedBorderRgb, parsedRgb))
       {
         selectedRegionBorderColor_ = parsedRgb;
       }
@@ -264,24 +265,24 @@ bool AppConfig::save() const
 
   file << L"{\n";
   file << L"  \"version\": " << kConfigVersion << L",\n";
-  file << L"  \"saveFilePath\": \"" << escapeJsonString(saveFilePath_) << L"\",\n";
-  file << L"  \"reportImportFolder\": \"" << escapeJsonString(reportImportFolder_) << L"\",\n";
-  file << L"  \"dataFilePath\": \"" << escapeJsonString(dataFilePath_) << L"\",\n";
-  file << L"  \"exportOrdersFolder\": \"" << escapeJsonString(exportOrdersFolder_) << L"\",\n";
+  file << L"  \"saveFilePath\": \"" << JsonUtils::escapeJsonString(saveFilePath_) << L"\",\n";
+  file << L"  \"reportImportFolder\": \"" << JsonUtils::escapeJsonString(reportImportFolder_) << L"\",\n";
+  file << L"  \"dataFilePath\": \"" << JsonUtils::escapeJsonString(dataFilePath_) << L"\",\n";
+  file << L"  \"exportOrdersFolder\": \"" << JsonUtils::escapeJsonString(exportOrdersFolder_) << L"\",\n";
   file << L"  \"mainWindowWidth\": " << mainWindowWidth_ << L",\n";
   file << L"  \"mainWindowHeight\": " << mainWindowHeight_ << L",\n";
   file << L"  \"mapHexWidth\": " << mapHexWidth_ << L",\n";
   file << L"  \"onlyLeaderCanTeach\": " << (onlyLeaderCanTeach_ ? L"true" : L"false") << L",\n";
   file << L"  \"leaderMages\": " << (leaderMages_ ? L"true" : L"false") << L",\n";
-  file << L"  \"flyingShipsCsv\": \"" << escapeJsonString(flyingShipsCsv_) << L"\",\n";
-  file << L"  \"fullMonthOrdersCsv\": \"" << escapeJsonString(fullMonthOrdersCsv_) << L"\",\n";
-  file << L"  \"magicSkillTriggersCsv\": \"" << escapeJsonString(magicSkillTriggersCsv_) << L"\",\n";
+  file << L"  \"flyingShipsCsv\": \"" << JsonUtils::escapeJsonString(flyingShipsCsv_) << L"\",\n";
+  file << L"  \"fullMonthOrdersCsv\": \"" << JsonUtils::escapeJsonString(fullMonthOrdersCsv_) << L"\",\n";
+  file << L"  \"magicSkillTriggersCsv\": \"" << JsonUtils::escapeJsonString(magicSkillTriggersCsv_) << L"\",\n";
   file << L"  \"colours\": {\n";
   file << L"    \"regions\": {\n";
   for (size_t i = 0; i < regionColors_.size(); ++i)
   {
     const auto& regionColor = regionColors_[i];
-    file << L"      \"" << escapeJsonString(regionColor.first) << L"\": ["
+    file << L"      \"" << JsonUtils::escapeJsonString(regionColor.first) << L"\": ["
         << regionColor.second[0] << L", "
         << regionColor.second[1] << L", "
         << regionColor.second[2] << L"]";
@@ -567,6 +568,7 @@ std::wstring AppConfig::getDefaultExportOrdersFolder()
 //TODO: create JsonUtils and move these functions there
 //      use here and at least in Data/DataSerializer.cpp
 //      same for unescapeJsonString.
+/*
 std::wstring AppConfig::escapeJsonString(const std::wstring& value)
 {
   std::wstring escaped;
@@ -588,34 +590,7 @@ std::wstring AppConfig::escapeJsonString(const std::wstring& value)
   return escaped;
 }
 
-std::wstring AppConfig::unescapeJsonString(const std::wstring& value)
-{
-  std::wstring unescaped;
-  unescaped.reserve(value.size());
 
-  for (size_t i = 0; i < value.size(); ++i)
-  {
-    if (value[i] == L'\\' && (i + 1) < value.size())
-    {
-      ++i;
-      switch (value[i])
-      {
-        case L'"': unescaped += L'"'; break;
-        case L'\\': unescaped += L'\\'; break;
-        case L'n': unescaped += L'\n'; break;
-        case L'r': unescaped += L'\r'; break;
-        case L't': unescaped += L'\t'; break;
-        default: unescaped += value[i]; break;
-      }
-    }
-    else
-    {
-      unescaped += value[i];
-    }
-  }
-
-  return unescaped;
-}
 
 bool AppConfig::extractJsonStringField(const std::wstring& json,
                                       const std::wstring& fieldName,
@@ -631,9 +606,7 @@ bool AppConfig::extractJsonStringField(const std::wstring& json,
   {
     return false;
   }
-
-  value = unescapeJsonString(jsonValue.substr(1, jsonValue.size() - 2));
-  return true;
+  return JsonUtils::unescapeJsonString(jsonValue.substr(1, jsonValue.size() - 2), value);
 }
 
 bool AppConfig::extractJsonFieldValue(const std::wstring& json,
@@ -878,6 +851,8 @@ bool AppConfig::parseRgbColorArray(const std::wstring& jsonArray,
 
   return true;
 }
+
+*/
 
 void AppConfig::applyDefaults()
 {

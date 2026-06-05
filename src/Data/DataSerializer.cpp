@@ -19,7 +19,7 @@
  * File: DataSerializer.cpp
  */
  
-﻿// 304c89c8-6d3c-4586-b0c4-fad2e67b2f65
+// 304c89c8-6d3c-4586-b0c4-fad2e67b2f65
 #include "Data/DataSerializer.hpp"
 #include "Data/AppData.hpp"
 #include "Data/Faction.hpp"
@@ -38,6 +38,7 @@
 #include "Data/ItemRepository.hpp"
 #include "Data/SkillRepository.hpp"
 #include "Function/CommandSimulationService.hpp"
+#include "Function/JsonUtils.hpp"
 #include "Function/OrderBusinessLogic.hpp"
 #include "Function/StringUtils.hpp"
 
@@ -51,186 +52,6 @@
 #include <regex>
 
 std::wstring DataSerializer::lastError_;
-
-namespace
-{
-  // Simple JSON helper functions
-  void appendUnicodeEscape(std::wstring& result, unsigned int codeUnit)
-  {
-    std::wstringstream stream;
-    stream << L"\\u" << std::uppercase << std::hex << std::setw(4) << std::setfill(L'0') << codeUnit;
-    result += stream.str();
-  }
-
-  bool tryParseHex4(const std::wstring& str, size_t startIndex, std::uint32_t& codeUnit)
-  {
-    if (startIndex + 4 > str.size())
-    {
-      return false;
-    }
-
-    std::uint32_t value = 0;
-    for (size_t index = startIndex; index < startIndex + 4; ++index)
-    {
-      const wchar_t ch = str[index];
-      value <<= 4;
-      if (ch >= L'0' && ch <= L'9')
-      {
-        value |= static_cast<std::uint32_t>(ch - L'0');
-      }
-      else if (ch >= L'a' && ch <= L'f')
-      {
-        value |= static_cast<std::uint32_t>(10 + (ch - L'a'));
-      }
-      else if (ch >= L'A' && ch <= L'F')
-      {
-        value |= static_cast<std::uint32_t>(10 + (ch - L'A'));
-      }
-      else
-      {
-        return false;
-      }
-    }
-
-    codeUnit = value;
-    return true;
-  }
-
-  void appendCodePoint(std::wstring& result, std::uint32_t codePoint)
-  {
-    if constexpr (sizeof(wchar_t) >= 4)
-    {
-      result.push_back(static_cast<wchar_t>(codePoint));
-      return;
-    }
-
-    if (codePoint <= 0xFFFF)
-    {
-      result.push_back(static_cast<wchar_t>(codePoint));
-      return;
-    }
-
-    codePoint -= 0x10000;
-    const std::uint32_t highSurrogate = 0xD800 + (codePoint >> 10);
-    const std::uint32_t lowSurrogate = 0xDC00 + (codePoint & 0x3FF);
-    result.push_back(static_cast<wchar_t>(highSurrogate));
-    result.push_back(static_cast<wchar_t>(lowSurrogate));
-  }
-
-  std::wstring escapeJsonString(const std::wstring& str)
-  {
-    std::wstring result;
-    for (wchar_t ch : str)
-    {
-      switch (ch)
-      {
-        case L'"':  result += L"\\\""; break;
-        case L'\\': result += L"\\\\"; break;
-        case L'\b': result += L"\\b";  break;
-        case L'\f': result += L"\\f";  break;
-        case L'\n': result += L"\\n";  break;
-        case L'\r': result += L"\\r";  break;
-        case L'\t': result += L"\\t";  break;
-        default:
-        {
-          const unsigned int codeUnit = static_cast<unsigned int>(ch);
-          if (codeUnit < 0x20 || (codeUnit >= 0xD800 && codeUnit <= 0xDFFF))
-          {
-            appendUnicodeEscape(result, codeUnit);
-          }
-          else
-          {
-            result += ch;
-          }
-          break;
-        }
-      }
-    }
-    return result;
-  }
-
-  bool unescapeJsonString(const std::wstring& str, std::wstring& result)
-  {
-    result.clear();
-    for (size_t i = 0; i < str.length(); ++i)
-    {
-      const wchar_t current = str[i];
-      if (current < 0x20)
-      {
-        return false;
-      }
-
-      if (current != L'\\')
-      {
-        result += current;
-        continue;
-      }
-
-      if (i + 1 >= str.length())
-      {
-        return false;
-      }
-
-      ++i;
-      const wchar_t escapeType = str[i];
-      switch (escapeType)
-      {
-        case L'"': result += L'"'; break;
-        case L'\\': result += L'\\'; break;
-        case L'/': result += L'/'; break;
-        case L'b': result += L'\b'; break;
-        case L'f': result += L'\f'; break;
-        case L'n': result += L'\n'; break;
-        case L'r': result += L'\r'; break;
-        case L't': result += L'\t'; break;
-        case L'u':
-        {
-          std::uint32_t codeUnit = 0;
-          if (!tryParseHex4(str, i + 1, codeUnit))
-          {
-            return false;
-          }
-          i += 4;
-
-          if (codeUnit >= 0xD800 && codeUnit <= 0xDBFF)
-          {
-            if (i + 6 >= str.length() || str[i + 1] != L'\\' || str[i + 2] != L'u')
-            {
-              return false;
-            }
-
-            std::uint32_t lowSurrogate = 0;
-            if (!tryParseHex4(str, i + 3, lowSurrogate))
-            {
-              return false;
-            }
-            if (lowSurrogate < 0xDC00 || lowSurrogate > 0xDFFF)
-            {
-              return false;
-            }
-
-            const std::uint32_t codePoint = 0x10000 + (((codeUnit - 0xD800) << 10) | (lowSurrogate - 0xDC00));
-            appendCodePoint(result, codePoint);
-            i += 6;
-          }
-          else if (codeUnit >= 0xDC00 && codeUnit <= 0xDFFF)
-          {
-            return false;
-          }
-          else
-          {
-            appendCodePoint(result, codeUnit);
-          }
-          break;
-        }
-        default:
-          return false;
-      }
-    }
-
-    return true;
-  }
-}
 
 bool DataSerializer::saveToFile(const AppData& appData, const std::wstring& filePath)
 {
@@ -254,9 +75,9 @@ bool DataSerializer::saveToFile(const AppData& appData, const std::wstring& file
       if (i > 0) file << L",\n";
       file << L"    {\n";
       file << L"      \"number\": " << faction.getFactionNumber() << L",\n";
-      file << L"      \"name\": \"" << escapeJsonString(faction.getName()) << L"\",\n";
+      file << L"      \"name\": \"" << JsonUtils::escapeJsonString(faction.getName()) << L"\",\n";
       file << L"      \"mainFaction\": " << (faction.isMainFaction() ? L"true" : L"false") << L",\n";
-      file << L"      \"password\": \"" << escapeJsonString(faction.getPassword()) << L"\",\n";
+      file << L"      \"password\": \"" << JsonUtils::escapeJsonString(faction.getPassword()) << L"\",\n";
       file << L"      \"taxedOrTradedRegionsCurrent\": " << faction.getTaxedOrTradedRegionsCurrent() << L",\n";
       file << L"      \"taxedOrTradedRegionsMax\": " << faction.getTaxedOrTradedRegionsMax() << L",\n";
       file << L"      \"quartermastersCurrent\": " << faction.getQuartermastersCurrent() << L",\n";
@@ -282,12 +103,12 @@ bool DataSerializer::saveToFile(const AppData& appData, const std::wstring& file
       file << L"      \"x\": " << region.getXCoordinate() << L",\n";
       file << L"      \"y\": " << region.getYCoordinate() << L",\n";
       file << L"      \"z\": " << region.getZCoordinate() << L",\n";
-      file << L"      \"type\": \"" << escapeJsonString(region.getRegionType()) << L"\",\n";
-      file << L"      \"province\": \"" << escapeJsonString(region.getProvinceName()) << L"\",\n";
+      file << L"      \"type\": \"" << JsonUtils::escapeJsonString(region.getRegionType()) << L"\",\n";
+      file << L"      \"province\": \"" << JsonUtils::escapeJsonString(region.getProvinceName()) << L"\",\n";
       file << L"      \"hasSettlement\": " << (region.getContainsSettlement() ? L"true" : L"false") << L",\n";
-      file << L"      \"settlementName\": \"" << escapeJsonString(region.getSettlementName()) << L"\",\n";
-      file << L"      \"settlementType\": \"" << escapeJsonString(region.getSettlementType()) << L"\",\n";
-      file << L"      \"peasantType\": \"" << escapeJsonString(region.getPeasantType()) << L"\",\n";
+      file << L"      \"settlementName\": \"" << JsonUtils::escapeJsonString(region.getSettlementName()) << L"\",\n";
+      file << L"      \"settlementType\": \"" << JsonUtils::escapeJsonString(region.getSettlementType()) << L"\",\n";
+      file << L"      \"peasantType\": \"" << JsonUtils::escapeJsonString(region.getPeasantType()) << L"\",\n";
       file << L"      \"peasantNumber\": " << region.getPeasantNumber() << L",\n";
       file << L"      \"wages\": " << std::fixed << std::setprecision(2) << region.getWages() << L",\n";
       file << L"      \"wagesMax\": " << region.getWagesMax() << L",\n";
@@ -299,7 +120,7 @@ bool DataSerializer::saveToFile(const AppData& appData, const std::wstring& file
       for (const auto& [resToken, resAmount] : resources)
       {
         if (resIndex > 0) file << L", ";
-        file << L"\"" << escapeJsonString(resToken) << L"\": " << resAmount;
+        file << L"\"" << JsonUtils::escapeJsonString(resToken) << L"\": " << resAmount;
         ++resIndex;
       }
       file << L"},\n";
@@ -309,7 +130,7 @@ bool DataSerializer::saveToFile(const AppData& appData, const std::wstring& file
       for (const auto& [wantedToken, wantedPair] : wanted)
       {
         if (wantedIndex > 0) file << L", ";
-        file << L"\"" << escapeJsonString(wantedToken) << L"\": [" << wantedPair.first << L", " << wantedPair.second << L"]";
+        file << L"\"" << JsonUtils::escapeJsonString(wantedToken) << L"\": [" << wantedPair.first << L", " << wantedPair.second << L"]";
         ++wantedIndex;
       }
       file << L"},\n";
@@ -319,7 +140,7 @@ bool DataSerializer::saveToFile(const AppData& appData, const std::wstring& file
       for (const auto& [forSaleToken, forSalePair] : forSale)
       {
         if (forSaleIndex > 0) file << L", ";
-        file << L"\"" << escapeJsonString(forSaleToken) << L"\": [" << forSalePair.first << L", " << forSalePair.second << L"]";
+        file << L"\"" << JsonUtils::escapeJsonString(forSaleToken) << L"\": [" << forSalePair.first << L", " << forSalePair.second << L"]";
         ++forSaleIndex;
       }
       file << L"},\n";
@@ -328,7 +149,7 @@ bool DataSerializer::saveToFile(const AppData& appData, const std::wstring& file
       for (size_t j = 0; j < exitDirections.size(); ++j)
       {
         if (j > 0) file << L", ";
-        file << L"\"" << escapeJsonString(exitDirections[j]) << L"\"";
+        file << L"\"" << JsonUtils::escapeJsonString(exitDirections[j]) << L"\"";
       }
       file << L"],\n";
       file << L"      \"visited\": " << (region.getVisited() ? L"true" : L"false") << L",\n";
@@ -347,7 +168,7 @@ bool DataSerializer::saveToFile(const AppData& appData, const std::wstring& file
       if (i > 0) file << L",\n";
       file << L"    {\n";
       file << L"      \"number\": " << unit.getUnitNumber() << L",\n";
-      file << L"      \"name\": \"" << escapeJsonString(unit.getUnitName()) << L"\",\n";
+      file << L"      \"name\": \"" << JsonUtils::escapeJsonString(unit.getUnitName()) << L"\",\n";
       file << L"      \"factionNumber\": " << unit.getFactionNumber() << L",\n";
       file << L"      \"structureId\": " << unit.getStructureId() << L",\n";
       file << L"      \"x\": " << unit.getXCoordinate() << L",\n";
@@ -365,7 +186,7 @@ bool DataSerializer::saveToFile(const AppData& appData, const std::wstring& file
       for (size_t j = 0; j < flags.size(); ++j)
       {
         if (j > 0) file << L", ";
-        file << L"\"" << escapeJsonString(flags[j]) << L"\"";
+        file << L"\"" << JsonUtils::escapeJsonString(flags[j]) << L"\"";
       }
       file << L"],\n";
       file << L"      \"items\": {";
@@ -374,7 +195,7 @@ bool DataSerializer::saveToFile(const AppData& appData, const std::wstring& file
       for (const auto& [itemToken, itemAmount] : itemCounts)
       {
         if (itemIndex > 0) file << L", ";
-        file << L"\"" << escapeJsonString(itemToken) << L"\": " << itemAmount;
+        file << L"\"" << JsonUtils::escapeJsonString(itemToken) << L"\": " << itemAmount;
         ++itemIndex;
       }
       file << L"},\n";
@@ -386,8 +207,8 @@ bool DataSerializer::saveToFile(const AppData& appData, const std::wstring& file
         if (!firstSkill) file << L", ";
         firstSkill = false;
         const std::wstring skillText = skillToken + L" [" + skillToken + L"] " +
-                                       std::to_wstring(days);
-        file << L"\"" << escapeJsonString(skillText) << L"\"";
+                                       JsonUtils::escapeJsonString(std::to_wstring(days));
+        file << L"\"" << skillText << L"\"";
       }
       file << L"],\n";
       file << L"      \"canStudySkills\": [";
@@ -395,7 +216,7 @@ bool DataSerializer::saveToFile(const AppData& appData, const std::wstring& file
       for (size_t j = 0; j < canStudySkills.size(); ++j)
       {
         if (j > 0) file << L", ";
-        file << L"\"" << escapeJsonString(canStudySkills[j]) << L"\"";
+        file << L"\"" << JsonUtils::escapeJsonString(canStudySkills[j]) << L"\"";
       }
       file << L"],\n";
       file << L"      \"orders\": [";
@@ -403,7 +224,7 @@ bool DataSerializer::saveToFile(const AppData& appData, const std::wstring& file
       for (size_t j = 0; j < orders.size(); ++j)
       {
         if (j > 0) file << L", ";
-        file << L"\"" << escapeJsonString(orders[j]) << L"\"";
+        file << L"\"" << JsonUtils::escapeJsonString(orders[j]) << L"\"";
       }
       file << L"]\n";
       file << L"    }";
@@ -420,7 +241,7 @@ bool DataSerializer::saveToFile(const AppData& appData, const std::wstring& file
       if (i > 0) file << L",\n";
       file << L"    {\n";
       file << L"      \"number\": " << unitNew.getUnitNumber() << L",\n";
-      file << L"      \"name\": \"" << escapeJsonString(unitNew.getUnitName()) << L"\",\n";
+      file << L"      \"name\": \"" << JsonUtils::escapeJsonString(unitNew.getUnitName()) << L"\",\n";
       file << L"      \"structureId\": " << unitNew.getStructureId() << L",\n";
       file << L"      \"futureStructureId\": " << unitNew.getFutureStructureId() << L",\n";
       file << L"      \"x\": " << unitNew.getXCoordinate() << L",\n";
@@ -439,7 +260,7 @@ bool DataSerializer::saveToFile(const AppData& appData, const std::wstring& file
       for (size_t j = 0; j < flags.size(); ++j)
       {
         if (j > 0) file << L", ";
-        file << L"\"" << escapeJsonString(flags[j]) << L"\"";
+        file << L"\"" << JsonUtils::escapeJsonString(flags[j]) << L"\"";
       }
       file << L"],\n";
       file << L"      \"items\": {";
@@ -448,7 +269,7 @@ bool DataSerializer::saveToFile(const AppData& appData, const std::wstring& file
       for (const auto& [itemToken, itemAmount] : itemCounts)
       {
         if (itemIndex > 0) file << L", ";
-        file << L"\"" << escapeJsonString(itemToken) << L"\": " << itemAmount;
+        file << L"\"" << JsonUtils::escapeJsonString(itemToken) << L"\": " << itemAmount;
         ++itemIndex;
       }
       file << L"},\n";
@@ -460,7 +281,7 @@ bool DataSerializer::saveToFile(const AppData& appData, const std::wstring& file
         if (!firstSkill) file << L", ";
         firstSkill = false;
         const std::wstring skillText = skillToken + L" [" + skillToken + L"] " + std::to_wstring(days);
-        file << L"\"" << escapeJsonString(skillText) << L"\"";
+        file << L"\"" << JsonUtils::escapeJsonString(skillText) << L"\"";
       }
       file << L"],\n";
       file << L"      \"canStudySkills\": [";
@@ -468,7 +289,7 @@ bool DataSerializer::saveToFile(const AppData& appData, const std::wstring& file
       for (size_t j = 0; j < canStudySkills.size(); ++j)
       {
         if (j > 0) file << L", ";
-        file << L"\"" << escapeJsonString(canStudySkills[j]) << L"\"";
+        file << L"\"" << JsonUtils::escapeJsonString(canStudySkills[j]) << L"\"";
       }
       file << L"],\n";
       file << L"      \"warnings\": [";
@@ -476,7 +297,7 @@ bool DataSerializer::saveToFile(const AppData& appData, const std::wstring& file
       for (size_t j = 0; j < warnings.size(); ++j)
       {
         if (j > 0) file << L", ";
-        file << L"\"" << escapeJsonString(warnings[j]) << L"\"";
+        file << L"\"" << JsonUtils::escapeJsonString(warnings[j]) << L"\"";
       }
       file << L"]\n";
       file << L"    }";
@@ -491,14 +312,14 @@ bool DataSerializer::saveToFile(const AppData& appData, const std::wstring& file
       if (i > 0) file << L",\n";
       file << L"    {\n";
       file << L"      \"unitId\": " << eventValue.getUnitId() << L",\n";
-      file << L"      \"message\": \"" << escapeJsonString(eventValue.getMessage()) << L"\"\n";
+      file << L"      \"message\": \"" << JsonUtils::escapeJsonString(eventValue.getMessage()) << L"\"\n";
       file << L"    }";
     }
 
     file << L"\n  ],\n";
     file << L"  \"settings\": {\n";
     file << L"    \"shipStructureIdThreshold\": " << appData.getShipStructureIdThreshold() << L",\n";
-    file << L"    \"flyingShipsCsv\": \"" << escapeJsonString(appData.getFlyingShipsCsv()) << L"\",\n";
+    file << L"    \"flyingShipsCsv\": \"" << JsonUtils::escapeJsonString(appData.getFlyingShipsCsv()) << L"\",\n";
     file << L"    \"onlyLeaderCanTeach\": " << (appData.getOnlyLeaderCanTeach() ? L"true" : L"false") << L",\n";
     file << L"    \"leaderMages\": " << (appData.getLeaderMages() ? L"true" : L"false") << L"\n";
     file << L"  },\n";
@@ -516,8 +337,8 @@ bool DataSerializer::saveToFile(const AppData& appData, const std::wstring& file
       file << L"      \"x\": " << structure.getXCoordinate() << L",\n";
       file << L"      \"y\": " << structure.getYCoordinate() << L",\n";
       file << L"      \"z\": " << structure.getZCoordinate() << L",\n";
-      file << L"      \"type\": \"" << escapeJsonString(structure.getStructureType()) << L"\",\n";
-      file << L"      \"name\": \"" << escapeJsonString(structure.getStructureName()) << L"\",\n";
+      file << L"      \"type\": \"" << JsonUtils::escapeJsonString(structure.getStructureType()) << L"\",\n";
+      file << L"      \"name\": \"" << JsonUtils::escapeJsonString(structure.getStructureName()) << L"\",\n";
       file << L"      \"month\": " << structure.getMonth() << L",\n";
       file << L"      \"year\": " << structure.getYear() << L",\n";
       file << L"      \"isClosed\": " << (structure.isClosed() ? L"true" : L"false") << L",\n";
@@ -535,12 +356,12 @@ bool DataSerializer::saveToFile(const AppData& appData, const std::wstring& file
       const StructInfo& structInfo = structInfoRepo.at(i);
       if (i > 0) file << L",\n";
       file << L"    {\n";
-      file << L"      \"type\": \"" << escapeJsonString(structInfo.getStructureType()) << L"\",\n";
+      file << L"      \"type\": \"" << JsonUtils::escapeJsonString(structInfo.getStructureType()) << L"\",\n";
       file << L"      \"needs\": " << structInfo.getNeeds() << L",\n";
       file << L"      \"magesCapacity\": " << structInfo.getMagesCapacity() << L",\n";
       file << L"      \"isShip\": " << (structInfo.isShip() ? L"true" : L"false") << L",\n";
       file << L"      \"isFlying\": " << (structInfo.protoIsFlying() ? L"true" : L"false") << L",\n";
-      file << L"      \"itemIdentifierToken\": \"" << escapeJsonString(structInfo.getItemIdentifierToken()) << L"\"\n";
+      file << L"      \"itemIdentifierToken\": \"" << JsonUtils::escapeJsonString(structInfo.getItemIdentifierToken()) << L"\"\n";
       file << L"    }";
     } 
     file << L"\n  ],\n";
@@ -555,8 +376,8 @@ bool DataSerializer::saveToFile(const AppData& appData, const std::wstring& file
       const Item& item = itemRepo.at(i);
       if (i > 0) file << L",\n";
       file << L"    {\n";
-      file << L"      \"token\": \"" << escapeJsonString(item.getIdentifierToken()) << L"\",\n";
-      file << L"      \"name\": \"" << escapeJsonString(item.getItemName()) << L"\",\n";
+      file << L"      \"token\": \"" << JsonUtils::escapeJsonString(item.getIdentifierToken()) << L"\",\n";
+      file << L"      \"name\": \"" << JsonUtils::escapeJsonString(item.getItemName()) << L"\",\n";
       file << L"      \"weight\": " << item.getWeight() << L",\n";
       file << L"      \"meeleWeapon\": " << (item.isMeeleWeapon() ? L"true" : L"false") << L",\n";
       file << L"      \"rangedWeapon\": " << (item.isRangedWeapon() ? L"true" : L"false") << L",\n";
@@ -573,14 +394,14 @@ bool DataSerializer::saveToFile(const AppData& appData, const std::wstring& file
       file << L"      \"magesStudy\": " << item.getMagesStudy() << L",\n";
       file << L"      \"man\": " << (item.isMan() ? L"true" : L"false") << L",\n";
       file << L"      \"defaultSkillMax\": " << item.getDefaultSkillMax() << L",\n";
-      file << L"      \"fullText\": \"" << escapeJsonString(item.getFullText()) << L"\",\n";
+      file << L"      \"fullText\": \"" << JsonUtils::escapeJsonString(item.getFullText()) << L"\",\n";
       file << L"      \"resources\": {";
       const auto& resources = item.getResources();
       size_t resourceIndex = 0;
       for (const auto& [resourceToken, resourceAmount] : resources)
       {
         if (resourceIndex > 0) file << L", ";
-        file << L"\"" << escapeJsonString(resourceToken) << L"\": " << resourceAmount;
+        file << L"\"" << JsonUtils::escapeJsonString(resourceToken) << L"\": " << resourceAmount;
         ++resourceIndex;
       }
       file << L"},\n";
@@ -590,7 +411,7 @@ bool DataSerializer::saveToFile(const AppData& appData, const std::wstring& file
       for (const auto& [skillToken, maxLevel] : skillsMax)
       {
         if (skillsMaxIndex > 0) file << L", ";
-        file << L"\"" << escapeJsonString(skillToken) << L"\": " << maxLevel;
+        file << L"\"" << JsonUtils::escapeJsonString(skillToken) << L"\": " << maxLevel;
         ++skillsMaxIndex;
       }
       file << L"},\n";
@@ -600,7 +421,7 @@ bool DataSerializer::saveToFile(const AppData& appData, const std::wstring& file
       for (const auto& [skillToken, skillLevel] : productionSkill)
       {
         if (productionSkillIndex > 0) file << L", ";
-        file << L"\"" << escapeJsonString(skillToken) << L"\": " << skillLevel;
+        file << L"\"" << JsonUtils::escapeJsonString(skillToken) << L"\": " << skillLevel;
         ++productionSkillIndex;
       }
       file << L"},\n";
@@ -610,7 +431,7 @@ bool DataSerializer::saveToFile(const AppData& appData, const std::wstring& file
       for (const auto& [helpToken, helpAmount] : productionHelp)
       {
         if (productionHelpIndex > 0) file << L", ";
-        file << L"\"" << escapeJsonString(helpToken) << L"\": " << helpAmount;
+        file << L"\"" << JsonUtils::escapeJsonString(helpToken) << L"\": " << helpAmount;
         ++productionHelpIndex;
       }
       file << L"}\n";
@@ -632,27 +453,27 @@ bool DataSerializer::saveToFile(const AppData& appData, const std::wstring& file
         if (!firstSkillEntry) file << L",\n";
         firstSkillEntry = false;
         file << L"    {\n";
-        file << L"      \"token\": \"" << escapeJsonString(skill.getIdentifierToken()) << L"\",\n";
+        file << L"      \"token\": \"" << JsonUtils::escapeJsonString(skill.getIdentifierToken()) << L"\",\n";
         file << L"      \"level\": " << lv << L",\n";
-        file << L"      \"name\": \"" << escapeJsonString(skill.getName()) << L"\",\n";
+        file << L"      \"name\": \"" << JsonUtils::escapeJsonString(skill.getName()) << L"\",\n";
         file << L"      \"productionItems\": {";
         size_t mmIndex = 0;
         for (const auto& [itemToken, manMonths] : ld->productionItems)
         {
           if (mmIndex > 0) file << L", ";
-          file << L"\"" << escapeJsonString(itemToken) << L"\": " << manMonths;
+          file << L"\"" << JsonUtils::escapeJsonString(itemToken) << L"\": " << manMonths;
           ++mmIndex;
         }
         file << L"},\n";
         file << L"      \"magic\": " << (skill.isMagic() ? L"true" : L"false") << L",\n";
         file << L"      \"magicFoundation\": " << (skill.isMagicFoundation() ? L"true" : L"false") << L",\n";
-        file << L"      \"description\": \"" << escapeJsonString(ld->description) << L"\",\n";
+        file << L"      \"description\": \"" << JsonUtils::escapeJsonString(ld->description) << L"\",\n";
         file << L"      \"prerequisites\": [";
         const auto& prerequisites = skill.getPrerequisites();
         for (size_t prerequisiteIndex = 0; prerequisiteIndex < prerequisites.size(); ++prerequisiteIndex)
         {
           if (prerequisiteIndex > 0) file << L", ";
-          file << L"{\"token\": \"" << escapeJsonString(prerequisites[prerequisiteIndex].token)
+          file << L"{\"token\": \"" << JsonUtils::escapeJsonString(prerequisites[prerequisiteIndex].token)
                << L"\", \"requiredLevel\": " << prerequisites[prerequisiteIndex].requiredLevel << L"}";
         }
         file << L"],\n";
@@ -814,7 +635,7 @@ namespace
       return false;
     }
 
-    return unescapeJsonString(trimmed.substr(1, trimmed.size() - 2), result);
+    return JsonUtils::unescapeJsonString(trimmed.substr(1, trimmed.size() - 2), result);
   }
 
   bool parseJsonNumber(const std::wstring& jsonValue, int& result)
@@ -924,7 +745,7 @@ namespace
       }
 
       std::wstring item;
-      if (!unescapeJsonString(content.substr(start + 1, pos - start - 1), item))
+      if (!JsonUtils::unescapeJsonString(content.substr(start + 1, pos - start - 1), item))
       {
         result.clear();
         return result;
@@ -983,7 +804,7 @@ namespace
       }
 
       std::wstring key;
-      if (!unescapeJsonString(content.substr(keyStart + 1, keyEnd - keyStart - 1), key))
+      if (!JsonUtils::unescapeJsonString(content.substr(keyStart + 1, keyEnd - keyStart - 1), key))
       {
         break;
       }
