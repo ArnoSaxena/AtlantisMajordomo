@@ -19,7 +19,7 @@
  * File: Main.cpp
  */
  
-﻿// 304c89c8-6d3c-4586-b0c4-fad2e67b2f65
+// 304c89c8-6d3c-4586-b0c4-fad2e67b2f65
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif

@@ -19,7 +19,7 @@
  * File: MainWindow.hpp
  */
  
-﻿// 304c89c8-6d3c-4586-b0c4-fad2e67b2f65
+// 304c89c8-6d3c-4586-b0c4-fad2e67b2f65
 #pragma once
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -60,7 +60,7 @@ public:
   static constexpr wchar_t kAboutAppName[] = L"Atlantis Majordomo";
   static constexpr wchar_t kAboutLoremIpsum[] =
     L"Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.";
-  static constexpr wchar_t kAboutVersion[] = L"1.0.4";
+  static constexpr wchar_t kAboutVersion[] = L"1.0.9";
 
   /**
   * @brief Registers the window class and creates the main window.
