@@ -15,6 +15,7 @@ add_executable(AtlantisMajordomo WIN32
   src/Function/CommandSimulationService.cpp
   src/Function/CoordinateFormattingUtils.cpp
   src/Function/FactionAttitudeUtils.cpp
+  src/Function/JsonUtils.cpp
   src/Function/MonthUtils.cpp
   src/Function/OrderParsingUtils.cpp
   src/Function/OrderWarningService.cpp
