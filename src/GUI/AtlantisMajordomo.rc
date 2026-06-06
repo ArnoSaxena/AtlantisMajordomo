@@ -1,0 +1,3 @@
+#include "GUI/ResourceIds.hpp"
+
+IDI_APP_ICON ICON "AtlantisMajordomo.ico"

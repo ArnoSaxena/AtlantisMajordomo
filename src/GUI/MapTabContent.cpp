@@ -396,6 +396,23 @@ T clampValue(T value, T low, T high)
   return (std::max)(low, (std::min)(value, high));
 }
 
+int wrapMapXCoordinate(int xCoordinate, int minX, int maxX)
+{
+  const int width = maxX - minX + 1;
+  if (width <= 0)
+  {
+    return xCoordinate;
+  }
+
+  int wrappedOffset = (xCoordinate - minX) % width;
+  if (wrappedOffset < 0)
+  {
+    wrappedOffset += width;
+  }
+
+  return minX + wrappedOffset;
+}
+
 using OrderParsingUtils::tryExtractOrderKeywordUpper;
 }
 
@@ -2106,7 +2123,20 @@ LRESULT MapTabContent::handleMapCanvasMessage(HWND hwnd, UINT msg, WPARAM wp, LP
       }
       else
       {
-        hideHoverTooltip();
+        int xCoordinate = 0;
+        int yCoordinate = 0;
+        if (hitTestMapCoordinate(cursorPoint, xCoordinate, yCoordinate))
+        {
+          hoverRegionText_ = L"Hover: " + CoordinateFormattingUtils::formatCoordinates(
+            xCoordinate,
+            yCoordinate,
+            selectedZ_);
+          SetWindowTextW(hoverRegionLabel_, hoverRegionText_.c_str());
+        }
+        else
+        {
+          hideHoverTooltip();
+        }
       }
       return 0;
     }
@@ -2299,6 +2329,38 @@ void MapTabContent::recalculateVisibleMap()
     visual.polygon = buildHexagonPolygon(centerX, centerY, hexWidth);
     visibleRegions_.push_back(visual);
     maxCenterY = (std::max)(maxCenterY, centerY);
+  }
+
+  // Mirror the right-edge regions into the left padding columns so wrapped map
+  // rendering shows real region tiles instead of empty placeholders.
+  if (mapLeftPaddingColumns_ > 0)
+  {
+    for (const Region* region : zRegions)
+    {
+      if (!region)
+      {
+        continue;
+      }
+
+      const int wrappedLeftX = region->getXCoordinate() - (maxX - minX + 1);
+      if (wrappedLeftX < (minX - mapLeftPaddingColumns_) || wrappedLeftX >= minX)
+      {
+        continue;
+      }
+
+      const int mapColumn = (wrappedLeftX - minX) + leftPaddingColumns;
+      const double mapRow = static_cast<double>(region->getYCoordinate() - minY) / 2.0;
+
+      const int centerX = kMargin + mapColumn * columnStep + (hexWidth / 2);
+      const int centerY = kMargin + static_cast<int>(std::lround(mapRow * rowStep)) + (hexHeight / 2);
+
+      RegionVisual wrappedVisual;
+      wrappedVisual.region = region;
+      wrappedVisual.center = { centerX, centerY };
+      wrappedVisual.polygon = buildHexagonPolygon(centerX, centerY, hexWidth);
+      visibleRegions_.push_back(wrappedVisual);
+      maxCenterY = (std::max)(maxCenterY, centerY);
+    }
   }
 
   const int totalColumns = (maxX - minX + 1) + leftPaddingColumns + rightPaddingColumns;
@@ -3003,6 +3065,71 @@ const MapTabContent::RegionVisual* MapTabContent::hitTestRegion(POINT pointInMap
   }
 
   return nullptr;
+}
+
+bool MapTabContent::hitTestMapCoordinate(POINT pointInMapClient, int& xCoordinate, int& yCoordinate) const
+{
+  if (!hasMapBounds_ || !appConfig_)
+  {
+    return false;
+  }
+
+  const POINT mapPoint {
+    pointInMapClient.x + scrollX_,
+    pointInMapClient.y + scrollY_
+  };
+
+  int coordinateParity = 0;
+  bool hasCoordinateParity = false;
+  for (const auto& visual : visibleRegions_)
+  {
+    if (!visual.region)
+    {
+      continue;
+    }
+
+    coordinateParity = (visual.region->getXCoordinate() + visual.region->getYCoordinate()) & 1;
+    hasCoordinateParity = true;
+    break;
+  }
+
+  const int hexWidth = (std::max)(12, appConfig_->getMapHexWidth());
+  const int hexHeight = (std::max)(14, static_cast<int>(std::lround(static_cast<double>(hexWidth) * std::sqrt(3.0) / 2.0)));
+  const int columnStep = (std::max)(10, static_cast<int>(std::lround(hexWidth * 0.75)));
+  const int rowStep = hexHeight;
+
+  for (int x = mapMinX_ - mapLeftPaddingColumns_; x <= mapMaxX_ + mapRightPaddingColumns_; ++x)
+  {
+    for (int y = mapMinY_; y <= mapMaxY_; ++y)
+    {
+      if (hasCoordinateParity && (((x + y) & 1) != coordinateParity))
+      {
+        continue;
+      }
+
+      const int mapColumn = (x - mapMinX_) + mapLeftPaddingColumns_;
+      const double mapRow = static_cast<double>(y - mapMinY_) / 2.0;
+      const int centerX = kMargin + mapColumn * columnStep + (hexWidth / 2);
+      const int centerY = kMargin + static_cast<int>(std::lround(mapRow * rowStep)) + (hexHeight / 2);
+
+      const std::array<POINT, 6> polygon = buildHexagonPolygon(centerX, centerY, hexWidth);
+      HRGN region = CreatePolygonRgn(polygon.data(), static_cast<int>(polygon.size()), WINDING);
+      const bool inside = region != nullptr && PtInRegion(region, mapPoint.x, mapPoint.y) != FALSE;
+      if (region)
+      {
+        DeleteObject(region);
+      }
+
+      if (inside)
+      {
+        xCoordinate = wrapMapXCoordinate(x, mapMinX_, mapMaxX_);
+        yCoordinate = y;
+        return true;
+      }
+    }
+  }
+
+  return false;
 }
 
 std::array<POINT, 6> MapTabContent::buildHexagonPolygon(int centerX, int centerY, int hexWidth) const

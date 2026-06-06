@@ -33,6 +33,7 @@
 #include "GUI/FactionsTabContent.hpp"
 #include "GUI/ItemsTabContent.hpp"
 #include "GUI/MapTabContent.hpp"
+#include "GUI/ResourceIds.hpp"
 #include "GUI/ReportsTabContent.hpp"
 #include "GUI/SkillsTabContent.hpp"
 #include "GUI/SettingsDialog.hpp"
@@ -425,6 +426,218 @@ namespace
     }
   }
 
+  std::wstring buildAboutDialogText()
+  {
+    return std::wstring(MainWindow::kAboutAppName)
+           + L"\r\n\r\n"
+           + MainWindow::kAboutLoremIpsum
+           + L"\r\n\r\nVersion "
+           + MainWindow::kAboutVersion;
+  }
+
+  LRESULT CALLBACK aboutWindowProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
+  {
+    switch (msg)
+    {
+      case WM_CREATE:
+      {
+        auto* createStruct = reinterpret_cast<LPCREATESTRUCTW>(lp);
+
+        RECT clientRect {};
+        GetClientRect(hwnd, &clientRect);
+
+        const int margin = 16;
+        const int buttonWidth = 90;
+        const int buttonHeight = 28;
+        const int iconSize = std::max(32, GetSystemMetrics(SM_CXICON) * 2);
+        const int iconY = margin;
+        const int iconX = margin;
+        const int textX = iconX + iconSize + 16;
+        const int textY = margin + 2;
+        const int textWidth = clientRect.right - textX - margin;
+        const int textHeight = clientRect.bottom - textY - buttonHeight - (margin * 2);
+
+        HICON largeIcon = reinterpret_cast<HICON>(
+          LoadImageW(createStruct->hInstance,
+                     MAKEINTRESOURCEW(IDI_APP_ICON),
+                     IMAGE_ICON,
+                     iconSize,
+                     iconSize,
+                     LR_DEFAULTCOLOR));
+        if (largeIcon == nullptr)
+        {
+          largeIcon = LoadIconW(nullptr, IDI_APPLICATION);
+        }
+        SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(largeIcon));
+
+        HWND iconControl = CreateWindowExW(
+          0,
+          L"STATIC",
+          nullptr,
+          WS_CHILD | WS_VISIBLE | SS_ICON,
+          iconX,
+          iconY,
+          iconSize,
+          iconSize,
+          hwnd,
+          nullptr,
+          createStruct->hInstance,
+          nullptr);
+        if (iconControl != nullptr)
+        {
+          SendMessageW(iconControl, STM_SETIMAGE, IMAGE_ICON, reinterpret_cast<LPARAM>(largeIcon));
+        }
+
+        const std::wstring aboutText = buildAboutDialogText();
+        HWND textControl = CreateWindowExW(
+          0,
+          L"STATIC",
+          aboutText.c_str(),
+          WS_CHILD | WS_VISIBLE | SS_LEFT,
+          textX,
+          textY,
+          textWidth,
+          textHeight,
+          hwnd,
+          nullptr,
+          createStruct->hInstance,
+          nullptr);
+
+        HWND okButton = CreateWindowExW(
+          0,
+          L"BUTTON",
+          L"OK",
+          WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON,
+          (clientRect.right - buttonWidth) / 2,
+          clientRect.bottom - margin - buttonHeight,
+          buttonWidth,
+          buttonHeight,
+          hwnd,
+          reinterpret_cast<HMENU>(IDOK),
+          createStruct->hInstance,
+          nullptr);
+
+        HFONT guiFont = reinterpret_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
+        if (textControl != nullptr)
+        {
+          SendMessageW(textControl, WM_SETFONT, reinterpret_cast<WPARAM>(guiFont), TRUE);
+        }
+        if (okButton != nullptr)
+        {
+          SendMessageW(okButton, WM_SETFONT, reinterpret_cast<WPARAM>(guiFont), TRUE);
+          SetFocus(okButton);
+        }
+
+        return 0;
+      }
+
+      case WM_COMMAND:
+        if (LOWORD(wp) == IDOK)
+        {
+          DestroyWindow(hwnd);
+        }
+        return 0;
+
+      case WM_CLOSE:
+        DestroyWindow(hwnd);
+        return 0;
+
+      case WM_DESTROY:
+      {
+        HICON iconHandle = reinterpret_cast<HICON>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
+        if (iconHandle != nullptr)
+        {
+          DestroyIcon(iconHandle);
+        }
+        return 0;
+      }
+    }
+
+    return DefWindowProcW(hwnd, msg, wp, lp);
+  }
+
+  bool registerAboutDialogClass(HINSTANCE instance)
+  {
+    static bool registered = false;
+    if (registered)
+    {
+      return true;
+    }
+
+    WNDCLASSEXW wc {};
+    wc.cbSize = sizeof(wc);
+    wc.lpfnWndProc = aboutWindowProc;
+    wc.hInstance = instance;
+    wc.lpszClassName = L"WindowsAppAboutDialog";
+    wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+    //wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
+    wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_BTNFACE + 1);
+    wc.hIcon = LoadIconW(instance, MAKEINTRESOURCEW(IDI_APP_ICON));
+    wc.hIconSm = LoadIconW(instance, MAKEINTRESOURCEW(IDI_APP_ICON));
+
+    const ATOM result = RegisterClassExW(&wc);
+    if (result == 0 && GetLastError() != ERROR_CLASS_ALREADY_EXISTS)
+    {
+      return false;
+    }
+
+    registered = true;
+    return true;
+  }
+
+  void showAboutDialog(HWND parent, HINSTANCE instance)
+  {
+    if (!registerAboutDialogClass(instance))
+    {
+      MessageBoxW(parent, L"Unable to open the About window.", L"About", MB_OK | MB_ICONERROR);
+      return;
+    }
+
+    const int width = 640;
+    const int height = 280;
+    RECT parentRect {};
+    GetWindowRect(parent, &parentRect);
+    const int x = parentRect.left + ((parentRect.right - parentRect.left) - width) / 2;
+    const int y = parentRect.top + ((parentRect.bottom - parentRect.top) - height) / 2;
+
+    HWND dialog = CreateWindowExW(
+      WS_EX_DLGMODALFRAME,
+      L"WindowsAppAboutDialog",
+      L"About",
+      WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU,
+      x,
+      y,
+      width,
+      height,
+      parent,
+      nullptr,
+      instance,
+      nullptr);
+
+    if (dialog == nullptr)
+    {
+      MessageBoxW(parent, L"Unable to open the About window.", L"About", MB_OK | MB_ICONERROR);
+      return;
+    }
+
+    EnableWindow(parent, FALSE);
+    ShowWindow(dialog, SW_SHOW);
+    UpdateWindow(dialog);
+
+    MSG msg {};
+    while (IsWindow(dialog) && GetMessageW(&msg, nullptr, 0, 0))
+    {
+      TranslateMessage(&msg);
+      DispatchMessageW(&msg);
+    }
+
+    if (IsWindow(parent))
+    {
+      EnableWindow(parent, TRUE);
+      SetActiveWindow(parent);
+    }
+  }
+
   bool saveTextFile(const std::wstring& filePath,
                     const std::wstring& content,
                     std::wstring& errorMessage)
@@ -545,10 +758,16 @@ bool MainWindow::create(HINSTANCE instance, AppData& appData)
   wc.lpfnWndProc   = wndProc;
   wc.hInstance     = instance;
   wc.hCursor       = LoadCursorW(nullptr, IDC_ARROW);
-  wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
+  //wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
+  wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_BTNFACE + 1);
   wc.lpszClassName = kClassName;
-  wc.hIcon         = LoadIconW(nullptr, IDI_APPLICATION);
-  wc.hIconSm       = LoadIconW(nullptr, IDI_APPLICATION);
+  HICON appIcon = LoadIconW(instance_, MAKEINTRESOURCEW(IDI_APP_ICON));
+  if (appIcon == nullptr)
+  {
+    appIcon = LoadIconW(nullptr, IDI_APPLICATION);
+  }
+  wc.hIcon         = appIcon;
+  wc.hIconSm       = appIcon;
 
   if (!RegisterClassExW(&wc))
   {
@@ -1094,12 +1313,7 @@ LRESULT MainWindow::handleMessage(UINT msg, WPARAM wp, LPARAM lp)
 
         case IDM_HELP_ABOUT:
         {
-          std::wstring aboutText = std::wstring(MainWindow::kAboutAppName)
-                                 + L"\n\n"
-                                 + MainWindow::kAboutLoremIpsum
-                                 + L"\n\nVersion "
-                                 + MainWindow::kAboutVersion;
-          MessageBoxW(hwnd_, aboutText.c_str(), L"About", MB_OK | MB_ICONINFORMATION);
+          showAboutDialog(hwnd_, instance_);
           return 0;
         }
       }

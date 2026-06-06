@@ -196,6 +196,7 @@ private:
   void updateMapScrollbars();
   void paintMap(HDC hdc) const;
   const RegionVisual* hitTestRegion(POINT pointInMapClient) const;
+  bool hitTestMapCoordinate(POINT pointInMapClient, int& xCoordinate, int& yCoordinate) const;
   std::array<POINT, 6> buildHexagonPolygon(int centerX, int centerY, int hexWidth) const;
   void populateUnitsForSelectedRegion();
   void populateItemsForSelectedUnit(const Unit* unit);

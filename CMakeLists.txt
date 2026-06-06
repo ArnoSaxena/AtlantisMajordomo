@@ -9,6 +9,7 @@ if(NOT CMAKE_CONFIGURATION_TYPES)
 endif()
 
 add_executable(AtlantisMajordomo WIN32
+  src/GUI/AtlantisMajordomo.rc
   src/AppConfig.cpp
   src/Data/AppData.cpp
   src/Data/Commands.cpp

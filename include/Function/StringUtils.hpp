@@ -29,5 +29,4 @@ namespace StringUtils
     std::wstring toLower(std::wstring value);
     std::wstring toUpper(std::wstring value);
     int parseIntSafe(const std::wstring& text);
-    void appendUnicodeEscape(std::wstring& result, unsigned int codeUnit);
 }
