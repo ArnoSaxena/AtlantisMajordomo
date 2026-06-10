@@ -69,4 +69,30 @@ namespace StringUtils
             return 0;
         }
     }
+
+    std::wstring toCRLF(const std::wstring& input)
+    {
+        std::wstring result;
+        result.reserve(input.size());
+
+        for (size_t i = 0; i < input.size(); ++i)
+        {
+            if (input[i] == L'\n')
+            {
+                if (i > 0 && input[i - 1] == L'\r')
+                {
+                    result += L'\n';
+                }
+                else
+                {
+                    result += L"\r\n";
+                }
+            }
+            else
+            {
+                result += input[i];
+            }
+        }
+        return result;
+    }
 }

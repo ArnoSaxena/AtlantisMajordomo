@@ -27,10 +27,100 @@
 #include "Data/AppData.hpp"
 #include "GUI/MainWindow.hpp"
 
+#include <chrono>
 #include <exception>
+#include <fstream>
+#include <iomanip>
+#include <locale>
+#include <mutex>
 #include <sstream>
 #include <string>
 #include <windows.h>
+
+
+// #define DEBUG
+#ifdef DEBUG
+static std::wofstream g_debugFile;
+static std::mutex g_logMutex;
+#endif
+
+void InitDebug()
+{
+#ifdef DEBUG
+    using namespace std::chrono;
+
+    auto now = system_clock::now();
+    std::time_t t = system_clock::to_time_t(now);
+
+    struct tm timeinfo;
+    localtime_s(&timeinfo, &t);
+
+    std::wostringstream filename;
+    filename << L"debug_"
+             << std::put_time(&timeinfo, L"%Y%m%d_%H%M%S")
+             << L".txt";
+
+    g_debugFile.open(filename.str().c_str(), std::ios::out | std::ios::app);
+    g_debugFile.imbue(std::locale(""));
+#endif
+}
+
+std::wstring GetTimestamp()
+{
+    using namespace std::chrono;
+
+    auto now = system_clock::now();
+    auto ms = duration_cast<milliseconds>(now.time_since_epoch()) % 1000;
+
+    std::time_t t = system_clock::to_time_t(now);
+
+    struct tm timeinfo;
+    localtime_s(&timeinfo, &t);
+
+    std::wostringstream oss;
+    oss << std::put_time(&timeinfo, L"[%d.%m.%y %H:%M:%S")
+        << L"." << std::setw(3) << std::setfill(L'0') << ms.count() << L"] ";
+
+    return oss.str();
+}
+
+void DebugLog([[maybe_unused]] const std::wstring& text)
+{
+#ifdef DEBUG
+    std::lock_guard<std::mutex> lock(g_logMutex);
+
+    if (g_debugFile.is_open())
+    {
+        g_debugFile << GetTimestamp() << text << std::endl;
+    }
+#endif
+}
+
+void DebugLog([[maybe_unused]] LPCWSTR text)
+{
+#ifdef DEBUG
+    std::lock_guard<std::mutex> lock(g_logMutex);
+
+    if (g_debugFile.is_open())
+    {
+        if (text)
+            g_debugFile << GetTimestamp() << text << std::endl;
+        else
+            g_debugFile << GetTimestamp() << L"(null)" << std::endl;
+    }
+#endif
+}
+
+void ShutdownDebug()
+{
+#ifdef DEBUG
+    if (g_debugFile.is_open())
+    {
+        g_debugFile.flush();
+        g_debugFile.close();
+    }
+#endif
+}
 
 namespace
 {
@@ -137,6 +227,10 @@ int WINAPI wWinMain(
   _In_     LPWSTR    /*cmdLine*/,
   _In_     int       showCmd)
 {
+  InitDebug();
+  DebugLog(L"Application started");
+  int appResult = 0;
+
   SetUnhandledExceptionFilter(topLevelExceptionFilter);
   std::set_terminate(terminateHandler);
 
@@ -147,11 +241,16 @@ int WINAPI wWinMain(
 
     if (!window.create(instance, appData))
     {
-      MessageBoxW(nullptr, L"Failed to create the main window.", L"Error", MB_ICONERROR | MB_OK);
-      return 1;
+      LPCWSTR errorMessage {L"Failed to create the main window."};
+      DebugLog(std::wstring(errorMessage));
+      MessageBoxW(nullptr, errorMessage, L"Error", MB_ICONERROR | MB_OK);
+      appResult = 1;
     }
-
-    return window.run(showCmd);
+    else
+    {
+      appResult = window.run(showCmd);
+      DebugLog(L"Application finished gracefully");
+    }
   }
   catch (const std::exception& ex)
   {
@@ -159,15 +258,21 @@ int WINAPI wWinMain(
     const std::wstring message =
       L"WindowsApp failed due to an unhandled C++ exception.\n\n"
       L"Details: " + std::wstring(whatText.begin(), whatText.end());
+    DebugLog(message);
     MessageBoxW(nullptr, message.c_str(), L"Fatal Error", MB_ICONERROR | MB_OK);
-    return 1;
+    appResult = 1;
   }
   catch (...)
   {
+    const std::wstring errorMessage{L"WindowsApp failed due to an unknown unhandled exception."};
+    DebugLog(errorMessage);
     MessageBoxW(nullptr,
-                L"WindowsApp failed due to an unknown unhandled exception.",
+                errorMessage.c_str(),
                 L"Fatal Error",
                 MB_ICONERROR | MB_OK);
-    return 1;
+    appResult = 1;
   }
+  
+  ShutdownDebug();
+  return appResult;
 }

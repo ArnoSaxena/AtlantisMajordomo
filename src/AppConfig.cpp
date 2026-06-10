@@ -25,6 +25,7 @@
 #endif
 
 #include "AppConfig.hpp"
+#include "DebugLog.hpp"
 #include "Function/JsonUtils.hpp"
 #include "Function/StringUtils.hpp"
 
@@ -48,23 +49,28 @@ AppConfig::AppConfig()
 
 bool AppConfig::load()
 {
+  DebugLog(L"AppConfig::load() - begin, path: " + configFilePath_);
   applyDefaults();
 
   std::wifstream file(configFilePath_);
   if (!file.is_open())
   {
+    DebugLog(L"AppConfig::load() - config file not found, creating defaults");
     // First run: create a deterministic config file with defaults.
     return save();
   }
 
+  DebugLog(L"AppConfig::load() - config file opened, reading content");
   const std::wstring content((std::istreambuf_iterator<wchar_t>(file)),
                             std::istreambuf_iterator<wchar_t>());
+  DebugLog(L"AppConfig::load() - content read, length: " + std::to_wstring(content.size()));
 
   std::wstring configuredSaveFilePath;
   if (JsonUtils::extractJsonStringField(content, L"saveFilePath", configuredSaveFilePath)
       && !configuredSaveFilePath.empty())
   {
     saveFilePath_ = configuredSaveFilePath;
+    DebugLog(L"AppConfig::load() - saveFilePath: " + saveFilePath_);
   }
 
   std::wstring configuredReportImportFolder;
@@ -72,6 +78,7 @@ bool AppConfig::load()
       && !configuredReportImportFolder.empty())
   {
     reportImportFolder_ = configuredReportImportFolder;
+    DebugLog(L"AppConfig::load() - reportImportFolder: " + reportImportFolder_);
   }
 
   bool hasExportOrdersFolder = false;
@@ -81,6 +88,7 @@ bool AppConfig::load()
   {
     hasExportOrdersFolder = true;
     exportOrdersFolder_ = configuredExportOrdersFolder;
+    DebugLog(L"AppConfig::load() - exportOrdersFolder: " + exportOrdersFolder_);
   }
 
   bool hasDataFilePath = false;
@@ -90,6 +98,7 @@ bool AppConfig::load()
   {
     hasDataFilePath = true;
     dataFilePath_ = configuredDataFilePath;
+    DebugLog(L"AppConfig::load() - dataFilePath: " + dataFilePath_);
   }
 
   bool hasMainWindowWidth = false;
@@ -101,6 +110,7 @@ bool AppConfig::load()
     {
       hasMainWindowWidth = true;
       mainWindowWidth_ = parsedWidth;
+      DebugLog(L"AppConfig::load() - mainWindowWidth: " + std::to_wstring(mainWindowWidth_));
     }
   }
 
@@ -113,6 +123,7 @@ bool AppConfig::load()
     {
       hasMainWindowHeight = true;
       mainWindowHeight_ = parsedHeight;
+      DebugLog(L"AppConfig::load() - mainWindowHeight: " + std::to_wstring(mainWindowHeight_));
     }
   }
 
@@ -125,6 +136,7 @@ bool AppConfig::load()
     {
       hasMapHexWidth = true;
       mapHexWidth_ = parsedMapHexWidth;
+      DebugLog(L"AppConfig::load() - mapHexWidth: " + std::to_wstring(mapHexWidth_));
     }
   }
 
@@ -143,6 +155,7 @@ bool AppConfig::load()
       onlyLeaderCanTeach_ = false;
       hasOnlyLeaderCanTeach = true;
     }
+    DebugLog(L"AppConfig::load() - onlyLeaderCanTeach: " + normalized);
   }
 
   bool hasLeaderMages = false;
@@ -160,6 +173,7 @@ bool AppConfig::load()
       leaderMages_ = false;
       hasLeaderMages = true;
     }
+    DebugLog(L"AppConfig::load() - leaderMages: " + normalized);
   }
 
   bool hasFlyingShipsCsv = false;
@@ -168,6 +182,7 @@ bool AppConfig::load()
   {
     flyingShipsCsv_ = StringUtils::trimWhitespace(configuredFlyingShipsCsv);
     hasFlyingShipsCsv = true;
+    DebugLog(L"AppConfig::load() - flyingShipsCsv: " + flyingShipsCsv_);
   }
 
   bool hasFullMonthOrdersCsv = false;
@@ -176,6 +191,7 @@ bool AppConfig::load()
   {
     fullMonthOrdersCsv_ = configuredFullMonthOrdersCsv;
     hasFullMonthOrdersCsv = true;
+    DebugLog(L"AppConfig::load() - fullMonthOrdersCsv: " + fullMonthOrdersCsv_);
   }
 
   bool hasMagicSkillTriggersCsv = false;
@@ -184,6 +200,7 @@ bool AppConfig::load()
   {
     magicSkillTriggersCsv_ = configuredMagicSkillTriggersCsv;
     hasMagicSkillTriggersCsv = true;
+    DebugLog(L"AppConfig::load() - magicSkillTriggersCsv: " + magicSkillTriggersCsv_);
   }
 
   bool hasColoursBlock = false;
@@ -194,11 +211,13 @@ bool AppConfig::load()
   if (JsonUtils::extractJsonObjectField(content, L"colours", coloursObject))
   {
     hasColoursBlock = true;
+    DebugLog(L"AppConfig::load() - colours block found");
 
     std::wstring regionsObject;
     if (JsonUtils::extractJsonObjectField(coloursObject, L"regions", regionsObject))
     {
       hasRegionsBlock = true;
+      DebugLog(L"AppConfig::load() - colours.regions block found");
       for (auto& regionColor : regionColors_)
       {
         std::wstring jsonRgb;
@@ -246,12 +265,18 @@ bool AppConfig::load()
       }
     }
   }
+  else
+  {
+    DebugLog(L"AppConfig::load() - colours block NOT found in config");
+  }
 
   if (!hasColoursBlock || !hasRegionsBlock || !hasRoadEntry || !hasStructureMarkerEntry || !hasMainWindowWidth || !hasMainWindowHeight || !hasMapHexWidth || !hasExportOrdersFolder || !hasDataFilePath || !hasOnlyLeaderCanTeach || !hasLeaderMages || !hasFlyingShipsCsv || !hasFullMonthOrdersCsv || !hasMagicSkillTriggersCsv)
   {
+    DebugLog(L"AppConfig::load() - missing fields detected, re-saving config with defaults");
     save();
   }
 
+  DebugLog(L"AppConfig::load() - completed successfully");
   return true;
 }
 

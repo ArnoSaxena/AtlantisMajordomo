@@ -527,7 +527,9 @@ bool ReportsTabContent::handleCommand(int commandId, int /*notificationCode*/)
   return false;
 }
 
-void ReportsTabContent::loadReport(bool syncFactionFromHeader)
+void ReportsTabContent::loadReport(bool syncFactionFromHeader,
+                                  bool rememberReportImportFolder,
+                                  bool rememberDataFilePath)
 {
   if (!appData_)
   {
@@ -535,7 +537,7 @@ void ReportsTabContent::loadReport(bool syncFactionFromHeader)
   }
 
   auto& repository = appData_->reportRepository();
-  std::wstring filePath = showFileOpenDialog();
+  std::wstring filePath = showFileOpenDialog(rememberDataFilePath);
   if (filePath.empty())
   {
     return;
@@ -543,10 +545,26 @@ void ReportsTabContent::loadReport(bool syncFactionFromHeader)
 
   if (appConfig_)
   {
-    const std::filesystem::path selectedPath(filePath);
-    if (selectedPath.has_parent_path())
+    bool shouldSaveConfig = false;
+
+    if (rememberReportImportFolder)
     {
-      appConfig_->setReportImportFolder(selectedPath.parent_path().wstring());
+      const std::filesystem::path selectedPath(filePath);
+      if (selectedPath.has_parent_path())
+      {
+        appConfig_->setReportImportFolder(selectedPath.parent_path().wstring());
+        shouldSaveConfig = true;
+      }
+    }
+
+    if (rememberDataFilePath)
+    {
+      appConfig_->setDataFilePath(filePath);
+      shouldSaveConfig = true;
+    }
+
+    if (shouldSaveConfig)
+    {
       appConfig_->save();
     }
   }
@@ -770,17 +788,41 @@ void ReportsTabContent::updateDetailPane(int selectedRow)
   SetWindowTextW(visitedRegionsLabel_, visitedRegionsText.c_str());
 }
 
-std::wstring ReportsTabContent::showFileOpenDialog() const
+std::wstring ReportsTabContent::showFileOpenDialog(bool useDataFileDialog) const
 {
   wchar_t szFile[MAX_PATH] = L"";
   wchar_t szDir[MAX_PATH] = L"";
 
-  if (appConfig_ && !appConfig_->getReportImportFolder().empty())
+  if (appConfig_)
   {
-    wcsncpy_s(szDir,
-              sizeof(szDir) / sizeof(szDir[0]),
-              appConfig_->getReportImportFolder().c_str(),
-              _TRUNCATE);
+    if (useDataFileDialog)
+    {
+      const std::wstring configuredDataFilePath = appConfig_->getDataFilePath();
+      if (!configuredDataFilePath.empty())
+      {
+        wcsncpy_s(szFile,
+                  sizeof(szFile) / sizeof(szFile[0]),
+                  configuredDataFilePath.c_str(),
+                  _TRUNCATE);
+
+        const std::filesystem::path dataPath(configuredDataFilePath);
+        if (dataPath.has_parent_path())
+        {
+          const std::wstring dataDir = dataPath.parent_path().wstring();
+          wcsncpy_s(szDir,
+                    sizeof(szDir) / sizeof(szDir[0]),
+                    dataDir.c_str(),
+                    _TRUNCATE);
+        }
+      }
+    }
+    else if (!appConfig_->getReportImportFolder().empty())
+    {
+      wcsncpy_s(szDir,
+                sizeof(szDir) / sizeof(szDir[0]),
+                appConfig_->getReportImportFolder().c_str(),
+                _TRUNCATE);
+    }
   }
 
   OPENFILENAMEW ofn {};
@@ -789,8 +831,16 @@ std::wstring ReportsTabContent::showFileOpenDialog() const
   ofn.lpstrFile = szFile;
   ofn.nMaxFile = sizeof(szFile) / sizeof(szFile[0]);
   ofn.lpstrInitialDir = szDir[0] != L'\0' ? szDir : nullptr;
-  ofn.lpstrFilter = L"Report Files (*.rep)\0*.rep\0Text Files (*.txt)\0*.txt\0All Files (*.*)\0*.*\0";
-  ofn.nFilterIndex = 3;
+  if (useDataFileDialog)
+  {
+    ofn.lpstrFilter = L"Data Files (*.txt;*.dat)\0*.txt;*.dat\0All Files (*.*)\0*.*\0";
+    ofn.nFilterIndex = 1;
+  }
+  else
+  {
+    ofn.lpstrFilter = L"Report Files (*.rep)\0*.rep\0Text Files (*.txt)\0*.txt\0All Files (*.*)\0*.*\0";
+    ofn.nFilterIndex = 3;
+  }
   ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
 
   if (GetOpenFileNameW(&ofn))

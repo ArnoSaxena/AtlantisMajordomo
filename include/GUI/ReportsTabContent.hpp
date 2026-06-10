@@ -60,7 +60,9 @@ public:
   bool handleCommand(int commandId, int notificationCode = 0);
   bool handleMouseMessage(UINT msg, WPARAM wp, LPARAM lp);
 
-  void loadReport(bool syncFactionFromHeader = true);
+  void loadReport(bool syncFactionFromHeader = true,
+                  bool rememberReportImportFolder = true,
+                  bool rememberDataFilePath = false);
   void refresh();
 
 private:
@@ -87,6 +89,6 @@ private:
   void clearReports();
   void updateReportsList();
   void updateDetailPane(int selectedRow);
-  std::wstring showFileOpenDialog() const;
+  std::wstring showFileOpenDialog(bool useDataFileDialog) const;
   RECT getHorizontalSplitterRect() const;
 };

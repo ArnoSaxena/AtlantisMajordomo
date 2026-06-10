@@ -39,11 +39,13 @@
 #include "Data/StructureRepository.hpp"
 #include "Data/StructInfoRepository.hpp"
 #include "Data/UnitRepository.hpp"
+#include "DebugLog.hpp"
 #include "Function/MonthUtils.hpp"
 #include "Function/StringUtils.hpp"
 
 bool Report::loadFromFile(const std::wstring& filePath)
 {
+  DebugLog(L"Report::loadFromFile() - begin: " + filePath);
   clear();
   filePath_ = filePath;
 
@@ -51,9 +53,11 @@ bool Report::loadFromFile(const std::wstring& filePath)
   if (!file.is_open())
   {
     lastError_ = L"Failed to open file: " + filePath;
+    DebugLog(L"Report::loadFromFile() - ERROR: failed to open file");
     return false;
   }
 
+  DebugLog(L"Report::loadFromFile() - file opened, reading content");
   // Set up UTF-8 codecvt for proper wide character handling
   std::wstringstream buffer;
   buffer << file.rdbuf();
@@ -63,11 +67,18 @@ bool Report::loadFromFile(const std::wstring& filePath)
   if (content_.empty())
   {
     lastError_ = L"File is empty or cannot be read";
+    DebugLog(L"Report::loadFromFile() - ERROR: file is empty");
     return false;
   }
 
+  DebugLog(L"Report::loadFromFile() - content length: " + std::to_wstring(content_.size()) + L" chars");
   splitIntoLines();
+  DebugLog(L"Report::loadFromFile() - split into " + std::to_wstring(lines_.size()) + L" lines");
   parseAtlantisHeader();
+  DebugLog(L"Report::loadFromFile() - header parsed: faction=" + factionName_
+           + L" (" + std::to_wstring(factionNumber_) + L")"
+           + L", month=" + std::to_wstring(month_)
+           + L", year=" + std::to_wstring(year_));
   return true;
 }
 
@@ -307,6 +318,7 @@ void Report::splitIntoLines()
 
 void Report::parseAtlantisHeader()
 {
+  DebugLog(L"Report::parseAtlantisHeader() - begin");
   static const std::wstring kMarker = L"Atlantis Report For:";
   static const std::wstring kFactionStatusMarker = L"Faction Status:";
   static const std::wregex factionStatusEntryPattern(LR"(^([A-Za-z ]+):\s*(\d+)\s*\((\d+)\)\s*$)");
@@ -516,6 +528,7 @@ void Report::parseAtlantisHeader()
     factionUnclaimedSilver_ = std::stoi(unclaimedMatch[1].str());
     break;
   }
+  DebugLog(L"Report::parseAtlantisHeader() - done");
 }
 
 void Report::parseRegions(RegionRepository& regionRepository,
@@ -526,6 +539,7 @@ void Report::parseRegions(RegionRepository& regionRepository,
                           int shipStructureIdThreshold,
                           const std::vector<std::wstring>& flyingShipTypeTokens)
 {
+  DebugLog(L"Report::parseRegions() - begin");
   (void)shipStructureIdThreshold;
   (void)flyingShipTypeTokens;
 
@@ -746,6 +760,7 @@ void Report::parseRegions(RegionRepository& regionRepository,
         startsWithIgnoreCase(topLevelLine, L"Battle statistics:"))
     {
       inBattleSection = true;
+      DebugLog(L"Report::parseRegions() - entering battle section skip at line " + std::to_wstring(index));
       continue;
     }
 
@@ -756,6 +771,7 @@ void Report::parseRegions(RegionRepository& regionRepository,
       if (std::regex_match(topLevelLine, resumedRegionMatch, regionHeaderStartPattern))
       {
         inBattleSection = false;
+        DebugLog(L"Report::parseRegions() - resuming after battle section at line " + std::to_wstring(index));
       }
       else
       {
@@ -807,6 +823,11 @@ void Report::parseRegions(RegionRepository& regionRepository,
       // match[10] = dollar amount (with contains/peasants clause)
       // match[11] = dollar amount (without contains/peasants clause)
 
+      DebugLog(L"Report::parseRegions() - matched region: " + match[1].str()
+               + L" (" + match[2].str() + L"," + match[3].str()
+               + (match[4].matched ? L"," + match[4].str() : L"")
+               + L") in " + match[5].str());
+
       try
       {
         const int xCoord = std::stoi(match[2].str());
@@ -852,6 +873,10 @@ void Report::parseRegions(RegionRepository& regionRepository,
         const bool regionAlreadyExists =
           regionRepository.findByCoordinates(xCoord, yCoord, zCoord) != nullptr;
 
+        DebugLog(L"Report::parseRegions() - upserting region (" + std::to_wstring(xCoord)
+                 + L"," + std::to_wstring(yCoord) + L"," + std::to_wstring(zCoord)
+                 + L") existing=" + (regionAlreadyExists ? L"yes" : L"no"));
+
         if (regionRepository.upsertRegion(
               xCoord,
               yCoord,
@@ -875,12 +900,48 @@ void Report::parseRegions(RegionRepository& regionRepository,
             foundRegions_++;
           }
         }
+        DebugLog(L"Report::parseRegions() - upsert done, total found=" + std::to_wstring(foundRegions_));
 
-        Region* parsedRegion = regionRepository.findByCoordinates(xCoord, yCoord, zCoord);
-        if (parsedRegion != nullptr)
+        auto getCurrentParsedRegion = [&]() -> Region*
+        {
+          return regionRepository.findByCoordinates(xCoord, yCoord, zCoord);
+        };
+
+        if (Region* parsedRegion = getCurrentParsedRegion(); parsedRegion != nullptr)
         {
           parsedRegion->clearExitDirections();
           parsedRegion->setResources({});
+
+          std::size_t regionReportEndIndex = lines_.size();
+          for (std::size_t reportIndex = index + 1; reportIndex < lines_.size(); ++reportIndex)
+          {
+            const std::wstring reportLineTrimmed = trim(lines_[reportIndex]);
+            if (startsWithIgnoreCase(reportLineTrimmed, L"Battles during turn:") ||
+                startsWithIgnoreCase(reportLineTrimmed, L"Battle reports:") ||
+                startsWithIgnoreCase(reportLineTrimmed, L"Battle statistics:"))
+            {
+              regionReportEndIndex = reportIndex;
+              break;
+            }
+
+            std::wsmatch nextRegionMatch;
+            if (std::regex_match(lines_[reportIndex], nextRegionMatch, regionHeaderStartPattern))
+            {
+              regionReportEndIndex = reportIndex;
+              break;
+            }
+          }
+
+          std::wstring regionReportText;
+          for (std::size_t reportIndex = index; reportIndex < regionReportEndIndex; ++reportIndex)
+          {
+            if (reportIndex > index)
+            {
+              regionReportText += L"\n";
+            }
+            regionReportText += lines_[reportIndex];
+          }
+          parsedRegion->setRegionReport(regionReportText);
         }
 
         const std::size_t regionBodyStart = index + continuationLineCount + 1;
@@ -900,11 +961,13 @@ void Report::parseRegions(RegionRepository& regionRepository,
           if (std::regex_match(lines_[scanIndex], exitsHeaderMatch, exitsHeaderPattern))
           {
             exitsHeaderIndex = scanIndex;
+            DebugLog(L"Report::parseRegions() - found Exits: header at scan line " + std::to_wstring(scanIndex));
             break;
           }
 
           std::wsmatch entertainmentMatch;
-          if (parsedRegion != nullptr &&
+            Region* parsedRegion = getCurrentParsedRegion();
+            if (parsedRegion != nullptr &&
               std::regex_match(lines_[scanIndex], entertainmentMatch, entertainmentPattern))
           {
             try
@@ -915,6 +978,7 @@ void Report::parseRegions(RegionRepository& regionRepository,
           }
 
           const std::wstring trimmedScanLine = trim(lines_[scanIndex]);
+          parsedRegion = getCurrentParsedRegion();
           if (parsedRegion != nullptr && trimmedScanLine.rfind(L"Products:", 0) == 0)
           {
             std::wstring productsText = trim(trimmedScanLine.substr(9));
@@ -983,6 +1047,7 @@ void Report::parseRegions(RegionRepository& regionRepository,
             scanIndex += consumedProductLines;
           }
 
+          parsedRegion = getCurrentParsedRegion();
           if (parsedRegion != nullptr && trimmedScanLine.rfind(L"Wanted:", 0) == 0)
           {
             std::wstring wantedText = trim(trimmedScanLine.substr(7));
@@ -1056,6 +1121,7 @@ void Report::parseRegions(RegionRepository& regionRepository,
             }
           }
 
+          parsedRegion = getCurrentParsedRegion();
           if (parsedRegion != nullptr && trimmedScanLine.rfind(L"For Sale:", 0) == 0)
           {
             std::wstring forSaleText = trim(trimmedScanLine.substr(9));
@@ -1214,7 +1280,7 @@ void Report::parseRegions(RegionRepository& regionRepository,
 
             try
             {
-              if (parsedRegion != nullptr)
+              if (Region* parsedRegion = getCurrentParsedRegion(); parsedRegion != nullptr)
               {
                 parsedRegion->addExitDirection(exitMatch[1].str());
               }
@@ -1253,6 +1319,9 @@ void Report::parseRegions(RegionRepository& regionRepository,
                 }
               }
 
+              DebugLog(L"Report::parseRegions() - parsed exit " + exitMatch[1].str()
+                       + L" -> (" + std::to_wstring(exitX) + L"," + std::to_wstring(exitY)
+                       + L"," + std::to_wstring(exitZ) + L")");
               ++exitsParsed;
               exitIndex += consumedContinuationLines;
             }
@@ -1261,6 +1330,7 @@ void Report::parseRegions(RegionRepository& regionRepository,
               continue;
             }
           }
+          DebugLog(L"Report::parseRegions() - exits done, exitsParsed=" + std::to_wstring(exitsParsed));
 
           int currentStructureId = 0;
           bool currentStructureOwnerAssigned = false;
@@ -1297,6 +1367,9 @@ void Report::parseRegions(RegionRepository& regionRepository,
 
                 const std::wstring structureName = trim(structureText.substr(0, idOpenPos));
                 const int structureId = std::stoi(trim(structureText.substr(idOpenPos + 1, idClosePos - idOpenPos - 1)));
+
+                DebugLog(L"Report::parseRegions() - parsing structure: " + structureName
+                         + L" [" + std::to_wstring(structureId) + L"]");
 
                 const std::wstring afterColon = trim(structureText.substr(colonPos + 1));
                 const std::size_t commaPos = afterColon.find(L',');
@@ -1433,6 +1506,9 @@ void Report::parseRegions(RegionRepository& regionRepository,
             {
               const std::wstring unitName = trim(unitHeaderMatch[1].str());
               const int unitNumber = std::stoi(unitHeaderMatch[2].str());
+              DebugLog(L"Report::parseRegions() - parsing unit: " + unitName
+                       + L" (" + std::to_wstring(unitNumber) + L")"
+                       + (currentStructureId != 0 ? L" in structure " + std::to_wstring(currentStructureId) : L""));
               const int parsedStructureId = currentStructureId;
               std::wstring remainder = trim(unitHeaderMatch[3].str());
 
@@ -1693,12 +1769,15 @@ void Report::parseRegions(RegionRepository& regionRepository,
       }
     }
   }
+  DebugLog(L"Report::parseRegions() - done, foundRegions=" + std::to_wstring(foundRegions_)
+           + L", visitedRegions=" + std::to_wstring(visitedRegions_));
 }
 
 void Report::parseBattles(BattleRepository& battleRepository,
                           RegionRepository& regionRepository,
                           UnitRepository& unitRepository)
 {
+  DebugLog(L"Report::parseBattles() - begin");
   auto trim = [](std::wstring value)
   {
     return StringUtils::trimWhitespace(value);
@@ -2070,10 +2149,12 @@ void Report::parseBattles(BattleRepository& battleRepository,
 
     storeBattle(battleLines);
   }
+  DebugLog(L"Report::parseBattles() - done");
 }
 
 void Report::parseEvents(EventRepository& eventRepository)
 {
+  DebugLog(L"Report::parseEvents() - begin");
   auto trim = [](std::wstring value)
   {
     while (!value.empty() && iswspace(value.front()))
@@ -2196,10 +2277,12 @@ void Report::parseEvents(EventRepository& eventRepository)
 
   parseEventSection(errorsHeader, true);
   parseEventSection(eventsHeader, false);
+  DebugLog(L"Report::parseEvents() - done");
 }
 
 void Report::parseOrders(FactionRepository& factionRepository, UnitRepository& unitRepository)
 {
+  DebugLog(L"Report::parseOrders() - begin");
   auto trim = [](std::wstring value)
   {
     while (!value.empty() && iswspace(value.front()))
@@ -2374,10 +2457,12 @@ void Report::parseOrders(FactionRepository& factionRepository, UnitRepository& u
       }
     }
   }
+  DebugLog(L"Report::parseOrders() - done");
 }
 
 void Report::parseItems(ItemRepository& itemRepository)
 {
+  DebugLog(L"Report::parseItems() - begin");
   auto trim = [](std::wstring value)
   {
     while (!value.empty() && iswspace(value.front()))
@@ -2687,10 +2772,12 @@ void Report::parseItems(ItemRepository& itemRepository)
       index += continuationLineCount;
     }
   }
+  DebugLog(L"Report::parseItems() - done");
 }
 
 void Report::parseStructures(StructInfoRepository& structInfoRepository, ItemRepository& itemRepository)
 {
+  DebugLog(L"Report::parseStructures() - begin");
   // Local utility to trim BOM, leading/trailing whitespace and normalize report text.
   auto trim = [](std::wstring value)
   {
@@ -2866,12 +2953,14 @@ void Report::parseStructures(StructInfoRepository& structInfoRepository, ItemRep
                                            item.getFlyCapacity() > 0,
                                            item.getIdentifierToken());
   }
+  DebugLog(L"Report::parseStructures() - done");
 }
 
 void Report::parseSkills(SkillRepository& skillRepository,
                          ItemRepository& itemRepository,
                          const std::vector<std::wstring>& magicSkillTriggerPhrases)
 {
+  DebugLog(L"Report::parseSkills() - begin");
   auto trim = [](std::wstring value)
   {
     if (!value.empty() && value.front() == 0xFEFF)
@@ -3207,4 +3296,5 @@ void Report::parseSkills(SkillRepository& skillRepository,
 
     index += continuationLineCount;
   }
+  DebugLog(L"Report::parseSkills() - done");
 }

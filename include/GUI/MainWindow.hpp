@@ -60,7 +60,7 @@ public:
   static constexpr wchar_t kAboutAppName[] = L"Atlantis Majordomo";
   static constexpr wchar_t kAboutLoremIpsum[] =
     L"Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.";
-  static constexpr wchar_t kAboutVersion[] = L"1.0.20";
+  static constexpr wchar_t kAboutVersion[] = L"1.1.0";
 
   /**
   * @brief Registers the window class and creates the main window.

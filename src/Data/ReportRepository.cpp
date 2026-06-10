@@ -31,6 +31,7 @@
 #include "Data/StructInfoRepository.hpp"
 #include "Data/OrderRepository.hpp"
 #include "Data/UnitRepository.hpp"
+#include "DebugLog.hpp"
 #include "Function/CommandSimulationService.hpp"
 #include "Function/FactionAttitudeUtils.hpp"
 #include "Function/StringUtils.hpp"
@@ -121,10 +122,12 @@ bool ReportRepository::addFromFile(const std::wstring& filePath,
                                   const std::vector<std::wstring>& magicSkillTriggerPhrases,
                                   bool syncFactionFromHeader)
 {
+  DebugLog(L"ReportRepository::addFromFile() - begin: " + filePath);
   Report report;
   if (!report.loadFromFile(filePath))
   {
     lastError_ = report.getLastError();
+    DebugLog(L"ReportRepository::addFromFile() - ERROR loading file: " + lastError_);
     return false;
   }
 
@@ -262,7 +265,13 @@ bool ReportRepository::addFromFile(const std::wstring& filePath,
     report.setFaction(factionRepository.findByNumber(factionNum));
   }
 
+  DebugLog(L"ReportRepository::addFromFile() - faction synced: " + factionName
+           + L" (" + std::to_wstring(factionNum) + L")"
+           + L", month=" + std::to_wstring(month)
+           + L", year=" + std::to_wstring(year));
+
   // Parse regions and units from the report and add/update them in repositories.
+  DebugLog(L"ReportRepository::addFromFile() - calling parseRegions");
   report.parseRegions(regionRepository,
                       unitRepository,
                       structureRepository,
@@ -270,12 +279,19 @@ bool ReportRepository::addFromFile(const std::wstring& filePath,
                       factionRepository,
                       shipStructureIdThreshold,
                       flyingShipTypeTokens);
+  DebugLog(L"ReportRepository::addFromFile() - calling parseBattles");
   report.parseBattles(battleRepository, regionRepository, unitRepository);
+  DebugLog(L"ReportRepository::addFromFile() - calling parseEvents");
   report.parseEvents(eventRepository);
+  DebugLog(L"ReportRepository::addFromFile() - calling parseOrders");
   report.parseOrders(factionRepository, unitRepository);
+  DebugLog(L"ReportRepository::addFromFile() - calling parseItems");
   report.parseItems(itemRepository);
+  DebugLog(L"ReportRepository::addFromFile() - calling parseStructures");
   report.parseStructures(structInfoRepository, itemRepository);
+  DebugLog(L"ReportRepository::addFromFile() - calling parseSkills");
   report.parseSkills(skillRepository, itemRepository, magicSkillTriggerPhrases);
+  DebugLog(L"ReportRepository::addFromFile() - all parse calls done, adding report to collection");
 
   reports_.push_back(std::move(report));
 
@@ -309,6 +325,7 @@ bool ReportRepository::addFromFile(const std::wstring& filePath,
   }
 
   lastError_.clear();
+  DebugLog(L"ReportRepository::addFromFile() - completed successfully");
   return true;
 }
 

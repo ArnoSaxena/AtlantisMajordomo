@@ -208,6 +208,11 @@ bool Region::isOcean() const
   return regionType_ == L"ocean";
 }
 
+void Region::setRegionReport(std::wstring regionReport)
+{
+  regionReport_ = std::move(regionReport);
+}
+
 // setter
 
 void Region::setMonth(int month)
@@ -403,4 +408,9 @@ void Region::setForSaleItem(std::wstring token, int amount, int price)
 void Region::setForSaleItemAfterOrders(std::wstring token, int amount, int price)
 {
   forSaleAfterOrders_[std::move(token)] = std::make_pair(amount, price);
+}
+
+const std::wstring& Region::getRegionReport() const
+{
+  return regionReport_;
 }

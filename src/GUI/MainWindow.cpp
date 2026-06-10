@@ -1236,7 +1236,7 @@ LRESULT MainWindow::handleMessage(UINT msg, WPARAM wp, LPARAM lp)
           }
           if (reportsTabContent_)
           {
-            reportsTabContent_->loadReport(false);
+            reportsTabContent_->loadReport(false, false, true);
           }
           refreshAllTabContents();
           return 0;

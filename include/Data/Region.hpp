@@ -100,6 +100,7 @@ public:
   const std::map<std::wstring, std::pair<int, int>>& getWantedAfterOrders() const;
   const std::map<std::wstring, std::pair<int, int>>& getForSale() const;
   const std::map<std::wstring, std::pair<int, int>>& getForSaleAfterOrders() const;
+  const std::wstring& getRegionReport() const;
 
   void setMonth(int month);
   void setYear(int year);
@@ -133,6 +134,9 @@ public:
   void setWantedItemAfterOrders(std::wstring token, int amount, int price);
   void setForSaleItem(std::wstring token, int amount, int price);
   void setForSaleItemAfterOrders(std::wstring token, int amount, int price);
+  void setRegionReport(std::wstring regionReport);
+
+
 
 private:
   int          xCoordinate_ { 0 };
@@ -162,4 +166,5 @@ private:
   std::map<std::wstring, std::pair<int, int>> wantedAfterOrders_;
   std::map<std::wstring, std::pair<int, int>> forSale_;
   std::map<std::wstring, std::pair<int, int>> forSaleAfterOrders_;
+  std::wstring regionReport_;
 };

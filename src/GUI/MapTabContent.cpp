@@ -69,6 +69,147 @@ constexpr int kMinMapWidth = 220;
 constexpr int kMinTopHeight = 160;
 constexpr int kMinBottomHeight = 140;
 constexpr int kZContextMenuBaseId = 4600;
+constexpr UINT kRegionContextShowTextEditorCommandId = 4750;
+constexpr wchar_t kReadOnlyTextPopupClassName[] = L"AtlantisMajordomoReadOnlyTextPopup";
+constexpr int kReadOnlyTextPopupEditId = 9001;
+
+LRESULT CALLBACK readOnlyTextPopupWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
+{
+  switch (msg)
+  {
+    case WM_CREATE:
+    {
+      const auto* createStruct = reinterpret_cast<const CREATESTRUCTW*>(lp);
+      const auto* initialText = static_cast<const std::wstring*>(createStruct->lpCreateParams);
+      HWND edit = CreateWindowExW(
+        WS_EX_CLIENTEDGE,
+        L"EDIT",
+        initialText ? initialText->c_str() : L"",
+        WS_CHILD | WS_VISIBLE | ES_LEFT | ES_MULTILINE | ES_AUTOVSCROLL | ES_AUTOHSCROLL |
+        ES_READONLY | WS_VSCROLL | WS_HSCROLL,
+        10,
+        10,
+        100,
+        100,
+        hwnd,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kReadOnlyTextPopupEditId)),
+        GetModuleHandleW(nullptr),
+        nullptr
+      );
+
+      SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(edit));
+      if (edit)
+      {
+        SendMessageW(edit, EM_SETREADONLY, TRUE, 0);
+      }
+      return 0;
+    }
+
+    case WM_SIZE:
+    {
+      HWND edit = reinterpret_cast<HWND>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
+      if (edit)
+      {
+        const int width = (std::max)(0, LOWORD(lp) - 20);
+        const int height = (std::max)(0, HIWORD(lp) - 20);
+        MoveWindow(edit, 10, 10, width, height, TRUE);
+      }
+      return 0;
+    }
+
+    case WM_SETFOCUS:
+    {
+      HWND edit = reinterpret_cast<HWND>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
+      if (edit)
+      {
+        SetFocus(edit);
+        return 0;
+      }
+      break;
+    }
+
+    case WM_CLOSE:
+      DestroyWindow(hwnd);
+      return 0;
+
+    case WM_NCDESTROY:
+      SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
+      return 0;
+  }
+
+  return DefWindowProcW(hwnd, msg, wp, lp);
+}
+
+void showReadOnlyTextPopup(HWND ownerWindow, const std::wstring& windowTitle, const std::wstring& text)
+{
+  HINSTANCE instance = GetModuleHandleW(nullptr);
+
+  static bool popupClassRegistered = false;
+  if (!popupClassRegistered)
+  {
+    WNDCLASSEXW popupClass {};
+    popupClass.cbSize = sizeof(popupClass);
+    popupClass.lpfnWndProc = readOnlyTextPopupWndProc;
+    popupClass.hInstance = instance;
+    popupClass.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+    popupClass.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
+    popupClass.lpszClassName = kReadOnlyTextPopupClassName;
+
+    if (!RegisterClassExW(&popupClass))
+    {
+      return;
+    }
+
+    popupClassRegistered = true;
+  }
+
+  constexpr int clientWidth = 760;
+  constexpr int clientHeight = 440;
+
+  RECT windowRect { 0, 0, clientWidth, clientHeight };
+  const DWORD windowStyle = WS_OVERLAPPEDWINDOW | WS_VISIBLE;
+  AdjustWindowRectEx(&windowRect, windowStyle, FALSE, WS_EX_DLGMODALFRAME);
+
+  const int windowWidth = windowRect.right - windowRect.left;
+  const int windowHeight = windowRect.bottom - windowRect.top;
+
+  RECT ownerRect { 0, 0, 0, 0 };
+  if (ownerWindow)
+  {
+    GetWindowRect(ownerWindow, &ownerRect);
+  }
+  else
+  {
+    ownerRect.right = GetSystemMetrics(SM_CXSCREEN);
+    ownerRect.bottom = GetSystemMetrics(SM_CYSCREEN);
+  }
+
+  const int x = ownerRect.left + ((ownerRect.right - ownerRect.left) - windowWidth) / 2;
+  const int y = ownerRect.top + ((ownerRect.bottom - ownerRect.top) - windowHeight) / 2;
+
+  HWND popup = CreateWindowExW(
+    WS_EX_DLGMODALFRAME,
+    kReadOnlyTextPopupClassName,
+    windowTitle.c_str(),
+    windowStyle,
+    x,
+    y,
+    windowWidth,
+    windowHeight,
+    ownerWindow,
+    nullptr,
+    instance,
+    const_cast<std::wstring*>(&text)
+  );
+
+  if (!popup)
+  {
+    return;
+  }
+
+  ShowWindow(popup, SW_SHOW);
+  UpdateWindow(popup);
+}
 
 int resolveEffectiveStructureId(int currentStructureId, int futureStructureId)
 {
@@ -515,7 +656,7 @@ bool MapTabContent::create(HWND parentWindow, HINSTANCE instance, AppData& appDa
   if (!GetClassInfoExW(instance, kMapCanvasClassName, &canvasClass))
   {
     canvasClass.cbSize = sizeof(canvasClass);
-    canvasClass.style = CS_HREDRAW | CS_VREDRAW;
+    canvasClass.style = CS_HREDRAW | CS_VREDRAW | CS_DBLCLKS;
     canvasClass.lpfnWndProc = mapCanvasWndProc;
     canvasClass.hInstance = instance;
     canvasClass.hCursor = LoadCursorW(nullptr, IDC_ARROW);
@@ -2153,6 +2294,16 @@ LRESULT MapTabContent::handleMapCanvasMessage(HWND hwnd, UINT msg, WPARAM wp, LP
         static_cast<int>(static_cast<short>(HIWORD(lp)))
       };
       onMapRightClick(cursorPoint);
+      return 0;
+    }
+
+    case WM_LBUTTONDBLCLK:
+    {
+      POINT cursorPoint {
+        static_cast<int>(static_cast<short>(LOWORD(lp))),
+        static_cast<int>(static_cast<short>(HIWORD(lp)))
+      };
+      onMapDoubleClick(cursorPoint);
       return 0;
     }
 
@@ -5547,6 +5698,7 @@ void MapTabContent::selectUnitInMap(int unitNumber)
 
   if (unitsList_)
   {
+    ListView_SetItemState(unitsList_, -1, 0, LVIS_SELECTED | LVIS_FOCUSED);
     const int itemCount = ListView_GetItemCount(unitsList_);
     for (int row = 0; row < itemCount; ++row)
     {
@@ -5563,6 +5715,7 @@ void MapTabContent::selectUnitInMap(int unitNumber)
       {
         ListView_SetItemState(unitsList_, row, LVIS_SELECTED | LVIS_FOCUSED, LVIS_SELECTED | LVIS_FOCUSED);
         ListView_EnsureVisible(unitsList_, row, FALSE);
+        SetFocus(unitsList_);
         updateSelectedUnitFromList();
         break;
       }
@@ -5829,14 +5982,15 @@ void MapTabContent::onMapLeftClick(POINT pointInMapClient)
   InvalidateRect(mapCanvas_, nullptr, FALSE);
 }
 
-void MapTabContent::onMapRightClick(POINT pointInMapClient)
+void MapTabContent::onMapDoubleClick(POINT pointInMapClient)
 {
   const RegionVisual* region = hitTestRegion(pointInMapClient);
-  if (!region || !region->region || !mapCanvas_)
+  if (!region || !region->region)
   {
     return;
   }
 
+  // center map on double clicked region
   RECT clientRect {};
   GetClientRect(mapCanvas_, &clientRect);
   const int clientWidth = clientRect.right - clientRect.left;
@@ -5851,6 +6005,49 @@ void MapTabContent::onMapRightClick(POINT pointInMapClient)
   scrollY_ = (std::max)(0, (std::min)(targetY, maxScrollY));
   updateMapScrollbars();
   InvalidateRect(mapCanvas_, nullptr, TRUE);
+}
+
+void MapTabContent::onMapRightClick(POINT pointInMapClient)
+{
+  const RegionVisual* region = hitTestRegion(pointInMapClient);
+  if (!region || !region->region || !mapCanvas_)
+  {
+    return;
+  }
+
+  // open context menu for region
+  POINT screenPoint = pointInMapClient;
+  ClientToScreen(mapCanvas_, &screenPoint);
+
+  HMENU menu = CreatePopupMenu();
+  if (!menu)
+  {
+    return;
+  }
+
+  AppendMenuW(menu,
+              MF_STRING,
+              kRegionContextShowTextEditorCommandId,
+              L"Show Region Report");
+
+  const UINT selectedCommand = TrackPopupMenu(
+    menu,
+    TPM_RETURNCMD | TPM_RIGHTBUTTON,
+    screenPoint.x,
+    screenPoint.y,
+    0,
+    mapCanvas_,
+    nullptr
+  );
+
+  DestroyMenu(menu);
+
+  if (selectedCommand == kRegionContextShowTextEditorCommandId)
+  {
+    showReadOnlyTextPopup(GetParent(mapCanvas_),
+                          L"Region Report",
+                          StringUtils::toCRLF(region->region->getRegionReport()));
+  }
 }
 
 void MapTabContent::updateHoverTooltip(POINT pointInMapClient, const Region& region)

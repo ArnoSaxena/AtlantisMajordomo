@@ -228,6 +228,7 @@ private:
   bool canEditOrdersForUnit(const Unit* unit) const;
   void setOrdersEditingEnabled(bool enabled);
   void onMapLeftClick(POINT pointInMapClient);
+  void onMapDoubleClick(POINT pointInMapClient);
   void onMapRightClick(POINT pointInMapClient);
   void updateRegionDetailsView(const Region* region);
   void populateResourcesList(const Region* region);

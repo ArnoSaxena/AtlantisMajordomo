@@ -16,18 +16,14 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  *
- * File: StringUtils.hpp
+ * File: DebugLog.hpp
  */
- 
+
+// 304c89c8-6d3c-4586-b0c4-fad2e67b2f65
 #pragma once
 
 #include <string>
 
-namespace StringUtils
-{
-    std::wstring trimWhitespace(const std::wstring& value);
-    std::wstring toLower(std::wstring value);
-    std::wstring toUpper(std::wstring value);
-    int parseIntSafe(const std::wstring& text);
-    std::wstring toCRLF(const std::wstring& input);
-}
+// Declared in Main.cpp; active only when DEBUG is defined there.
+void DebugLog(const std::wstring& text);
+void DebugLog(const wchar_t* text);
