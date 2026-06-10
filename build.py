@@ -6,6 +6,7 @@ Usage:
     python build.py --help                          # Show all options
     python build.py                                 # Build release
     python build.py --build-type debug              # Build debug
+    python build.py --debug                         # Enable #define DEBUG in Main.cpp
     python build.py --clean                         # Clean build directory
     python build.py --clean-all                     # Remove all artifacts (build, venv, cache)
     python build.py --clean --build-type release    # Clean and build release
@@ -114,7 +115,16 @@ parser.add_argument(
     help='Remove all build artifacts and virtual environment (full cleanup)'
 )
 
+parser.add_argument(
+    '--debug',
+    action='store_true',
+    required=False,
+    default=False,
+    help='Enable #define DEBUG in src/Main.cpp (default: off when not specified)'
+)
+
 args = parser.parse_args()
+invoked_without_arguments = len(sys.argv) == 1
 
 
 def describe_windows_return_code(return_code):
@@ -158,16 +168,42 @@ def execute_cmd(cmd, description=""):
         print(f"[*] {description}")
         print(f"{'='*60}")
 
+    command_display = cmd if isinstance(cmd, str) else " ".join(cmd)
     if args.verbose:
-        print(f"[CMD] {cmd}\n")
+        print(f"[CMD] {command_display}\n")
 
-    result = subprocess.run(cmd, shell=True)
+    # Use shell=False to keep execution and output in the current terminal.
+    result = subprocess.run(cmd, shell=False)
     if result.returncode != 0:
         details = f"return code {result.returncode}"
         if platform_module.system() == "Windows":
             details += f" [{describe_windows_return_code(result.returncode)}]"
 
-        raise RuntimeError(f"Command failed with {details}: {cmd}")
+        raise RuntimeError(f"Command failed with {details}: {command_display}")
+
+
+def normalize_path(path):
+    return os.path.normcase(os.path.normpath(path))
+
+
+def is_stale_cmake_cache():
+    """
+    Check whether build/CMakeCache.txt points to a different source directory.
+    """
+    cache_file = os.path.join(BUILD_DIR, "CMakeCache.txt")
+    if not os.path.isfile(cache_file):
+        return False
+
+    try:
+        with open(cache_file, "r", encoding="utf-8", errors="ignore") as file:
+            for line in file:
+                if line.startswith("CMAKE_HOME_DIRECTORY:INTERNAL="):
+                    cached_source = line.split("=", 1)[1].strip()
+                    return normalize_path(cached_source) != normalize_path(src_working_dir)
+    except OSError:
+        return False
+
+    return False
 
 
 def clean():
@@ -245,19 +281,74 @@ def bump_about_version():
     print(f"[*] Updated About version to {new_version}")
 
 
+def set_main_debug_define(debug_enabled):
+    """
+    Toggle '#define DEBUG' in src/Main.cpp.
+
+    Args:
+        debug_enabled: True to enable DEBUG, False to comment it out
+    """
+    main_cpp_path = os.path.join(src_working_dir, "src", "Main.cpp")
+    if not os.path.isfile(main_cpp_path):
+        raise RuntimeError(f"Main.cpp not found: {main_cpp_path}")
+
+    with open(main_cpp_path, "r", encoding="utf-8") as file:
+        lines = file.readlines()
+
+    define_pattern = re.compile(r"^\s*(//\s*)?#define\s+DEBUG\s*$")
+    ifdef_pattern = re.compile(r"^\s*#ifdef\s+DEBUG\s*$")
+
+    cleaned_lines = [line for line in lines if not define_pattern.match(line)]
+
+    insertion_index = None
+    for index, line in enumerate(cleaned_lines):
+        if ifdef_pattern.match(line):
+            insertion_index = index
+            break
+
+    if insertion_index is None:
+        raise RuntimeError("Could not locate '#ifdef DEBUG' in src/Main.cpp")
+
+    desired_line = "#define DEBUG\n" if debug_enabled else "// #define DEBUG\n"
+    cleaned_lines.insert(insertion_index, desired_line)
+
+    if cleaned_lines != lines:
+        with open(main_cpp_path, "w", encoding="utf-8", newline="") as file:
+            file.writelines(cleaned_lines)
+
+    print(f"[*] DEBUG define in src/Main.cpp set to: {'on' if debug_enabled else 'off'}")
+
+
 def configure():
     """
     Configure CMake project
     """
     os.makedirs(BUILD_DIR, exist_ok=True)
 
+    if is_stale_cmake_cache():
+        print("[!] Detected stale CMake cache for a different source directory")
+        print("[*] Cleaning build directory before configure")
+        clean()
+        os.makedirs(BUILD_DIR, exist_ok=True)
+
     # Visual Studio generators are multi-configuration and don't use CMAKE_BUILD_TYPE
     is_vs_generator = "Visual Studio" in args.generator
 
     if is_vs_generator:
-        cmake_cmd = f'cmake -G "{args.generator}" -S "{src_working_dir}" -B "{BUILD_DIR}"'
+        cmake_cmd = [
+            "cmake",
+            "-G", args.generator,
+            "-S", src_working_dir,
+            "-B", BUILD_DIR,
+        ]
     else:
-        cmake_cmd = f'cmake -G "{args.generator}" -DCMAKE_BUILD_TYPE={args.build_type.capitalize()} -S "{src_working_dir}" -B "{BUILD_DIR}"'
+        cmake_cmd = [
+            "cmake",
+            "-G", args.generator,
+            f"-DCMAKE_BUILD_TYPE={args.build_type.capitalize()}",
+            "-S", src_working_dir,
+            "-B", BUILD_DIR,
+        ]
 
     execute_cmd(cmake_cmd, f"Configuring CMake ({args.generator})")
 
@@ -266,7 +357,7 @@ def build():
     """
     Build the project
     """
-    cmake_cmd = f'cmake --build "{BUILD_DIR}" --config {args.build_type.capitalize()}'
+    cmake_cmd = ["cmake", "--build", BUILD_DIR, "--config", args.build_type.capitalize()]
     execute_cmd(cmake_cmd, f"Building AtlantisMajordomo ({args.build_type})")
 
 
@@ -307,7 +398,7 @@ def run():
         sys.exit(1)
 
     print(f"[+] Found executable: {exe_path}")
-    execute_cmd(f'"{exe_path}"', "Running AtlantisMajordomo")
+    execute_cmd([exe_path], "Running AtlantisMajordomo")
 
 
 def main():
@@ -315,6 +406,14 @@ def main():
     Main entry point
     """
     try:
+        if invoked_without_arguments:
+            # Explicitly enforce default behavior when no CLI arguments are provided.
+            args.build_type = 'release'
+            args.clean = False
+            args.run = False
+            args.clean_all = False
+            args.debug = False
+
         # Verify we're on Windows
         if platform_module.system() != "Windows":
             print("[-] ERROR: This script is designed for Windows only")
@@ -336,10 +435,15 @@ def main():
         print(f"[*] Working directory: {src_working_dir}")
         print(f"[*] Build type: {args.build_type}")
         print(f"[*] CMake generator: {args.generator}")
+        print(f"[*] DEBUG macro mode: {'on' if args.debug else 'off'}")
+        if invoked_without_arguments:
+            print("[*] No arguments provided; running standard release build")
 
         # Clean if requested
         if args.clean:
             clean()
+
+        set_main_debug_define(args.debug)
 
         bump_about_version()
 
