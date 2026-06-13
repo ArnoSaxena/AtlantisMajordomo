@@ -430,7 +430,7 @@ namespace
   {
     return std::wstring(MainWindow::kAboutAppName)
            + L"\r\n\r\n"
-           + MainWindow::kAboutLoremIpsum
+           + MainWindow::kAboutDescription
            + L"\r\n\r\nVersion "
            + MainWindow::kAboutVersion;
   }

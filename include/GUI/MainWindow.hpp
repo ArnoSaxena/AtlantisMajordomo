@@ -58,9 +58,10 @@ public:
   MainWindow& operator=(MainWindow&&) = delete;
 
   static constexpr wchar_t kAboutAppName[] = L"Atlantis Majordomo";
-  static constexpr wchar_t kAboutLoremIpsum[] =
-    L"Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.";
-  static constexpr wchar_t kAboutVersion[] = L"1.1.0";
+  static constexpr wchar_t kAboutDescription[] =
+    L"Yet another Atlantis Pbem player client.";
+  // TODO: Need to create a more elaborate description.
+  static constexpr wchar_t kAboutVersion[] = L"1.2.1";
 
   /**
   * @brief Registers the window class and creates the main window.

@@ -36,6 +36,7 @@
 #include "Function/FactionAttitudeUtils.hpp"
 #include "Function/StringUtils.hpp"
 
+#include <future>
 #include <map>
 #include <set>
 #include <utility>
@@ -271,7 +272,8 @@ bool ReportRepository::addFromFile(const std::wstring& filePath,
            + L", year=" + std::to_wstring(year));
 
   // Parse regions and units from the report and add/update them in repositories.
-  DebugLog(L"ReportRepository::addFromFile() - calling parseRegions");
+  // Stage 1: Parse regions first (blocking) - other parse methods depend on populated repositories
+  DebugLog(L"ReportRepository::addFromFile() - Stage 1: calling parseRegions");
   report.parseRegions(regionRepository,
                       unitRepository,
                       structureRepository,
@@ -279,19 +281,86 @@ bool ReportRepository::addFromFile(const std::wstring& filePath,
                       factionRepository,
                       shipStructureIdThreshold,
                       flyingShipTypeTokens);
-  DebugLog(L"ReportRepository::addFromFile() - calling parseBattles");
-  report.parseBattles(battleRepository, regionRepository, unitRepository);
-  DebugLog(L"ReportRepository::addFromFile() - calling parseEvents");
-  report.parseEvents(eventRepository);
-  DebugLog(L"ReportRepository::addFromFile() - calling parseOrders");
-  report.parseOrders(factionRepository, unitRepository);
-  DebugLog(L"ReportRepository::addFromFile() - calling parseItems");
-  report.parseItems(itemRepository);
-  DebugLog(L"ReportRepository::addFromFile() - calling parseStructures");
-  report.parseStructures(structInfoRepository, itemRepository);
-  DebugLog(L"ReportRepository::addFromFile() - calling parseSkills");
-  report.parseSkills(skillRepository, itemRepository, magicSkillTriggerPhrases);
-  DebugLog(L"ReportRepository::addFromFile() - all parse calls done, adding report to collection");
+  DebugLog(L"ReportRepository::addFromFile() - Stage 1 complete");
+
+  // Parallel parse pipeline:
+  //
+  //   Stage 1:  parseRegions()
+  //             |
+  //   Stage 2:  parseBattles() --+
+  //             parseEvents()  --|  (concurrent)
+  //             parseOrders()  --|
+  //             parseItems()   --|
+  //                   |          | (Stage 3 starts immediately when parseItems finishes,
+  //                   v          |  without waiting for the Stage 2 siblings)
+  //   Stage 3:  parseStructures() --+
+  //             parseSkills()       +  (concurrent with each other)
+  //                   |
+  //             All futures joined
+  //
+  // parseItems chains directly into Stage 3 (parseStructures + parseSkills) as a continuation,
+  // so Stage 3 starts as soon as items are ready without waiting for other Stage 2 tasks.
+  DebugLog(L"ReportRepository::addFromFile() - Stage 2: launching parallel parse tasks");
+  auto battlesFuture = std::async(std::launch::async,
+    [&report, &battleRepository, &regionRepository, &unitRepository]()
+    {
+      DebugLog(L"ReportRepository::addFromFile() - thread: calling parseBattles");
+      report.parseBattles(battleRepository, regionRepository, unitRepository);
+      DebugLog(L"ReportRepository::addFromFile() - thread: parseBattles complete");
+    });
+
+  auto eventsFuture = std::async(std::launch::async,
+    [&report, &eventRepository]()
+    {
+      DebugLog(L"ReportRepository::addFromFile() - thread: calling parseEvents");
+      report.parseEvents(eventRepository);
+      DebugLog(L"ReportRepository::addFromFile() - thread: parseEvents complete");
+    });
+
+  auto ordersFuture = std::async(std::launch::async,
+    [&report, &factionRepository, &unitRepository]()
+    {
+      DebugLog(L"ReportRepository::addFromFile() - thread: calling parseOrders");
+      report.parseOrders(factionRepository, unitRepository);
+      DebugLog(L"ReportRepository::addFromFile() - thread: parseOrders complete");
+    });
+
+  // parseItems chains directly into parseStructures and parseSkills (Stage 3).
+  // Both Stage 3 tasks are independent of each other so they run in parallel.
+  auto itemsAndDependentsFuture = std::async(std::launch::async,
+    [&report, &itemRepository, &structInfoRepository, &skillRepository, &magicSkillTriggerPhrases]()
+    {
+      DebugLog(L"ReportRepository::addFromFile() - thread: calling parseItems");
+      report.parseItems(itemRepository);
+      DebugLog(L"ReportRepository::addFromFile() - thread: parseItems complete, launching Stage 3");
+
+      auto structuresFuture = std::async(std::launch::async,
+        [&report, &structInfoRepository, &itemRepository]()
+        {
+          DebugLog(L"ReportRepository::addFromFile() - thread: calling parseStructures");
+          report.parseStructures(structInfoRepository, itemRepository);
+          DebugLog(L"ReportRepository::addFromFile() - thread: parseStructures complete");
+        });
+
+      auto skillsFuture = std::async(std::launch::async,
+        [&report, &skillRepository, &itemRepository, &magicSkillTriggerPhrases]()
+        {
+          DebugLog(L"ReportRepository::addFromFile() - thread: calling parseSkills");
+          report.parseSkills(skillRepository, itemRepository, magicSkillTriggerPhrases);
+          DebugLog(L"ReportRepository::addFromFile() - thread: parseSkills complete");
+        });
+
+      structuresFuture.get();
+      skillsFuture.get();
+      DebugLog(L"ReportRepository::addFromFile() - thread: Stage 3 complete");
+    });
+
+  // Wait for all tasks (Stage 3 completes inside itemsAndDependentsFuture)
+  battlesFuture.get();
+  eventsFuture.get();
+  ordersFuture.get();
+  itemsAndDependentsFuture.get();
+  DebugLog(L"ReportRepository::addFromFile() - all parse stages done, adding report to collection");
 
   reports_.push_back(std::move(report));
 

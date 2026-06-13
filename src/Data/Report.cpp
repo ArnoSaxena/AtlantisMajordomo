@@ -1887,23 +1887,7 @@ void Report::parseBattles(BattleRepository& battleRepository,
       return;
     }
 
-    unitRepository.add(unitId,
-                       unitName,
-                       0,
-                       0,
-                       0,
-                       0,
-                       1,
-                       {},
-                       {},
-                       0,
-                       0,
-                       0,
-                       0,
-                       0,
-                       {},
-                       month,
-                       year);
+    unitRepository.add(unitId, unitName, 0, 0, 0, 0, 1, {}, {}, 0, 0, 0, 0, 0, {}, month, year);
   };
 
   auto storeBattle = [&](const std::vector<std::wstring>& battleLines)
