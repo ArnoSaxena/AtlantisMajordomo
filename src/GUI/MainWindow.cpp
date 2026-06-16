@@ -66,6 +66,8 @@ constexpr int IDM_HELP_ABOUT       = 9001;
 constexpr int IDM_HELP_DESCRIPTION = 9002;
 constexpr int IDM_TAB_CTX_LOAD_REPORT = 4001;
 
+constexpr UINT WM_APP_AUTOLOAD = WM_APP + 1;
+
 static constexpr wchar_t kClassName[] = L"WindowsAppMainWnd";
 
 enum class InternalTabId
@@ -752,6 +754,11 @@ bool MainWindow::create(HINSTANCE instance, AppData& appData)
   appData_->setLeaderMages(appConfig_.getLeaderMages());
   Commands::setFullMonthOrderKeywordsCsv(appConfig_.getFullMonthOrdersCsv());
 
+  INITCOMMONCONTROLSEX icc {};
+  icc.dwSize = sizeof(icc);
+  icc.dwICC  = ICC_LISTVIEW_CLASSES | ICC_BAR_CLASSES | ICC_TAB_CLASSES;
+  InitCommonControlsEx(&icc);
+
   WNDCLASSEXW wc {};
   wc.cbSize        = sizeof(wc);
   wc.style         = CS_HREDRAW | CS_VREDRAW;
@@ -855,6 +862,38 @@ LRESULT MainWindow::handleMessage(UINT msg, WPARAM wp, LPARAM lp)
         return -1;
       }
 
+      // Wire the map → battles navigation callback.
+      mapTabContent_->setNavigationCallback(
+        [this](const MapTabContent::NavigationRequest& request)
+        {
+          switch (request.target)
+          {
+            case MapTabContent::NavigationTarget::Battles:
+            {
+              HWND tabCtrl = tabView_->getTabControl();
+              if (tabCtrl && battlesTabIndex_ >= 0)
+              {
+                TabCtrl_SetCurSel(tabCtrl, battlesTabIndex_);
+                tabView_->onSelectionChange();
+                updateReportsTabVisibility();
+              }
+              if (battlesTabContent_)
+              {
+                const auto& p = std::get<MapTabContent::BattleNavigationPayload>(request.payload);
+                battlesTabContent_->focusBattleByRegion(p.x, p.y, p.z, p.month, p.year);
+              }
+              break;
+            }
+          }
+        });
+
+      PostMessageW(hwnd_, WM_APP_AUTOLOAD, 0, 0);
+
+      return 0;
+    }
+
+    case WM_APP_AUTOLOAD:
+    {
       // Auto-load the configured data file if it exists (parse it like File/Import Data)
       const std::wstring configuredDataFile = appConfig_.getDataFilePath();
       if (!configuredDataFile.empty())

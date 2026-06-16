@@ -154,7 +154,8 @@ bool DataSerializer::saveToFile(const AppData& appData, const std::wstring& file
       file << L"],\n";
       file << L"      \"visited\": " << (region.getVisited() ? L"true" : L"false") << L",\n";
       file << L"      \"month\": " << region.getMonth() << L",\n";
-      file << L"      \"year\": " << region.getYear() << L"\n";
+      file << L"      \"year\": " << region.getYear() << L",\n";
+      file << L"      \"regionReport\": \"" << JsonUtils::escapeJsonString(region.getRegionReport()) << L"\"\n";
       file << L"    }";
     }
 
@@ -1098,7 +1099,7 @@ bool DataSerializer::loadFromFile(AppData& appData, const std::wstring& filePath
         std::wstring obj = regionsArray.substr(objStart + 1, objEnd - objStart - 1);
 
         int x = 0, y = 0, z = 1, peasantNumber = 0, wagesMax = 0, taxableIncome = 0, month = 0, year = 0, entertainment = 0;
-        std::wstring type, province, settlementName, settlementType, peasantType;
+        std::wstring type, province, settlementName, settlementType, peasantType, regionReport;
         std::vector<std::wstring> exitDirections;
         std::map<std::wstring, int> resources;
         std::map<std::wstring, std::pair<int, int>> wanted;
@@ -1260,6 +1261,8 @@ bool DataSerializer::loadFromFile(AppData& appData, const std::wstring& filePath
             parseJsonNumber(fieldValue, month);
           else if (fieldName == L"year")
             parseJsonNumber(fieldValue, year);
+          else if (fieldName == L"regionReport")
+            parseJsonString(fieldValue, regionReport);
 
           fieldPos = fieldEnd + 1;
         }
@@ -1280,6 +1283,7 @@ bool DataSerializer::loadFromFile(AppData& appData, const std::wstring& filePath
           loadedRegion->setResources(resources);
           loadedRegion->setWanted(wanted);
           loadedRegion->setForSale(forSale);
+          loadedRegion->setRegionReport(regionReport);
         }
         pos = objEnd + 1;
       }

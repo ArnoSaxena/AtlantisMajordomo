@@ -28,7 +28,9 @@
 #include <windows.h>
 #include "GUI/ControlIds.hpp"
 #include <array>
+#include <functional>
 #include <string>
+#include <variant>
 #include <vector>
 
 class AppConfig;
@@ -75,6 +77,120 @@ public:
   LRESULT getNotifyResult() const;
   bool handleCommand(int commandId, int notificationCode = 0);
   bool handleMouseMessage(UINT msg, WPARAM wp, LPARAM lp);
+
+  /**
+  * @brief Identifies which tab is the navigation target.
+  *
+  * -------------------------------------------------------------------------
+  * HOW TO ADD A NEW NAVIGATION TARGET
+  * -------------------------------------------------------------------------
+  * Follow these steps in order. Example: adding a "Skills" target.
+  *
+  * 1. HERE — Add a new enumerator to NavigationTarget:
+  *      Skills,
+  *
+  * 2. HERE — Add a new payload struct below BattleNavigationPayload, e.g.:
+  *      struct SkillNavigationPayload
+  *      {
+  *        std::wstring skillToken;
+  *      };
+  *
+  * 3. HERE — Extend the variant in NavigationRequest::payload with the new
+  *    type and update its comment:
+  *      std::variant<BattleNavigationPayload, SkillNavigationPayload> payload;
+  *      NavigationTarget::Skills -> std::get<SkillNavigationPayload>(payload)
+  *
+  * 4. MapTabContent.cpp / onMapRightClick() — Add a context menu item and
+  *    detect whether it should be enabled (grayed), then fire the callback:
+  *      AppendMenuW(menu, MF_STRING, kRegionContextShowSkillCommandId, L"Show Skill");
+  *      ...
+  *      else if (selectedCommand == kRegionContextShowSkillCommandId && navigationCallback_)
+  *      {
+  *        navigationCallback_(NavigationRequest{
+  *          NavigationTarget::Skills,
+  *          SkillNavigationPayload{ someSkillToken }
+  *        });
+  *      }
+  *    Also add the command ID constant in the anonymous namespace at the top
+  *    of MapTabContent.cpp (e.g. constexpr UINT kRegionContextShowSkillCommandId = 4752;).
+  *
+  * 5. Target tab class (e.g. SkillsTabContent) — Add a focus method that
+  *    accepts the payload data and selects the right item in its list:
+  *      void focusSkillByToken(const std::wstring& skillToken);
+  *
+  * 6. MainWindow.cpp / setNavigationCallback lambda — Add a new case to the
+  *    switch statement:
+  *      case MapTabContent::NavigationTarget::Skills:
+  *      {
+  *        HWND tabCtrl = tabView_->getTabControl();
+  *        if (tabCtrl && skillsTabIndex_ >= 0)
+  *        {
+  *          TabCtrl_SetCurSel(tabCtrl, skillsTabIndex_);
+  *          tabView_->onSelectionChange();
+  *          updateReportsTabVisibility();
+  *        }
+  *        if (skillsTabContent_)
+  *        {
+  *          const auto& p = std::get<MapTabContent::SkillNavigationPayload>(request.payload);
+  *          skillsTabContent_->focusSkillByToken(p.skillToken);
+  *        }
+  *        break;
+  *      }
+  * -------------------------------------------------------------------------
+  */
+  enum class NavigationTarget
+  {
+    Battles,
+  };
+
+  /**
+  * @brief Payload for a Battles navigation request.
+  * Carries the region coordinates and report period that were used to detect
+  * the battle (the same values the map drawing uses for the red X marker).
+  */
+  struct BattleNavigationPayload
+  {
+    int x     { 0 };
+    int y     { 0 };
+    int z     { 0 };
+    int month { 0 };
+    int year  { 0 };
+  };
+
+  /**
+  * @brief Unified navigation request passed to the navigation callback.
+  *
+  * The active alternative in payload matches the value of target:
+  *   NavigationTarget::Battles -> std::get<BattleNavigationPayload>(payload)
+  *
+  * Add a new payload struct and a new variant alternative here when a new
+  * navigation target is introduced.
+  */
+  struct NavigationRequest
+  {
+    NavigationTarget                     target;
+    std::variant<BattleNavigationPayload> payload;
+  };
+
+  /**
+  * @brief Sets the single callback invoked for all context-menu navigation
+  *        actions. The callback receives a NavigationRequest whose target
+  *        field identifies the destination and whose payload carries the
+  *        data needed to focus the correct item there.
+  *
+  * Expected callback implementation (see MainWindow::handleMessage WM_CREATE):
+  *   1. Switch on request.target.
+  *   2. For NavigationTarget::Battles:
+  *        a. TabCtrl_SetCurSel(tabCtrl, battlesTabIndex_) - switches the tab
+  *           control selection to the Battles tab.
+  *        b. TabView::onSelectionChange() - updates panel visibility inside
+  *           TabView.
+  *        c. MainWindow::updateReportsTabVisibility() - shows/hides all tab
+  *           content controls to match the newly selected tab.
+  *        d. BattlesTabContent::focusBattleByRegion(x, y, z, month, year) -
+  *           selects the period and highlights the matching battle in the list.
+  */
+  void setNavigationCallback(std::function<void(const NavigationRequest&)> callback);
 
 private:
   enum class DragMode
@@ -176,6 +292,7 @@ private:
   bool movePathHasNegativeCapacity_ { false };
   bool movePathSailRouteInvalid_ { false };
   int selectedUnitDetailsTab_ { 0 };
+  std::function<void(const NavigationRequest&)> navigationCallback_;
 
   static LRESULT CALLBACK mapCanvasWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp);
   static LRESULT CALLBACK unitSearchEditSubclassProc(HWND hwnd,

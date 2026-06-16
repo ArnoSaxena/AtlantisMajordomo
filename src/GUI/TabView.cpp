@@ -95,11 +95,6 @@ bool TabView::create(HWND parent, int id)
     return false;
   }
 
-  INITCOMMONCONTROLSEX icc {};
-  icc.dwSize = sizeof(icc);
-  icc.dwICC  = ICC_TAB_CLASSES;
-  InitCommonControlsEx(&icc);
-
   tabControl_ = CreateWindowExW(
     0,
     WC_TABCONTROLW,

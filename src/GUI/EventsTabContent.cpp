@@ -42,11 +42,6 @@ bool EventsTabContent::create(HWND parentWindow, HINSTANCE instance, AppData& ap
 {
   appData_ = &appData;
 
-  INITCOMMONCONTROLSEX icc {};
-  icc.dwSize = sizeof(icc);
-  icc.dwICC = ICC_LISTVIEW_CLASSES;
-  InitCommonControlsEx(&icc);
-
   dateCombo_ = CreateWindowExW(
     0,
     L"COMBOBOX",

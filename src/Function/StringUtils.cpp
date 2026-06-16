@@ -22,9 +22,17 @@
 #include "Function/StringUtils.hpp"
 
 #include <string>
+#include <vector>
 #include <cwctype>
 namespace StringUtils
 {
+    std::wstring trimBom(std::wstring value)
+    {
+        if (!value.empty() && value.front() == 0xFEFF)
+            value.erase(value.begin());
+        return value;
+    }
+
     std::wstring trimWhitespace(const std::wstring& value)
     {
         const auto isNotSpace = [](wchar_t c) {
@@ -38,6 +46,45 @@ namespace StringUtils
         auto last = std::find_if(value.rbegin(), value.rend(), isNotSpace).base();
 
         return std::wstring(first, last);
+    }
+
+    std::vector<std::wstring> splitByComma(const std::wstring& text)
+    {
+        std::vector<std::wstring> parts;
+        std::wstring current;
+
+        for (wchar_t ch : text)
+        {
+            if (ch == L',')
+            {
+                std::wstring part = trimWhitespace(current);
+                if (!part.empty())
+                    parts.push_back(std::move(part));
+                current.clear();
+            }
+            else
+            {
+                current.push_back(ch);
+            }
+        }
+
+        std::wstring tail = trimWhitespace(current);
+        if (!tail.empty())
+            parts.push_back(std::move(tail));
+
+        return parts;
+    }
+
+    std::wstring joinLines(const std::vector<std::wstring>& lines, const std::wstring& separator)
+    {
+        std::wstring text;
+        for (std::size_t index = 0; index < lines.size(); ++index)
+        {
+            if (index != 0)
+                text += separator;
+            text += lines[index];
+        }
+        return text;
     }
 
     std::wstring toLower(std::wstring value)

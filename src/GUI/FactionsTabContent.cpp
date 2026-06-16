@@ -121,11 +121,6 @@ bool FactionsTabContent::create(HWND parentWindow, HINSTANCE instance, AppData& 
 {
   appData_ = &appData;
 
-  INITCOMMONCONTROLSEX icc {};
-  icc.dwSize = sizeof(icc);
-  icc.dwICC = ICC_LISTVIEW_CLASSES;
-  InitCommonControlsEx(&icc);
-
   factionsList_ = CreateWindowExW(
     WS_EX_CLIENTEDGE,
     WC_LISTVIEWW,

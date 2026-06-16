@@ -22,10 +22,14 @@
 #pragma once
 
 #include <string>
+#include <vector>
 
 namespace StringUtils
 {
+    std::wstring trimBom(std::wstring value);
     std::wstring trimWhitespace(const std::wstring& value);
+    std::vector<std::wstring> splitByComma(const std::wstring& text);
+    std::wstring joinLines(const std::vector<std::wstring>& lines, const std::wstring& separator = L"\r\n");
     std::wstring toLower(std::wstring value);
     std::wstring toUpper(std::wstring value);
     int parseIntSafe(const std::wstring& text);

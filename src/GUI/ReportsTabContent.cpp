@@ -55,11 +55,6 @@ bool ReportsTabContent::create(HWND parentWindow, HINSTANCE instance, AppData& a
   appData_ = &appData;
   appConfig_ = &appConfig;
 
-  INITCOMMONCONTROLSEX icc {};
-  icc.dwSize = sizeof(icc);
-  icc.dwICC = ICC_LISTVIEW_CLASSES;
-  InitCommonControlsEx(&icc);
-
   reportsList_ = CreateWindowExW(
     WS_EX_CLIENTEDGE,
     WC_LISTVIEWW,

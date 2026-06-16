@@ -881,10 +881,11 @@ bool AppConfig::parseRgbColorArray(const std::wstring& jsonArray,
 
 void AppConfig::applyDefaults()
 {
-  saveFilePath_ = getDefaultSaveFilePath();
-  reportImportFolder_ = getDefaultReportImportFolder();
-  dataFilePath_ = getDefaultDataFilePath();
-  exportOrdersFolder_ = getDefaultReportImportFolder();
+  const std::wstring exeDir = getExecutableDirectory();
+  saveFilePath_ = exeDir + L"\\dataset.dat";
+  reportImportFolder_ = exeDir + L"\\Reports";
+  dataFilePath_ = exeDir + L"\\data.txt";
+  exportOrdersFolder_ = exeDir + L"\\Reports";
   mainWindowWidth_ = 900;
   mainWindowHeight_ = 600;
   mapHexWidth_ = 40;

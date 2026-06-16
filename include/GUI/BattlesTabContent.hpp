@@ -53,6 +53,13 @@ public:
   void setVisible(bool visible);
   void refresh();
 
+  /**
+  * @brief Switches to the latest period that has a battle in the given region
+  *        and selects the first matching battle in the list.
+  *        Does nothing if no battle exists at those coordinates.
+  */
+  void focusBattleByRegion(int x, int y, int z, int month, int year);
+
   bool handleNotify(const NMHDR* hdr);
   bool handleCommand(int commandId, int notificationCode = 0);
 

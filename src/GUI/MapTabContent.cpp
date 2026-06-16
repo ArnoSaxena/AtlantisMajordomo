@@ -62,14 +62,15 @@ namespace
 
 constexpr int kMargin = 8;
 constexpr int kSplitterThickness = 8;
-constexpr int kMinRightPanelWidth = 220;
-constexpr int kMinLeftPanelWidth = 260;
-constexpr int kMinDetailsWidth = 120;
+constexpr int kMinRightPanelWidth = 250;
+constexpr int kMinLeftPanelWidth = 280;
+constexpr int kMinDetailsWidth = 180;
 constexpr int kMinMapWidth = 220;
 constexpr int kMinTopHeight = 160;
 constexpr int kMinBottomHeight = 140;
 constexpr int kZContextMenuBaseId = 4600;
 constexpr UINT kRegionContextShowTextEditorCommandId = 4750;
+constexpr UINT kRegionContextShowBattleReportCommandId = 4751;
 constexpr wchar_t kReadOnlyTextPopupClassName[] = L"AtlantisMajordomoReadOnlyTextPopup";
 constexpr int kReadOnlyTextPopupEditId = 9001;
 
@@ -646,11 +647,6 @@ bool MapTabContent::create(HWND parentWindow, HINSTANCE instance, AppData& appDa
 {
   appData_ = &appData;
   appConfig_ = &appConfig;
-
-  INITCOMMONCONTROLSEX icc {};
-  icc.dwSize = sizeof(icc);
-  icc.dwICC = ICC_LISTVIEW_CLASSES | ICC_BAR_CLASSES;
-  InitCommonControlsEx(&icc);
 
   WNDCLASSEXW canvasClass {};
   if (!GetClassInfoExW(instance, kMapCanvasClassName, &canvasClass))
@@ -1382,11 +1378,11 @@ bool MapTabContent::create(HWND parentWindow, HINSTANCE instance, AppData& appDa
   };
 
   const Column columns[] = {
-    { L"Unit Number", 100 },
-    { L"Unit Name", 180 },
-    { L"Faction", 90 },
-    { L"Faction Name", 150 },
-    { L"Structure", 120 },
+    { L"#", 50 },
+    { L"Name", 180 },
+    { L"Faction", 50 },
+    { L"Faction Name", 120 },
+    { L"Structure", 150 },
     { L"Men", 90 },
     { L"Silver", 96 },
     { L"Flags", 240 },
@@ -1407,9 +1403,9 @@ bool MapTabContent::create(HWND parentWindow, HINSTANCE instance, AppData& appDa
 
   const Column itemColumns[] = {
     { L"Token", 70 },
-    { L"Name", 180 },
-    { L"Amount", 70 },
-    { L"after com.", 80 }
+    { L"Name", 100 },
+    { L"Amount", 60 },
+    { L"after com.", 60 }
   };
 
   for (int index = 0; index < static_cast<int>(std::size(itemColumns)); ++index)
@@ -1423,9 +1419,9 @@ bool MapTabContent::create(HWND parentWindow, HINSTANCE instance, AppData& appDa
   }
 
   const Column skillColumns[] = {
-    { L"Skill ID", 100 },
-    { L"Level", 100 },
-    { L"After com.", 100 }
+    { L"Skill ID", 60 },
+    { L"Level", 60 },
+    { L"After com.", 60 }
   };
 
   for (int index = 0; index < static_cast<int>(std::size(skillColumns)); ++index)
@@ -2654,6 +2650,31 @@ void MapTabContent::paintMap(HDC hdc) const
     DeleteObject(emptyHexPen);
   }
 
+  // Use the latest REPORT period (not latest battle period) so markers match the displayed data.
+  int latestBattlePeriodMonth = 0;
+  int latestBattlePeriodYear  = 0;
+  if (appData_)
+  {
+    const auto& rr = appData_->reportRepository();
+    for (std::size_t i = 0; i < rr.size(); ++i)
+    {
+      const Report& rep = rr.at(i);
+      const int rm = rep.getMonth();
+      const int repYear = rep.getYear();
+      if (rm >= 1 && rm <= 12 && repYear > 0)
+      {
+        if (repYear > latestBattlePeriodYear ||
+            (repYear == latestBattlePeriodYear && rm > latestBattlePeriodMonth))
+        {
+          latestBattlePeriodMonth = rm;
+          latestBattlePeriodYear  = repYear;
+        }
+      }
+    }
+  }
+  const bool hasLatestBattlePeriod =
+    latestBattlePeriodMonth >= 1 && latestBattlePeriodMonth <= 12 && latestBattlePeriodYear > 0;
+
   for (const auto& visual : visibleRegions_)
   {
     std::array<POINT, 6> translated = visual.polygon;
@@ -2825,14 +2846,14 @@ void MapTabContent::paintMap(HDC hdc) const
       DeleteObject(markerPen);
     }
 
-    if (appData_ && visual.region)
+    if (hasLatestBattlePeriod && appData_ && visual.region)
     {
       const bool hasBattle = appData_->battleRepository().hasBattleInRegionForPeriod(
         visual.region->getXCoordinate(),
         visual.region->getYCoordinate(),
         visual.region->getZCoordinate(),
-        visual.region->getMonth(),
-        visual.region->getYear()
+        latestBattlePeriodMonth,
+        latestBattlePeriodYear
       );
 
       if (hasBattle)
@@ -3319,6 +3340,29 @@ void MapTabContent::populateUnitsForSelectedRegion()
 
   const auto& unitRepository = appData_->unitRepository();
   const auto& unitNewRepository = appData_->unitNewRepository();
+
+  // Compute the latest report period to filter out stale units.
+  int latestMonth = 0;
+  int latestYear = 0;
+  {
+    const auto& reportRepository = appData_->reportRepository();
+    for (std::size_t i = 0; i < reportRepository.size(); ++i)
+    {
+      const Report& report = reportRepository.at(i);
+      const int rm = report.getMonth();
+      const int ry = report.getYear();
+      if (rm >= 1 && rm <= 12 && ry > 0)
+      {
+        if (ry > latestYear || (ry == latestYear && rm > latestMonth))
+        {
+          latestMonth = rm;
+          latestYear = ry;
+        }
+      }
+    }
+  }
+  const bool hasLatestPeriod = (latestMonth >= 1 && latestMonth <= 12 && latestYear > 0);
+
   int latestBattleMonth = 0;
   int latestBattleYear = 0;
   const bool hasLatestBattlePeriod = appData_->battleRepository().getLatestPeriod(latestBattleMonth, latestBattleYear);
@@ -3330,6 +3374,11 @@ void MapTabContent::populateUnitsForSelectedRegion()
     if (unit.getXCoordinate() != selectedRegionX_ ||
         unit.getYCoordinate() != selectedRegionY_ ||
         unit.getZCoordinate() != selectedZ_)
+    {
+      continue;
+    }
+
+    if (hasLatestPeriod && (unit.getMonth() != latestMonth || unit.getYear() != latestYear))
     {
       continue;
     }
@@ -3441,6 +3490,11 @@ void MapTabContent::populateUnitsForSelectedRegion()
           unitNew.getXCoordinate() != selectedRegionX_ ||
           unitNew.getYCoordinate() != selectedRegionY_ ||
           unitNew.getZCoordinate() != selectedZ_)
+      {
+        continue;
+      }
+
+      if (hasLatestPeriod && (unitNew.getMonth() != latestMonth || unitNew.getYear() != latestYear))
       {
         continue;
       }
@@ -3559,37 +3613,7 @@ void MapTabContent::populateUnitsForSelectedRegion()
       continue;
     }
 
-    if (appData_->unitRepository().hasUnitInStructureAtCoordinates(
-      structure->getStructureId(),
-      structure->getXCoordinate(),
-      structure->getYCoordinate(),
-      structure->getZCoordinate()))
-    {
-      continue;
-    }
-
-    LVITEMW emptyStructureItem {};
-    emptyStructureItem.mask = LVIF_TEXT | LVIF_PARAM;
-    emptyStructureItem.iItem = row;
-    emptyStructureItem.iSubItem = 0;
-    emptyStructureItem.pszText = nullptr; // Unit Number column left empty
-    emptyStructureItem.lParam = 0;
-    ListView_InsertItem(unitsList_, &emptyStructureItem);
-
-    // Unit Name column left empty (column 1)
-
-    // Structure column (column 4): same format as for units
-    std::wstring structureDisplay = structure->getStructureType() + L" [" + std::to_wstring(structure->getStructureId()) + L"]";
-    if (!structure->getStructureName().empty()) {
-      structureDisplay += L" - " + structure->getStructureName();
-    }
-    ListView_SetItemText(unitsList_, row, 4, const_cast<LPWSTR>(structureDisplay.c_str()));
-
-    ++row;
-  }
-  for (const Structure* structure : regionStructures)
-  {
-    if (!structure)
+    if (hasLatestPeriod && (structure->getMonth() != latestMonth || structure->getYear() != latestYear))
     {
       continue;
     }
@@ -6007,6 +6031,11 @@ void MapTabContent::onMapDoubleClick(POINT pointInMapClient)
   InvalidateRect(mapCanvas_, nullptr, TRUE);
 }
 
+void MapTabContent::setNavigationCallback(std::function<void(const NavigationRequest&)> callback)
+{
+  navigationCallback_ = std::move(callback);
+}
+
 void MapTabContent::onMapRightClick(POINT pointInMapClient)
 {
   const RegionVisual* region = hitTestRegion(pointInMapClient);
@@ -6019,6 +6048,43 @@ void MapTabContent::onMapRightClick(POINT pointInMapClient)
   POINT screenPoint = pointInMapClient;
   ClientToScreen(mapCanvas_, &screenPoint);
 
+  const int rx = region->region->getXCoordinate();
+  const int ry = region->region->getYCoordinate();
+  const int rz = region->region->getZCoordinate();
+
+  // Compute latest report period so the battle check and navigation payload
+  // are consistent with what is currently displayed on the map.
+  int latestReportMonth = 0;
+  int latestReportYear  = 0;
+  if (appData_)
+  {
+    const auto& rr = appData_->reportRepository();
+    for (std::size_t i = 0; i < rr.size(); ++i)
+    {
+      const Report& rep = rr.at(i);
+      const int rm = rep.getMonth();
+      const int repYear = rep.getYear();
+      if (rm >= 1 && rm <= 12 && repYear > 0)
+      {
+        if (repYear > latestReportYear ||
+            (repYear == latestReportYear && rm > latestReportMonth))
+        {
+          latestReportMonth = rm;
+          latestReportYear  = repYear;
+        }
+      }
+    }
+  }
+
+  bool regionHasBattle = false;
+  if (appData_ && latestReportMonth > 0 && latestReportYear > 0)
+  {
+    regionHasBattle = appData_->battleRepository().hasBattleInRegionForPeriod(
+      rx, ry, rz,
+      latestReportMonth,
+      latestReportYear);
+  }
+
   HMENU menu = CreatePopupMenu();
   if (!menu)
   {
@@ -6029,6 +6095,14 @@ void MapTabContent::onMapRightClick(POINT pointInMapClient)
               MF_STRING,
               kRegionContextShowTextEditorCommandId,
               L"Show Region Report");
+
+  if (regionHasBattle)
+  {
+              AppendMenuW(menu,
+              MF_STRING | (regionHasBattle ? 0u : MF_GRAYED),
+              kRegionContextShowBattleReportCommandId,
+              L"Show Battle Report");
+  }
 
   const UINT selectedCommand = TrackPopupMenu(
     menu,
@@ -6047,6 +6121,13 @@ void MapTabContent::onMapRightClick(POINT pointInMapClient)
     showReadOnlyTextPopup(GetParent(mapCanvas_),
                           L"Region Report",
                           StringUtils::toCRLF(region->region->getRegionReport()));
+  }
+  else if (selectedCommand == kRegionContextShowBattleReportCommandId && navigationCallback_)
+  {
+    navigationCallback_(NavigationRequest{
+      NavigationTarget::Battles,
+      BattleNavigationPayload{ rx, ry, rz, latestReportMonth, latestReportYear }
+    });
   }
 }
 

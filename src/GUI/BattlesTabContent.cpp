@@ -124,11 +124,6 @@ bool BattlesTabContent::create(HWND parentWindow, HINSTANCE instance, AppData& a
 {
   appData_ = &appData;
 
-  INITCOMMONCONTROLSEX icc {};
-  icc.dwSize = sizeof(icc);
-  icc.dwICC = ICC_LISTVIEW_CLASSES;
-  InitCommonControlsEx(&icc);
-
   dateLabel_ = CreateWindowExW(
     0,
     L"STATIC",
@@ -314,6 +309,39 @@ void BattlesTabContent::refresh()
 
   updateDateSelector();
   updateBattleList();
+  updateBattleDetailsFromSelection();
+}
+
+void BattlesTabContent::focusBattleByRegion(int x, int y, int z, int month, int year)
+{
+  if (!appData_ || !battlesList_)
+  {
+    return;
+  }
+
+  if (!appData_->battleRepository().hasBattleInRegionForPeriod(x, y, z, month, year))
+  {
+    return;
+  }
+
+  selectedMonth_ = month;
+  selectedYear_ = year;
+  updateDateSelector();
+  updateBattleList();
+
+  for (int row = 0; row < static_cast<int>(visibleBattles_.size()); ++row)
+  {
+    const Battle* battle = visibleBattles_[static_cast<std::size_t>(row)];
+    if (battle->getRegionXCoordinate() == x &&
+        battle->getRegionYCoordinate() == y &&
+        battle->getRegionZCoordinate() == z)
+    {
+      ListView_SetItemState(battlesList_, row, LVIS_SELECTED | LVIS_FOCUSED, LVIS_SELECTED | LVIS_FOCUSED);
+      ListView_EnsureVisible(battlesList_, row, FALSE);
+      break;
+    }
+  }
+
   updateBattleDetailsFromSelection();
 }
 
