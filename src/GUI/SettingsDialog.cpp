@@ -38,36 +38,6 @@
 
 namespace
 {
-std::vector<std::wstring> splitCsv(const std::wstring& csv)
-{
-  std::vector<std::wstring> values;
-  std::wstring current;
-
-  for (wchar_t ch : csv)
-  {
-    if (ch == L',')
-    {
-      std::wstring item = StringUtils::trimWhitespace(current);
-      if (!item.empty())
-      {
-        values.push_back(item);
-      }
-      current.clear();
-      continue;
-    }
-
-    current.push_back(ch);
-  }
-
-  std::wstring item = StringUtils::trimWhitespace(current);
-  if (!item.empty())
-  {
-    values.push_back(item);
-  }
-
-  return values;
-}
-
 void loadListFromCsv(HWND listHandle, const std::wstring& csv)
 {
   if (!listHandle)
@@ -76,7 +46,7 @@ void loadListFromCsv(HWND listHandle, const std::wstring& csv)
   }
 
   SendMessageW(listHandle, LB_RESETCONTENT, 0, 0);
-  const std::vector<std::wstring> values = splitCsv(csv);
+  const std::vector<std::wstring> values = StringUtils::splitByComma(csv);
   for (const std::wstring& value : values)
   {
     SendMessageW(listHandle, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(value.c_str()));

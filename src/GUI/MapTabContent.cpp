@@ -30,6 +30,7 @@
 #include "Data/AppData.hpp"
 #include "Data/Commands.hpp"
 #include "Data/Faction.hpp"
+#include "GUI/GuiUtils.hpp"
 #include "Data/Item.hpp"
 #include "Data/Region.hpp"
 #include "Data/RegionRepository.hpp"
@@ -37,12 +38,15 @@
 #include "Data/Structure.hpp"
 #include "GUI/ControlIds.hpp"
 #include "GUI/OrdersEditorUtils.hpp"
+#include "Function/AppDataUtils.hpp"
 #include "Function/CommandSimulationService.hpp"
 #include "Function/CoordinateFormattingUtils.hpp"
+#include "Function/HexDirectionUtils.hpp"
 #include "Function/MonthUtils.hpp"
 #include "Function/OrderBusinessLogic.hpp"
 #include "Function/OrderParsingUtils.hpp"
 #include "Function/OrderWarningService.hpp"
+#include "Function/SkillFormattingUtils.hpp"
 #include "Function/StringUtils.hpp"
 
 #include <algorithm>
@@ -212,20 +216,6 @@ void showReadOnlyTextPopup(HWND ownerWindow, const std::wstring& windowTitle, co
   UpdateWindow(popup);
 }
 
-int resolveEffectiveStructureId(int currentStructureId, int futureStructureId)
-{
-  if (futureStructureId > 0)
-  {
-    return futureStructureId;
-  }
-
-  if (futureStructureId == 0)
-  {
-    return 0;
-  }
-
-  return currentStructureId;
-}
 constexpr wchar_t kMapCanvasClassName[] = L"WindowsAppMapCanvas";
 constexpr UINT_PTR kUnitSearchEditSubclassId = 231001;
 constexpr int kOrdersTabIndex = 0;
@@ -234,113 +224,6 @@ constexpr int kErrorsTabIndex = 2;
 constexpr int kWarningsTabIndex = 3;
 constexpr UINT kSkillStudyContextCommandId = 4711;
 
-std::wstring buildMapDateLabelText(const AppData* appData)
-{
-  if (!appData)
-  {
-    return L"Date: -";
-  }
-
-  int month = 0;
-  int year = 0;
-
-  auto adoptIfLater = [&](int candidateMonth, int candidateYear)
-  {
-    if (candidateMonth < 1 || candidateMonth > 12 || candidateYear <= 0)
-    {
-      return;
-    }
-
-    if (candidateYear > year || (candidateYear == year && candidateMonth > month))
-    {
-      month = candidateMonth;
-      year = candidateYear;
-    }
-  };
-
-  const ReportRepository& reportRepository = appData->reportRepository();
-  for (std::size_t index = 0; index < reportRepository.size(); ++index)
-  {
-    const Report& report = reportRepository.at(index);
-    adoptIfLater(report.getMonth(), report.getYear());
-  }
-
-  int latestBattleMonth = 0;
-  int latestBattleYear = 0;
-  if (appData->battleRepository().getLatestPeriod(latestBattleMonth, latestBattleYear))
-  {
-    adoptIfLater(latestBattleMonth, latestBattleYear);
-  }
-
-  if (month < 1 || month > 12 || year <= 0)
-  {
-    return L"Date: -";
-  }
-
-  return L"Date: " + MonthUtils::monthNumberToNameOr(month, L"Unknown") + L" " + std::to_wstring(year);
-}
-
-// TODO: move int Region class. Rename "isOcean".
-bool isOceanRegionType(const std::wstring& regionType)
-{
-  const std::wstring lower = StringUtils::toLower(regionType);
-  return lower == L"ocean";
-}
-
-bool isWestDirection(const std::wstring& direction)
-{
-  const std::wstring normalized = StringUtils::toLower(direction);
-  return normalized == L"w" || normalized == L"west" || normalized == L"nw" ||
-        normalized == L"northwest" || normalized == L"sw" || normalized == L"southwest";
-}
-
-bool isEastDirection(const std::wstring& direction)
-{
-  const std::wstring normalized = StringUtils::toLower(direction);
-  return normalized == L"e" || normalized == L"east" || normalized == L"ne" ||
-        normalized == L"northeast" || normalized == L"se" || normalized == L"southeast";
-}
-
-std::wstring normalizeHexDirection(const std::wstring& direction)
-{
-  const std::wstring normalized = StringUtils::toLower(StringUtils::trimWhitespace(direction));
-  if (normalized == L"n" || normalized == L"north")
-  {
-    return L"N";
-  }
-
-  if (normalized == L"ne" || normalized == L"northeast")
-  {
-    return L"NE";
-  }
-
-  if (normalized == L"se" || normalized == L"southeast")
-  {
-    return L"SE";
-  }
-
-  if (normalized == L"s" || normalized == L"south")
-  {
-    return L"S";
-  }
-
-  if (normalized == L"sw" || normalized == L"southwest")
-  {
-    return L"SW";
-  }
-
-  if (normalized == L"nw" || normalized == L"northwest")
-  {
-    return L"NW";
-  }
-
-  return L"";
-}
-
-std::wstring extractRoadDirectionFromStructure(const Structure& structure)
-{
-  return StructInfo::extractRoadDirectionFromStructureType(structure.getStructureType());
-}
 
 POINT getRoadEndpointForDirection(const std::array<POINT, 6>& polygon, const std::wstring& direction)
 {
@@ -376,183 +259,10 @@ POINT getRoadEndpointForDirection(const std::array<POINT, 6>& polygon, const std
   return midpoint(0, 1);
 }
 
-std::vector<std::pair<int, int>> calculateMovePathCoordinates(int startX, int startY, const std::vector<std::wstring>& directions)
-{
-  std::vector<std::pair<int, int>> path;
-  path.push_back({startX, startY});
-
-  int x = startX;
-  int y = startY;
-
-  for (const auto& direction : directions)
-  {
-    if (direction == L"N")
-    {
-      y -= 2;
-    }
-    else if (direction == L"S")
-    {
-      y += 2;
-    }
-    else if (direction == L"NE")
-    {
-      x += 1;
-      y -= 1;
-    }
-    else if (direction == L"NW")
-    {
-      x -= 1;
-      y -= 1;
-    }
-    else if (direction == L"SE")
-    {
-      x += 1;
-      y += 1;
-    }
-    else if (direction == L"SW")
-    {
-      x -= 1;
-      y += 1;
-    }
-
-    path.push_back({x, y});
-  }
-
-  return path;
-}
-
-std::wstring joinCommaSeparated(const std::vector<std::wstring>& values)
-{
-  std::wstring result;
-  for (std::size_t index = 0; index < values.size(); ++index)
-  {
-    if (index > 0)
-    {
-      result += L", ";
-    }
-    result += values[index];
-  }
-  return result;
-}
-
-// TODO: find all formatSkills functions.
-//       Make sure they are the same, and 
-//       Move to a central locations, to
-//       remove duplicated code.
-std::wstring formatSkills(const std::map<std::wstring, int>& skills)
-{
-  std::wstring result;
-  bool first = true;
-  for (const auto& [skillToken, days] : skills)
-  {
-    if (!first)
-    {
-      result += L", ";
-    }
-    const int level = Skill::trainingDaysToLevel(days);
-    result += skillToken + L" [" + skillToken + L"] " + std::to_wstring(level) +
-              L" (" + std::to_wstring(days) + L")";
-    first = false;
-  }
-  return result;
-}
-
-std::vector<std::wstring> splitLines(const std::wstring& text)
-{
-  std::vector<std::wstring> lines;
-  std::wstringstream stream(text);
-  std::wstring line;
-  while (std::getline(stream, line))
-  {
-    if (!line.empty() && line.back() == L'\r')
-    {
-      line.pop_back();
-    }
-
-    const std::size_t first = line.find_first_not_of(L" \t");
-    if (first == std::wstring::npos)
-    {
-      continue;
-    }
-
-    const std::size_t last = line.find_last_not_of(L" \t");
-    lines.push_back(line.substr(first, last - first + 1));
-  }
-
-  return lines;
-}
-
-std::vector<std::wstring> extractFormNewUnitBlock(const std::vector<std::wstring>& orders,
-                                                  int formUnitNumber)
-{
-  std::vector<std::wstring> blockLines;
-  bool insideFormBlock = false;
-
-  for (const std::wstring& order : orders)
-  {
-    if (!insideFormBlock)
-    {
-      int parsedFormUnitNumber = 0;
-      if (OrderParsingUtils::tryParseFormNewUnitLine(order, parsedFormUnitNumber) &&
-          parsedFormUnitNumber == formUnitNumber)
-      {
-        insideFormBlock = true;
-        blockLines.push_back(order);
-      }
-      continue;
-    }
-
-    blockLines.push_back(order);
-    if (StringUtils::toUpper(StringUtils::trimWhitespace(order)) == L"END")
-    {
-      break;
-    }
-  }
-
-  return blockLines;
-}
-
-
-// TODO: find all joinLines functions. 
-//       Make sure they are all the same,
-//       and if so, move to a central helper
-//       Same todo for splitLines functions
-std::wstring joinLines(const std::vector<std::wstring>& lines)
-{
-  std::wstring result;
-  for (std::size_t index = 0; index < lines.size(); ++index)
-  {
-    if (index > 0)
-    {
-      result += L"\r\n";
-    }
-    result += lines[index];
-  }
-  result += L"\r\n";
-  return result;
-}
-
 template <typename T>
 T clampValue(T value, T low, T high)
 {
   return (std::max)(low, (std::min)(value, high));
-}
-
-int wrapMapXCoordinate(int xCoordinate, int minX, int maxX)
-{
-  const int width = maxX - minX + 1;
-  if (width <= 0)
-  {
-    return xCoordinate;
-  }
-
-  int wrappedOffset = (xCoordinate - minX) % width;
-  if (wrappedOffset < 0)
-  {
-    wrappedOffset += width;
-  }
-
-  return minX + wrappedOffset;
 }
 
 using OrderParsingUtils::tryExtractOrderKeywordUpper;
@@ -612,7 +322,7 @@ LRESULT CALLBACK MapTabContent::ordersEditorSubclassProc(HWND hwnd,
             z = unit->getZCoordinate();
           }
         }
-        const int newNumber = OrdersEditorUtils::computeNextNewUnitNumber(self->appData_, x, y, z);
+        const int newNumber = OrderBusinessLogic::computeNextNewUnitNumber(self->appData_, x, y, z);
         OrdersEditorUtils::insertFormBlockAtEnd(hwnd, newNumber);
         break;
       }
@@ -2404,7 +2114,7 @@ void MapTabContent::recalculateVisibleMap()
 
     for (const auto& direction : region->getExitDirections())
     {
-      if (isWestDirection(direction) && region->getXCoordinate() <= minX + 1)
+      if (HexDirectionUtils::isWestDirection(direction) && region->getXCoordinate() <= minX + 1)
       {
         for (const Region* candidate : zRegions)
         {
@@ -2421,7 +2131,7 @@ void MapTabContent::recalculateVisibleMap()
         }
       }
 
-      if (isEastDirection(direction) && region->getXCoordinate() >= maxX - 1)
+      if (HexDirectionUtils::isEastDirection(direction) && region->getXCoordinate() >= maxX - 1)
       {
         for (const Region* candidate : zRegions)
         {
@@ -2695,7 +2405,7 @@ void MapTabContent::paintMap(HDC hdc) const
       std::set<std::wstring> availableExitDirections;
       for (const auto& exitDirection : visual.region->getExitDirections())
       {
-        const std::wstring normalizedDirection = normalizeHexDirection(exitDirection);
+        const std::wstring normalizedDirection = HexDirectionUtils::normalizeHexDirection(exitDirection);
         if (!normalizedDirection.empty())
         {
           availableExitDirections.insert(normalizedDirection);
@@ -2716,7 +2426,7 @@ void MapTabContent::paintMap(HDC hdc) const
             continue;
           }
 
-          const std::wstring roadDirection = extractRoadDirectionFromStructure(structure);
+          const std::wstring roadDirection = HexDirectionUtils::extractRoadDirectionFromStructure(structure);
           if (roadDirection.empty() || availableExitDirections.find(roadDirection) == availableExitDirections.end())
           {
             continue;
@@ -3079,7 +2789,7 @@ void MapTabContent::paintMap(HDC hdc) const
           continue;
         }
 
-        const bool isRoadStructure = !extractRoadDirectionFromStructure(*structure).empty();
+        const bool isRoadStructure = !HexDirectionUtils::extractRoadDirectionFromStructure(*structure).empty();
         const StructInfo* structInfo = appData_->structInfoRepository().findByType(structure->getStructureType());
         const bool isShipStructure = structInfo && structInfo->isShip();
 
@@ -3294,7 +3004,7 @@ bool MapTabContent::hitTestMapCoordinate(POINT pointInMapClient, int& xCoordinat
 
       if (inside)
       {
-        xCoordinate = wrapMapXCoordinate(x, mapMinX_, mapMaxX_);
+        xCoordinate = HexDirectionUtils::wrapMapXCoordinate(x, mapMinX_, mapMaxX_);
         yCoordinate = y;
         return true;
       }
@@ -3391,7 +3101,7 @@ void MapTabContent::populateUnitsForSelectedRegion()
     }
 
     std::wstring structureDisplay;
-    const int displayStructureId = resolveEffectiveStructureId(unit.getStructureId(), unit.getFutureStructureId());
+    const int displayStructureId = unit.getFutureStructureId();
     if (displayStructureId != 0)
     {
       const Structure* structure = appData_->structureRepository().findByIdAndCoordinates(
@@ -3448,7 +3158,7 @@ void MapTabContent::populateUnitsForSelectedRegion()
         menEntries.push_back(itemToken + L" (" + std::to_wstring(amount) + L")");
       }
     }
-    const std::wstring menText = joinCommaSeparated(menEntries);
+    const std::wstring menText = StringUtils::joinLines(menEntries, L", ");
 
     const auto silverCurrentIt = unit.getItems().find(L"SILV");
     const int silverCurrent = silverCurrentIt != unit.getItems().end() ? silverCurrentIt->second : 0;
@@ -3457,8 +3167,8 @@ void MapTabContent::populateUnitsForSelectedRegion()
     const int silverAfter = silverAfterIt != afterCommandCounts.end() ? silverAfterIt->second : 0;
     const std::wstring silverText = std::to_wstring(silverCurrent) + L" (" + std::to_wstring(silverAfter) + L")";
 
-    std::wstring flags = joinCommaSeparated(unit.getFlags());
-    std::wstring skills = formatSkills(unit.getSkills());
+    std::wstring flags = StringUtils::joinLines(unit.getFlags(), L", ");
+    std::wstring skills = SkillFormattingUtils::formatSkills(unit.getSkills());
     const std::wstring warningIndicator = unit.getWarnings().empty() ? L"" : L"!";
     const bool isDamagedInLatestBattle = hasLatestBattlePeriod &&
       appData_->battleRepository().isUnitDamagedInAnyBattleForPeriod(
@@ -3516,7 +3226,7 @@ void MapTabContent::populateUnitsForSelectedRegion()
       }
 
       std::wstring newStructureDisplay;
-      const int newDisplayStructureId = resolveEffectiveStructureId(unitNew.getStructureId(), unitNew.getFutureStructureId());
+      const int newDisplayStructureId = unitNew.getFutureStructureId();
       if (newDisplayStructureId != 0)
       {
         const Structure* structure = appData_->structureRepository().findByIdAndCoordinates(
@@ -3573,7 +3283,7 @@ void MapTabContent::populateUnitsForSelectedRegion()
           newMenEntries.push_back(itemToken + L" (" + std::to_wstring(amount) + L")");
         }
       }
-      const std::wstring newMenText = joinCommaSeparated(newMenEntries);
+      const std::wstring newMenText = StringUtils::joinLines(newMenEntries, L", ");
 
       const auto newSilverCurrentIt = unitNew.getItems().find(L"SILV");
       const int newSilverCurrent = newSilverCurrentIt != unitNew.getItems().end() ? newSilverCurrentIt->second : 0;
@@ -3581,8 +3291,8 @@ void MapTabContent::populateUnitsForSelectedRegion()
       const int newSilverAfter = newSilverAfterIt != newAfterCommandCounts.end() ? newSilverAfterIt->second : 0;
       const std::wstring newSilverText = std::to_wstring(newSilverCurrent) + L" (" + std::to_wstring(newSilverAfter) + L")";
 
-      std::wstring newFlags = joinCommaSeparated(unitNew.getFlags());
-      std::wstring newSkills = formatSkills(unitNew.getSkills());
+      std::wstring newFlags = StringUtils::joinLines(unitNew.getFlags(), L", ");
+      std::wstring newSkills = SkillFormattingUtils::formatSkills(unitNew.getSkills());
       const std::wstring newWarningIndicator = unitNew.getWarnings().empty() ? L"" : L"!";
 
       ListView_SetItemText(unitsList_, row, 5, const_cast<LPWSTR>(newMenText.c_str()));
@@ -4851,7 +4561,7 @@ void MapTabContent::updateSelectedUnitDetailsByNumber(int unitNumber)
       L"] (origin unit: " + std::to_wstring(unitNew->getOriginUnit()) + L")";
     SetWindowTextW(selectedUnitLabel_, title.c_str());
 
-    std::wstring details = L"Flags: " + joinCommaSeparated(unitNew->getFlags());
+    std::wstring details = L"Flags: " + StringUtils::joinLines(unitNew->getFlags(), L", ");
     SetWindowTextW(unitFlagsLabel_, details.c_str());
     if (unitWarningLabel_)
     {
@@ -4878,10 +4588,10 @@ void MapTabContent::updateSelectedUnitDetailsByNumber(int unitNumber)
       const Unit* originUnit = appData_->unitRepository().findByNumber(unitNew->getOriginUnit());
       if (originUnit)
       {
-        const std::vector<std::wstring> formBlock = extractFormNewUnitBlock(originUnit->getOrders(), unitNew->getUnitNumber());
+        const std::vector<std::wstring> formBlock = OrderParsingUtils::extractFormNewUnitBlock(originUnit->getOrders(), unitNew->getUnitNumber());
         if (!formBlock.empty())
         {
-          SetWindowTextW(ordersEditor_, joinLines(formBlock).c_str());
+          SetWindowTextW(ordersEditor_, (StringUtils::joinLines(formBlock) + L"\r\n").c_str());
         }
         else
         {
@@ -4913,7 +4623,7 @@ void MapTabContent::updateSelectedUnitDetailsByNumber(int unitNumber)
   std::wstring title = unit->getUnitNameAfterOrders() + L" [" + std::to_wstring(unit->getUnitNumber()) + L"]";
   SetWindowTextW(selectedUnitLabel_, title.c_str());
 
-  std::wstring details = L"Flags: " + joinCommaSeparated(unit->getFlags());
+  std::wstring details = L"Flags: " + StringUtils::joinLines(unit->getFlags(), L", ");
   SetWindowTextW(unitFlagsLabel_, details.c_str());
   if (unitWarningLabel_)
   {
@@ -4996,7 +4706,7 @@ void MapTabContent::updateSelectedUnitDetailsByNumber(int unitNumber)
             continue;
           }
 
-          const std::wstring normalized = normalizeHexDirection(upperToken);
+          const std::wstring normalized = HexDirectionUtils::normalizeHexDirection(upperToken);
           if (!normalized.empty())
           {
             directions.push_back(normalized);
@@ -5034,7 +4744,7 @@ void MapTabContent::updateSelectedUnitDetailsByNumber(int unitNumber)
           }
 
           // Calculate path and evaluate sail-specific colour conditions.
-          movePathCoordinates_ = calculateMovePathCoordinates(
+          movePathCoordinates_ = HexDirectionUtils::calculateMovePathCoordinates(
             unit->getXCoordinate(),
             unit->getYCoordinate(),
             directions
@@ -5056,8 +4766,8 @@ void MapTabContent::updateSelectedUnitDetailsByNumber(int unitNumber)
               const int ey = movePathCoordinates_[si + 1].second;
               const Region* startReg = regionRepo.findByCoordinates(sx, sy, unitZ);
               const Region* endReg   = regionRepo.findByCoordinates(ex, ey, unitZ);
-              const bool startOcean = startReg && isOceanRegionType(startReg->getRegionType());
-              const bool endOcean   = endReg   && isOceanRegionType(endReg->getRegionType());
+              const bool startOcean = startReg && startReg->isOcean();
+              const bool endOcean   = endReg   && endReg->isOcean();
               if (!startOcean && !endOcean)
               {
                 routeInvalid = true;
@@ -5073,7 +4783,7 @@ void MapTabContent::updateSelectedUnitDetailsByNumber(int unitNumber)
         else
         {
           // Calculate path for MOVE/ADVANCE.
-          movePathCoordinates_ = calculateMovePathCoordinates(
+          movePathCoordinates_ = HexDirectionUtils::calculateMovePathCoordinates(
             unit->getXCoordinate(),
             unit->getYCoordinate(),
             directions
@@ -5087,7 +4797,7 @@ void MapTabContent::updateSelectedUnitDetailsByNumber(int unitNumber)
     }
   }
 
-  const std::wstring ordersText = joinLines(unit->getOrders());
+  const std::wstring ordersText = StringUtils::joinLines(unit->getOrders()) + L"\r\n";
   SetWindowTextW(ordersEditor_, ordersText.c_str());
   setOrdersEditingEnabled(canEditOrdersForUnit(unit));
   updateUnitDetailsTabVisibility();
@@ -5386,7 +5096,7 @@ void MapTabContent::updateUnitWeightAndCapacities(const Unit* unit)
           continue;
         }
 
-        const int effectiveStructureId = resolveEffectiveStructureId(candidate.getStructureId(), candidate.getFutureStructureId());
+        const int effectiveStructureId = candidate.getFutureStructureId();
         if (effectiveStructureId != unit->getStructureId())
         {
           continue;
@@ -5559,12 +5269,9 @@ void MapTabContent::saveOrdersToSelectedUnit()
     return;
   }
 
-  const int textLength = GetWindowTextLengthW(ordersEditor_);
-  std::wstring buffer(static_cast<std::size_t>(textLength) + 1, L'\0');
-  GetWindowTextW(ordersEditor_, buffer.data(), textLength + 1);
-  const std::wstring text = buffer.c_str();
+  const std::wstring text = GuiUtils::getWindowText(ordersEditor_);
 
-  const std::vector<std::wstring> orders = splitLines(text);
+  const std::vector<std::wstring> orders = StringUtils::splitLines(text);
   unit->setOrders(orders);
 
   // Keep stale OrderRepository cleanup based on current UnitNew state, then recalc
@@ -5627,10 +5334,7 @@ void MapTabContent::appendOrderLineToOrdersEditor(const std::wstring& orderLine)
     return;
   }
 
-  const int textLength = GetWindowTextLengthW(ordersEditor_);
-  std::wstring buffer(static_cast<std::size_t>(textLength) + 1, L'\0');
-  GetWindowTextW(ordersEditor_, buffer.data(), textLength + 1);
-  std::wstring ordersText = buffer.c_str();
+  std::wstring ordersText = GuiUtils::getWindowText(ordersEditor_);
 
   if (!ordersText.empty())
   {
@@ -5811,15 +5515,11 @@ void MapTabContent::searchAndSelectUnitById()
     return;
   }
 
-  const int textLength = GetWindowTextLengthW(unitSearchEdit_);
-  if (textLength <= 0)
+  const std::wstring unitIdText = GuiUtils::getWindowText(unitSearchEdit_);
+  if (unitIdText.empty())
   {
     return;
   }
-
-  std::wstring buffer(static_cast<std::size_t>(textLength) + 1, L'\0');
-  GetWindowTextW(unitSearchEdit_, buffer.data(), textLength + 1);
-  const std::wstring unitIdText = buffer.c_str();
 
   int unitNumber = 0;
   try
@@ -6156,7 +5856,7 @@ void MapTabContent::updateRegionDetailsView(const Region* region)
 
   if (!region)
   {
-    SetWindowTextW(regionDateLabel_, buildMapDateLabelText(appData_).c_str());
+    SetWindowTextW(regionDateLabel_, AppDataUtils::buildDateLabelText(appData_).c_str());
     SetWindowTextW(regionDetailsView_, L"No region selected");
     populateResourcesList(nullptr);
     populateForSaleList(nullptr);
@@ -6165,7 +5865,7 @@ void MapTabContent::updateRegionDetailsView(const Region* region)
   }
 
   std::wstring details;
-  SetWindowTextW(regionDateLabel_, buildMapDateLabelText(appData_).c_str());
+  SetWindowTextW(regionDateLabel_, AppDataUtils::buildDateLabelText(appData_).c_str());
   details += L"Coordinates: " + CoordinateFormattingUtils::formatCoordinates(
     region->getXCoordinate(),
     region->getYCoordinate(),
@@ -6185,7 +5885,7 @@ void MapTabContent::updateRegionDetailsView(const Region* region)
   {
     const Unit* selectedUnit = appData_->unitRepository().findByNumber(selectedUnitNumber_);
     const int selectedDisplayStructureId = selectedUnit
-      ? resolveEffectiveStructureId(selectedUnit->getStructureId(), selectedUnit->getFutureStructureId())
+      ? selectedUnit->getFutureStructureId()
       : 0;
 
     if (selectedUnit &&

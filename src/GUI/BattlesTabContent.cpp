@@ -24,6 +24,7 @@
 
 #include "Data/AppData.hpp"
 #include "Data/Battle.hpp"
+#include "Function/BattleFormattingUtils.hpp"
 #include "Function/CoordinateFormattingUtils.hpp"
 
 #include <commctrl.h>
@@ -35,89 +36,6 @@ namespace
 constexpr int kMargin = 8;
 constexpr int kPaneGap = 10;
 constexpr int kDateComboWidth = 180;
-
-std::wstring formatPeriod(int month, int year)
-{
-  std::wstringstream stream;
-  if (month < 10)
-  {
-    stream << L"0";
-  }
-  stream << month << L"/" << year;
-  return stream.str();
-}
-
-std::wstring formatBattleCoordinates(const Battle& battle)
-{
-  return CoordinateFormattingUtils::formatCoordinates(
-    battle.getRegionXCoordinate(),
-    battle.getRegionYCoordinate(),
-    battle.getRegionZCoordinate()
-  );
-}
-
-std::wstring formatBattleListEntry(const Battle& battle)
-{
-  std::wstringstream stream;
-  stream << battle.getAttackerUnitName() << L" (" << battle.getAttackerUnitId() << L") attacks "
-         << battle.getDefenderUnitName() << L" (" << battle.getDefenderUnitId() << L") in "
-         << formatBattleCoordinates(battle);
-  return stream.str();
-}
-
-std::wstring joinDamaged(const std::vector<int>& damagedUnitIds)
-{
-  if (damagedUnitIds.empty())
-  {
-    return L"none";
-  }
-
-  std::wstringstream stream;
-  for (std::size_t index = 0; index < damagedUnitIds.size(); ++index)
-  {
-    if (index != 0)
-    {
-      stream << L", ";
-    }
-    stream << damagedUnitIds[index];
-  }
-
-  return stream.str();
-}
-
-std::wstring formatSpoils(const Battle& battle)
-{
-  if (battle.getSpoils().empty())
-  {
-    return L"none";
-  }
-
-  std::wstringstream stream;
-  for (std::size_t index = 0; index < battle.getSpoils().size(); ++index)
-  {
-    if (index != 0)
-    {
-      stream << L", ";
-    }
-
-    const BattleSpoil& spoil = battle.getSpoils()[index];
-    stream << spoil.amount << L" [" << spoil.token << L"]";
-  }
-
-  return stream.str();
-}
-
-std::wstring formatSummary(const Battle& battle)
-{
-  std::wstringstream stream;
-  stream << L"Attacker " << battle.getAttackerUnitName() << L" (" << battle.getAttackerUnitId() << L") loses "
-         << battle.getAttackerLosses() << L". Damaged units: " << joinDamaged(battle.getAttackerDamagedUnitIds()) << L"\r\n"
-         << L"Defender " << battle.getDefenderUnitName() << L" (" << battle.getDefenderUnitId() << L") loses "
-         << battle.getDefenderLosses() << L". Damaged units: " << joinDamaged(battle.getDefenderDamagedUnitIds()) << L"\r\n"
-         << L"Spoils: " << formatSpoils(battle);
-  return stream.str();
-}
-
 } // namespace
 
 bool BattlesTabContent::create(HWND parentWindow, HINSTANCE instance, AppData& appData)
@@ -402,7 +320,7 @@ void BattlesTabContent::updateDateSelector()
 
   for (const auto& [month, year] : availablePeriods_)
   {
-    const std::wstring periodText = formatPeriod(month, year);
+    const std::wstring periodText = BattleFormattingUtils::formatPeriod(month, year);
     SendMessageW(dateCombo_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(periodText.c_str()));
   }
 
@@ -456,7 +374,7 @@ void BattlesTabContent::updateBattleList()
       continue;
     }
 
-    const std::wstring battleText = formatBattleListEntry(*battle);
+    const std::wstring battleText = BattleFormattingUtils::formatBattleListEntry(*battle);
 
     LVITEMW item {};
     item.mask = LVIF_TEXT | LVIF_PARAM;
@@ -497,7 +415,7 @@ void BattlesTabContent::updateBattleDetailsFromSelection()
     return;
   }
 
-  const std::wstring summaryText = formatSummary(*battle);
+  const std::wstring summaryText = BattleFormattingUtils::formatSummary(*battle);
   SetWindowTextW(summaryEdit_, summaryText.c_str());
   SetWindowTextW(fullReportEdit_, battle->getFullText().c_str());
 }

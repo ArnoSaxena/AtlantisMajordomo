@@ -14,13 +14,17 @@ add_executable(AtlantisMajordomo WIN32
   src/Data/AppData.cpp
   src/Data/Commands.cpp
   src/Function/CommandSimulationService.cpp
+  src/Function/AppDataUtils.cpp
+  src/Function/BattleFormattingUtils.cpp
   src/Function/CoordinateFormattingUtils.cpp
   src/Function/FactionAttitudeUtils.cpp
+  src/Function/HexDirectionUtils.cpp
   src/Function/JsonUtils.cpp
   src/Function/MonthUtils.cpp
   src/Function/OrderParsingUtils.cpp
   src/Function/OrderWarningService.cpp
   src/Function/OrderBusinessLogic.cpp
+  src/Function/SkillFormattingUtils.cpp
   src/Function/StringUtils.cpp
   src/Data/DataSerializer.cpp
   src/Data/Event.cpp
@@ -48,6 +52,7 @@ add_executable(AtlantisMajordomo WIN32
   src/Main.cpp
   src/GUI/MainWindow.cpp
   src/GUI/EventsTabContent.cpp
+  src/GUI/GuiUtils.cpp
   src/GUI/ReportsTabContent.cpp
   src/GUI/MapTabContent.cpp
   src/GUI/OrdersEditorUtils.cpp

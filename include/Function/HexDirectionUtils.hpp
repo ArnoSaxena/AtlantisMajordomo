@@ -16,26 +16,24 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  *
- * File: StringUtils.hpp
+ * File: HexDirectionUtils.hpp
  */
- 
+
+// 304c89c8-6d3c-4586-b0c4-fad2e67b2f65
 #pragma once
 
-#include <map>
 #include <string>
+#include <utility>
 #include <vector>
 
-namespace StringUtils
+class Structure;
+
+namespace HexDirectionUtils
 {
-    std::wstring trimBom(std::wstring value);
-    std::wstring trimWhitespace(const std::wstring& value);
-    std::vector<std::wstring> splitByComma(const std::wstring& text);
-    std::wstring joinLines(const std::vector<std::wstring>& lines, const std::wstring& separator = L"\r\n");
-    std::vector<std::wstring> splitLines(const std::wstring& text);
-    std::wstring toLower(std::wstring value);
-    std::wstring toUpper(std::wstring value);
-    int parseIntSafe(const std::wstring& text);
-    std::wstring toCRLF(const std::wstring& input);
-    std::wstring formatStringIntMap(const std::map<std::wstring, int>& data);
-    std::map<std::wstring, int> parseStringIntMap(const std::wstring& text);
+bool isWestDirection(const std::wstring& direction);
+bool isEastDirection(const std::wstring& direction);
+std::wstring normalizeHexDirection(const std::wstring& direction);
+std::vector<std::pair<int, int>> calculateMovePathCoordinates(int startX, int startY, const std::vector<std::wstring>& directions);
+int wrapMapXCoordinate(int xCoordinate, int minX, int maxX);
+std::wstring extractRoadDirectionFromStructure(const Structure& structure);
 }

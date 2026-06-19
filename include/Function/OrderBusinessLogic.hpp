@@ -70,4 +70,7 @@ bool rewriteFactionDeclareOrders(AppData& appData,
 void syncOrderRepositoryForSavedUnit(AppData& appData,
 									 int originUnitNumber,
 									 bool recalculateAfterOrdersValues = true);
+
+// Returns the next available unit number for a FORM order at the given coordinates.
+int computeNextNewUnitNumber(AppData* appData, int x, int y, int z);
 }

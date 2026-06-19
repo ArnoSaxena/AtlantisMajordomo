@@ -16,34 +16,20 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  *
- * File: OrdersEditorUtils.hpp
+ * File: GuiUtils.hpp
  */
- 
-// Shared utilities for orders editor context menu and insertion behavior
+
+// 304c89c8-6d3c-4586-b0c4-fad2e67b2f65
 #pragma once
+
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
 
-#include <windows.h>
 #include <string>
+#include <windows.h>
 
-class AppData;
-
-namespace OrdersEditorUtils
+namespace GuiUtils
 {
-  // Command IDs
-  constexpr UINT kOrdersUndoCmd = 7001;
-  constexpr UINT kOrdersCutCmd = 7002;
-  constexpr UINT kOrdersCopyCmd = 7003;
-  constexpr UINT kOrdersPasteCmd = 7004;
-  constexpr UINT kOrdersDeleteCmd = 7005;
-  constexpr UINT kOrdersSelectAllCmd = 7006;
-  constexpr UINT kOrdersFormNewUnitCmd = 7007;
-
-  // Show the standard orders editor context menu. Returns selected command id or 0.
-  UINT showOrdersEditorMenu(HWND ownerHwnd, LPARAM lp);
-
-  // Insert a FORM/empty/END block at the end of the edit control and focus empty line
-  void insertFormBlockAtEnd(HWND editHwnd, int newNumber);
+std::wstring getWindowText(HWND control);
 }

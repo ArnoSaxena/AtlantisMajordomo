@@ -21,6 +21,8 @@
  
 #include "Function/StringUtils.hpp"
 
+#include <map>
+#include <sstream>
 #include <string>
 #include <vector>
 #include <cwctype>
@@ -96,6 +98,30 @@ namespace StringUtils
         return value;
     }
 
+    std::vector<std::wstring> splitLines(const std::wstring& text)
+    {
+        std::vector<std::wstring> lines;
+        std::wstringstream stream(text);
+        std::wstring line;
+        while (std::getline(stream, line))
+        {
+            if (!line.empty() && line.back() == L'\r')
+            {
+                line.pop_back();
+            }
+
+            const std::size_t first = line.find_first_not_of(L" \t");
+            if (first == std::wstring::npos)
+            {
+                continue;
+            }
+
+            const std::size_t last = line.find_last_not_of(L" \t");
+            lines.push_back(line.substr(first, last - first + 1));
+        }
+        return lines;
+    }
+
     std::wstring toUpper(std::wstring value)
     {
         for (auto& ch : value)
@@ -140,6 +166,68 @@ namespace StringUtils
                 result += input[i];
             }
         }
+        return result;
+    }
+
+    std::wstring formatStringIntMap(const std::map<std::wstring, int>& data)
+    {
+        std::wstring result;
+        bool first = true;
+        for (const auto& [token, amount] : data)
+        {
+            if (!first)
+            {
+                result += L"\r\n";
+            }
+            result += token + L":" + std::to_wstring(amount);
+            first = false;
+        }
+        return result;
+    }
+
+    std::map<std::wstring, int> parseStringIntMap(const std::wstring& text)
+    {
+        std::map<std::wstring, int> result;
+
+        std::wstringstream stream(text);
+        std::wstring line;
+        while (std::getline(stream, line))
+        {
+            if (!line.empty() && line.back() == L'\r')
+            {
+                line.pop_back();
+            }
+
+            line = trimWhitespace(line);
+            if (line.empty())
+            {
+                continue;
+            }
+
+            const std::size_t separatorPos = line.find(L':');
+            if (separatorPos == std::wstring::npos)
+            {
+                continue;
+            }
+
+            const std::wstring token = trimWhitespace(line.substr(0, separatorPos));
+            const std::wstring amountText = trimWhitespace(line.substr(separatorPos + 1));
+            if (token.empty())
+            {
+                continue;
+            }
+
+            try
+            {
+                const int amount = std::stoi(amountText);
+                result[token] = amount;
+            }
+            catch (...)
+            {
+                continue;
+            }
+        }
+
         return result;
     }
 }

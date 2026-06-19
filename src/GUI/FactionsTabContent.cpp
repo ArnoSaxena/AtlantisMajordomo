@@ -26,6 +26,7 @@
 
 #include "GUI/FactionsTabContent.hpp"
 
+#include "GUI/GuiUtils.hpp"
 #include "Data/AppData.hpp"
 #include "Data/Faction.hpp"
 #include "Data/Unit.hpp"
@@ -80,24 +81,6 @@ HWND createEdit(HWND parent, HINSTANCE instance, DWORD extraStyle = 0)
     nullptr,
     instance,
     nullptr);
-}
-
-std::wstring getWindowText(HWND control)
-{
-  if (!control)
-  {
-    return L"";
-  }
-
-  const int length = GetWindowTextLengthW(control);
-  if (length <= 0)
-  {
-    return L"";
-  }
-
-  std::wstring text(static_cast<std::size_t>(length) + 1, L'\0');
-  GetWindowTextW(control, text.data(), length + 1);
-  return text.c_str();
 }
 
 void populateAttitudeCombo(HWND combo)
@@ -540,7 +523,7 @@ bool FactionsTabContent::handleCommand(int commandId, int notificationCode)
     Faction* faction = appData_ ? appData_->factionRepository().findByNumber(selectedFactionNumber_) : nullptr;
     if (faction)
     {
-      const int requestedCommandUnitNumber = StringUtils::parseIntSafe(getWindowText(commandUnitEdit_));
+      const int requestedCommandUnitNumber = StringUtils::parseIntSafe(GuiUtils::getWindowText(commandUnitEdit_));
       const auto resolution = OrderBusinessLogic::resolveFactionCommandUnit(
         *appData_,
         faction->getFactionNumber(),
@@ -808,7 +791,6 @@ void FactionsTabContent::setAttitudesPanelVisible(bool visible)
   ShowWindow(unclaimedSilverEdit_, cmd);
 }
 
-
 void FactionsTabContent::handleDefaultAttitudeSelection(Faction& faction, const std::wstring& selectedAttitudeText)
 {
   const Faction::Attitude selectedAttitude = FactionAttitudeUtils::textToAttitude(selectedAttitudeText);
@@ -987,8 +969,6 @@ void FactionsTabContent::saveAttitudeEdits()
     updateAttitudesList(faction);
   }
 }
-
-// Now implemented in UnitRepository
 
 void FactionsTabContent::updateAttitudesList(const Faction* faction)
 {
@@ -1192,19 +1172,19 @@ void FactionsTabContent::saveSelectedFaction()
     return;
   }
 
-  faction->setName(StringUtils::trimWhitespace(getWindowText(factionNameEdit_)));
-  faction->setMonth(StringUtils::parseIntSafe(getWindowText(monthEdit_)));
-  faction->setYear(StringUtils::parseIntSafe(getWindowText(yearEdit_)));
-  faction->setPassword(getWindowText(passwordEdit_));
+  faction->setName(StringUtils::trimWhitespace(GuiUtils::getWindowText(factionNameEdit_)));
+  faction->setMonth(StringUtils::parseIntSafe(GuiUtils::getWindowText(monthEdit_)));
+  faction->setYear(StringUtils::parseIntSafe(GuiUtils::getWindowText(yearEdit_)));
+  faction->setPassword(GuiUtils::getWindowText(passwordEdit_));
 
-  faction->setTaxedOrTradedRegionsCurrent(StringUtils::parseIntSafe(getWindowText(taxedTradedCurrentEdit_)));
-  faction->setTaxedOrTradedRegionsMax(StringUtils::parseIntSafe(getWindowText(taxedTradedMaxEdit_)));
-  faction->setQuartermastersCurrent(StringUtils::parseIntSafe(getWindowText(quartermastersCurrentEdit_)));
-  faction->setQuartermastersMax(StringUtils::parseIntSafe(getWindowText(quartermastersMaxEdit_)));
-  faction->setMagesCurrent(StringUtils::parseIntSafe(getWindowText(magesCurrentEdit_)));
-  faction->setMagesMax(StringUtils::parseIntSafe(getWindowText(magesMaxEdit_)));
-  faction->setApprenticesCurrent(StringUtils::parseIntSafe(getWindowText(apprenticesCurrentEdit_)));
-  faction->setApprenticesMax(StringUtils::parseIntSafe(getWindowText(apprenticesMaxEdit_)));
+  faction->setTaxedOrTradedRegionsCurrent(StringUtils::parseIntSafe(GuiUtils::getWindowText(taxedTradedCurrentEdit_)));
+  faction->setTaxedOrTradedRegionsMax(StringUtils::parseIntSafe(GuiUtils::getWindowText(taxedTradedMaxEdit_)));
+  faction->setQuartermastersCurrent(StringUtils::parseIntSafe(GuiUtils::getWindowText(quartermastersCurrentEdit_)));
+  faction->setQuartermastersMax(StringUtils::parseIntSafe(GuiUtils::getWindowText(quartermastersMaxEdit_)));
+  faction->setMagesCurrent(StringUtils::parseIntSafe(GuiUtils::getWindowText(magesCurrentEdit_)));
+  faction->setMagesMax(StringUtils::parseIntSafe(GuiUtils::getWindowText(magesMaxEdit_)));
+  faction->setApprenticesCurrent(StringUtils::parseIntSafe(GuiUtils::getWindowText(apprenticesCurrentEdit_)));
+  faction->setApprenticesMax(StringUtils::parseIntSafe(GuiUtils::getWindowText(apprenticesMaxEdit_)));
 
   if (faction->isMainFaction() && defaultAttitudeCombo_)
   {
@@ -1217,7 +1197,7 @@ void FactionsTabContent::saveSelectedFaction()
     }
   }
 
-  faction->setCommandUnitNumber(StringUtils::parseIntSafe(getWindowText(commandUnitEdit_)));
+  faction->setCommandUnitNumber(StringUtils::parseIntSafe(GuiUtils::getWindowText(commandUnitEdit_)));
 
   const bool selectedAsMain = (Button_GetCheck(mainFactionCheck_) == BST_CHECKED);
   if (selectedAsMain)

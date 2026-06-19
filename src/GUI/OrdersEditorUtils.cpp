@@ -25,8 +25,6 @@
 
 #include "GUI/OrdersEditorUtils.hpp"
 
-#include "Data/AppData.hpp"
-
 #include <commctrl.h>
 #include <windowsx.h>
 
@@ -65,20 +63,6 @@ UINT showOrdersEditorMenu(HWND ownerHwnd, LPARAM lp)
   const UINT selected = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON, pt.x, pt.y, 0, ownerHwnd, nullptr);
   DestroyMenu(menu);
   return selected;
-}
-
-int computeNextNewUnitNumber(AppData* appData, int x, int y, int z)
-{
-  if (!appData)
-  {
-    return 1;
-  }
-  int newNumber = 1;
-  while (appData->unitNewRepository().hasUnitWithNumberAtCoordinates(newNumber, x, y, z))
-  {
-    ++newNumber;
-  }
-  return newNumber;
 }
 
 void insertFormBlockAtEnd(HWND editHwnd, int newNumber)

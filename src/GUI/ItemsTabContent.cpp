@@ -24,6 +24,7 @@
 #define NOMINMAX
 #endif
 
+#include "GUI/GuiUtils.hpp"
 #include "GUI/ItemsTabContent.hpp"
 
 #include "Data/AppData.hpp"
@@ -107,85 +108,6 @@ HWND createMultilineEdit(HWND parent, HINSTANCE instance)
     nullptr);
 }
 
-std::wstring getWindowText(HWND control)
-{
-  if (!control)
-  {
-    return L"";
-  }
-
-  const int length = GetWindowTextLengthW(control);
-  if (length <= 0)
-  {
-    return L"";
-  }
-
-  std::wstring text(static_cast<std::size_t>(length) + 1, L'\0');
-  GetWindowTextW(control, text.data(), length + 1);
-  return text.c_str();
-}
-
-std::wstring formatStringIntMap(const std::map<std::wstring, int>& data)
-{
-  std::wstring result;
-  bool first = true;
-  for (const auto& [token, amount] : data)
-  {
-    if (!first)
-    {
-      result += L"\r\n";
-    }
-    result += token + L":" + std::to_wstring(amount);
-    first = false;
-  }
-  return result;
-}
-
-std::map<std::wstring, int> parseStringIntMap(const std::wstring& text)
-{
-  std::map<std::wstring, int> result;
-
-  std::wstringstream stream(text);
-  std::wstring line;
-  while (std::getline(stream, line))
-  {
-    if (!line.empty() && line.back() == L'\r')
-    {
-      line.pop_back();
-    }
-
-    line = StringUtils::trimWhitespace(line);
-    if (line.empty())
-    {
-      continue;
-    }
-
-    const std::size_t separatorPos = line.find(L':');
-    if (separatorPos == std::wstring::npos)
-    {
-      continue;
-    }
-
-    const std::wstring token = StringUtils::trimWhitespace(line.substr(0, separatorPos));
-    const std::wstring amountText = StringUtils::trimWhitespace(line.substr(separatorPos + 1));
-    if (token.empty())
-    {
-      continue;
-    }
-
-    try
-    {
-      const int amount = std::stoi(amountText);
-      result[token] = amount;
-    }
-    catch (...)
-    {
-      continue;
-    }
-  }
-
-  return result;
-}
 }
 
 bool ItemsTabContent::create(HWND parentWindow, HINSTANCE instance, AppData& appData)
@@ -775,16 +697,16 @@ void ItemsTabContent::loadItemToFields(const Item* item)
   SetWindowTextW(defaultSkillMaxEdit_, std::to_wstring(item->getDefaultSkillMax()).c_str());
   Button_SetCheck(manCheck_, item->isMan() ? BST_CHECKED : BST_UNCHECKED);
 
-  const std::wstring skillsMaxText = formatStringIntMap(item->getSkillsMax());
+  const std::wstring skillsMaxText = StringUtils::formatStringIntMap(item->getSkillsMax());
   SetWindowTextW(skillsMaxEdit_, skillsMaxText.c_str());
 
-  const std::wstring resourcesText = formatStringIntMap(item->getResources());
+  const std::wstring resourcesText = StringUtils::formatStringIntMap(item->getResources());
   SetWindowTextW(resourcesEdit_, resourcesText.c_str());
 
-  const std::wstring productionSkillText = formatStringIntMap(item->getProductionSkill());
+  const std::wstring productionSkillText = StringUtils::formatStringIntMap(item->getProductionSkill());
   SetWindowTextW(productionSkillEdit_, productionSkillText.c_str());
 
-  const std::wstring productionHelpText = formatStringIntMap(item->getProductionHelp());
+  const std::wstring productionHelpText = StringUtils::formatStringIntMap(item->getProductionHelp());
   SetWindowTextW(productionHelpEdit_, productionHelpText.c_str());
 
   SetWindowTextW(fullTextEdit_, item->getFullText().c_str());
@@ -827,7 +749,7 @@ void ItemsTabContent::saveSelectedItem()
     return;
   }
 
-  const std::wstring editedToken = StringUtils::trimWhitespace(getWindowText(tokenEdit_));
+  const std::wstring editedToken = StringUtils::trimWhitespace(GuiUtils::getWindowText(tokenEdit_));
   if (!editedToken.empty() && editedToken != selectedItemToken_)
   {
     MessageBoxW(GetParent(itemsList_),
@@ -836,27 +758,27 @@ void ItemsTabContent::saveSelectedItem()
                 MB_ICONWARNING | MB_OK);
   }
 
-  item->setItemName(getWindowText(nameEdit_));
-  item->setWeight(StringUtils::parseIntSafe(getWindowText(weightEdit_)));
+  item->setItemName(GuiUtils::getWindowText(nameEdit_));
+  item->setWeight(StringUtils::parseIntSafe(GuiUtils::getWindowText(weightEdit_)));
   item->setMeeleWeapon(Button_GetCheck(meeleWeaponCheck_) == BST_CHECKED);
   item->setRangedWeapon(Button_GetCheck(rangedWeaponCheck_) == BST_CHECKED);
   item->setArmour(Button_GetCheck(armourCheck_) == BST_CHECKED);
   item->setResource(Button_GetCheck(resourceCheck_) == BST_CHECKED);
   item->setMount(Button_GetCheck(mountCheck_) == BST_CHECKED);
-  item->setMoves(StringUtils::parseIntSafe(getWindowText(movesEdit_)));
-  item->setWalkCapacity(StringUtils::parseIntSafe(getWindowText(walkCapacityEdit_)));
-  item->setRideCapacity(StringUtils::parseIntSafe(getWindowText(rideCapacityEdit_)));
-  item->setSwimCapacity(StringUtils::parseIntSafe(getWindowText(swimCapacityEdit_)));
-  item->setFlyCapacity(StringUtils::parseIntSafe(getWindowText(flyCapacityEdit_)));
-  item->setShipSpeedHexesPerMonth(StringUtils::parseIntSafe(getWindowText(shipSpeedEdit_)));
-  item->setShipSailingSkillRequired(StringUtils::parseIntSafe(getWindowText(shipSailingSkillEdit_)));
-  item->setMagesStudy(StringUtils::parseIntSafe(getWindowText(magesStudyEdit_)));
-  item->setDefaultSkillMax(StringUtils::parseIntSafe(getWindowText(defaultSkillMaxEdit_)));
+  item->setMoves(StringUtils::parseIntSafe(GuiUtils::getWindowText(movesEdit_)));
+  item->setWalkCapacity(StringUtils::parseIntSafe(GuiUtils::getWindowText(walkCapacityEdit_)));
+  item->setRideCapacity(StringUtils::parseIntSafe(GuiUtils::getWindowText(rideCapacityEdit_)));
+  item->setSwimCapacity(StringUtils::parseIntSafe(GuiUtils::getWindowText(swimCapacityEdit_)));
+  item->setFlyCapacity(StringUtils::parseIntSafe(GuiUtils::getWindowText(flyCapacityEdit_)));
+  item->setShipSpeedHexesPerMonth(StringUtils::parseIntSafe(GuiUtils::getWindowText(shipSpeedEdit_)));
+  item->setShipSailingSkillRequired(StringUtils::parseIntSafe(GuiUtils::getWindowText(shipSailingSkillEdit_)));
+  item->setMagesStudy(StringUtils::parseIntSafe(GuiUtils::getWindowText(magesStudyEdit_)));
+  item->setDefaultSkillMax(StringUtils::parseIntSafe(GuiUtils::getWindowText(defaultSkillMaxEdit_)));
   item->setMan(Button_GetCheck(manCheck_) == BST_CHECKED);
-  item->setSkillsMax(parseStringIntMap(getWindowText(skillsMaxEdit_)));
-  item->setResources(parseStringIntMap(getWindowText(resourcesEdit_)));
-  item->setProductionSkill(parseStringIntMap(getWindowText(productionSkillEdit_)));
-  item->setProductionHelp(parseStringIntMap(getWindowText(productionHelpEdit_)));
+  item->setSkillsMax(StringUtils::parseStringIntMap(GuiUtils::getWindowText(skillsMaxEdit_)));
+  item->setResources(StringUtils::parseStringIntMap(GuiUtils::getWindowText(resourcesEdit_)));
+  item->setProductionSkill(StringUtils::parseStringIntMap(GuiUtils::getWindowText(productionSkillEdit_)));
+  item->setProductionHelp(StringUtils::parseStringIntMap(GuiUtils::getWindowText(productionHelpEdit_)));
 
   updateItemsList();
 }

@@ -130,7 +130,7 @@ private:
   std::wstring              unitNameAfterOrders_;
   int                       factionNumber_ { 0 };
   int                       structureId_ { 0 };
-  int                       futureStructureId_ { 0 };
+  int                       futureStructureId_ { structureId_ };
   int                       xCoordinate_ { 0 };
   int                       yCoordinate_ { 0 };
   int                       zCoordinate_ { 1 };

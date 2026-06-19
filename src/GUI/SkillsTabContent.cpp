@@ -24,10 +24,12 @@
 #define NOMINMAX
 #endif
 
+#include "GUI/GuiUtils.hpp"
 #include "GUI/SkillsTabContent.hpp"
 
 #include "Data/AppData.hpp"
 #include "Data/Skill.hpp"
+#include "Function/SkillFormattingUtils.hpp"
 #include "Function/StringUtils.hpp"
 
 #include <commctrl.h>
@@ -36,8 +38,6 @@
 #include <algorithm>
 #include <cwctype>
 #include <map>
-#include <regex>
-#include <sstream>
 #include <string>
 
 namespace
@@ -108,152 +108,7 @@ HWND createMultilineEdit(HWND parent, HINSTANCE instance)
     nullptr);
 }
 
-std::wstring getWindowText(HWND control)
-{
-  if (!control)
-  {
-    return L"";
-  }
-
-  const int length = GetWindowTextLengthW(control);
-  if (length <= 0)
-  {
-    return L"";
-  }
-
-  std::wstring text(static_cast<std::size_t>(length) + 1, L'\0');
-  GetWindowTextW(control, text.data(), length + 1);
-  return text.c_str();
-}
-
-std::wstring formatStringIntMap(const std::map<std::wstring, int>& data)
-{
-  std::wstring result;
-  bool first = true;
-  for (const auto& [token, amount] : data)
-  {
-    if (!first)
-    {
-      result += L"\r\n";
-    }
-    result += token + L":" + std::to_wstring(amount);
-    first = false;
-  }
-  return result;
-}
-
-std::wstring formatPrerequisites(const std::vector<SkillPrerequisite>& prerequisites)
-{
-  std::wstring result;
-  bool first = true;
-  for (const auto& prerequisite : prerequisites)
-  {
-    if (!first)
-    {
-      result += L"\r\n";
-    }
-
-    result += prerequisite.token + L":" + std::to_wstring(prerequisite.requiredLevel);
-    first = false;
-  }
-
-  return result;
-}
-
-std::vector<SkillPrerequisite> parsePrerequisites(const std::wstring& text)
-{
-  std::vector<SkillPrerequisite> prerequisites;
-
-  std::wstringstream stream(text);
-  std::wstring line;
-  static const std::wregex linePattern(L"^([A-Za-z0-9]{3,})\\s*:\\s*(\\d+)\\s*$");
-  while (std::getline(stream, line))
-  {
-    if (!line.empty() && line.back() == L'\r')
-    {
-      line.pop_back();
-    }
-
-    line = StringUtils::trimWhitespace(line);
-    if (line.empty())
-    {
-      continue;
-    }
-
-    std::wsmatch match;
-    if (!std::regex_match(line, match, linePattern))
-    {
-      continue;
-    }
-
-    SkillPrerequisite prerequisite;
-    prerequisite.token = StringUtils::trimWhitespace(match[1].str());
-    prerequisite.requiredLevel = StringUtils::parseIntSafe(match[2].str());
-    if (!prerequisite.token.empty() && prerequisite.requiredLevel > 0)
-    {
-      prerequisites.push_back(std::move(prerequisite));
-    }
-  }
-
-  return prerequisites;
-}
-
-std::map<std::wstring, int> parseStringIntMap(const std::wstring& text)
-{
-  std::map<std::wstring, int> result;
-
-  std::wstringstream stream(text);
-  std::wstring line;
-  while (std::getline(stream, line))
-  {
-    if (!line.empty() && line.back() == L'\r')
-    {
-      line.pop_back();
-    }
-
-    line = StringUtils::trimWhitespace(line);
-    if (line.empty())
-    {
-      continue;
-    }
-
-    const std::size_t separatorPos = line.find(L':');
-    if (separatorPos == std::wstring::npos)
-    {
-      continue;
-    }
-
-    const std::wstring token = StringUtils::trimWhitespace(line.substr(0, separatorPos));
-    const std::wstring amountText = StringUtils::trimWhitespace(line.substr(separatorPos + 1));
-    if (token.empty())
-    {
-      continue;
-    }
-
-    try
-    {
-      const int amount = std::stoi(amountText);
-      result[token] = amount;
-    }
-    catch (...)
-    {
-      continue;
-    }
-  }
-
-  return result;
-}
-
-int resolveSkillStudyCost(const Skill* skill)
-{
-  if (!skill)
-  {
-    return 0;
-  }
-
-  return skill->getStudyCost();
-}
-}
+} // close anonymous namespace
 
 bool SkillsTabContent::create(HWND parentWindow, HINSTANCE instance, AppData& appData)
 {
@@ -862,15 +717,14 @@ void SkillsTabContent::loadSkillLevelToFields(const Skill* skill, int level)
   Button_SetCheck(magicCheck_, skill->isMagic() ? BST_CHECKED : BST_UNCHECKED);
   Button_SetCheck(magicFoundationCheck_, skill->isMagicFoundation() ? BST_CHECKED : BST_UNCHECKED);
 
-  const std::wstring productionItemsText = formatStringIntMap(skill->getProductionItems(level));
+  const std::wstring productionItemsText = StringUtils::formatStringIntMap(skill->getProductionItems(level));
   SetWindowTextW(productionItemsEdit_, productionItemsText.c_str());
 
-  const std::wstring prerequisitesText = formatPrerequisites(skill->getPrerequisites());
+  const std::wstring prerequisitesText = SkillFormattingUtils::formatPrerequisites(skill->getPrerequisites());
   SetWindowTextW(prerequisitesEdit_, prerequisitesText.c_str());
 
   SetWindowTextW(descriptionEdit_, skill->getDescription(level).c_str());
-  const int studyCost = resolveSkillStudyCost(skill);
-  SetWindowTextW(studyCostEdit_, std::to_wstring(studyCost).c_str());
+  SetWindowTextW(studyCostEdit_, std::to_wstring(skill->getStudyCost()).c_str());
 }
 
 void SkillsTabContent::clearFields()
@@ -905,7 +759,7 @@ void SkillsTabContent::saveSelectedSkill()
     return;
   }
 
-  const std::wstring editedToken = StringUtils::trimWhitespace(getWindowText(tokenEdit_));
+  const std::wstring editedToken = StringUtils::trimWhitespace(GuiUtils::getWindowText(tokenEdit_));
   if (!editedToken.empty() && editedToken != selectedSkillToken_)
   {
     MessageBoxW(GetParent(skillsList_),
@@ -914,20 +768,20 @@ void SkillsTabContent::saveSelectedSkill()
                 MB_ICONWARNING | MB_OK);
   }
 
-  skill->setName(getWindowText(nameEdit_));
+  skill->setName(GuiUtils::getWindowText(nameEdit_));
   skill->setMagicFoundation(Button_GetCheck(magicFoundationCheck_) == BST_CHECKED);
   skill->setMagic(Button_GetCheck(magicCheck_) == BST_CHECKED);
-  std::map<std::wstring, int> productionItems = parseStringIntMap(getWindowText(productionItemsEdit_));
+  std::map<std::wstring, int> productionItems = StringUtils::parseStringIntMap(GuiUtils::getWindowText(productionItemsEdit_));
   if (Button_GetCheck(productionCheck_) != BST_CHECKED)
   {
     productionItems.clear();
   }
   skill->setProductionItems(displayedLevel_, std::move(productionItems));
 
-  const int studyCostValue = (std::max)(0, StringUtils::parseIntSafe(getWindowText(studyCostEdit_)));
+  const int studyCostValue = (std::max)(0, StringUtils::parseIntSafe(GuiUtils::getWindowText(studyCostEdit_)));
   skill->setStudyCost(studyCostValue);
 
-  skill->setPrerequisites(parsePrerequisites(getWindowText(prerequisitesEdit_)));
+  skill->setPrerequisites(SkillFormattingUtils::parsePrerequisites(GuiUtils::getWindowText(prerequisitesEdit_)));
 
   updateSkillsList();
 }

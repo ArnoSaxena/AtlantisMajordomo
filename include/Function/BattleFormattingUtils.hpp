@@ -16,26 +16,21 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  *
- * File: StringUtils.hpp
+ * File: BattleFormattingUtils.hpp
  */
- 
+
+// 304c89c8-6d3c-4586-b0c4-fad2e67b2f65
 #pragma once
 
-#include <map>
 #include <string>
 #include <vector>
 
-namespace StringUtils
+class Battle;
+
+namespace BattleFormattingUtils
 {
-    std::wstring trimBom(std::wstring value);
-    std::wstring trimWhitespace(const std::wstring& value);
-    std::vector<std::wstring> splitByComma(const std::wstring& text);
-    std::wstring joinLines(const std::vector<std::wstring>& lines, const std::wstring& separator = L"\r\n");
-    std::vector<std::wstring> splitLines(const std::wstring& text);
-    std::wstring toLower(std::wstring value);
-    std::wstring toUpper(std::wstring value);
-    int parseIntSafe(const std::wstring& text);
-    std::wstring toCRLF(const std::wstring& input);
-    std::wstring formatStringIntMap(const std::map<std::wstring, int>& data);
-    std::map<std::wstring, int> parseStringIntMap(const std::wstring& text);
+std::wstring formatPeriod(int month, int year);
+std::wstring formatBattleCoordinates(const Battle& battle);
+std::wstring formatBattleListEntry(const Battle& battle);
+std::wstring formatSummary(const Battle& battle);
 }

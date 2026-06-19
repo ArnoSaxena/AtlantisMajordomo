@@ -351,4 +351,18 @@ void syncOrderRepositoryForSavedUnit(AppData& appData,
     }
 }
 
+int computeNextNewUnitNumber(AppData* appData, int x, int y, int z)
+{
+    if (!appData)
+    {
+        return 1;
+    }
+    int newNumber = 1;
+    while (appData->unitNewRepository().hasUnitWithNumberAtCoordinates(newNumber, x, y, z))
+    {
+        ++newNumber;
+    }
+    return newNumber;
+}
+
 } // namespace OrderBusinessLogic

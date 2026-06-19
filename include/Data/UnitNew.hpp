@@ -136,7 +136,7 @@ private:
   std::wstring              unitName_;
   std::wstring              unitNameAfterOrders_;
   int                       structureId_ { 0 };
-  int                       futureStructureId_ { 0 };
+  int                       futureStructureId_ { structureId_ };
   int                       xCoordinate_ { 0 };
   int                       yCoordinate_ { 0 };
   int                       zCoordinate_ { 1 };

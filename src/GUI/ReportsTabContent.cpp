@@ -26,8 +26,9 @@
 
 #include "GUI/ReportsTabContent.hpp"
 
-#include "Data/AppData.hpp"
 #include "AppConfig.hpp"
+#include "Data/AppData.hpp"
+#include "Function/AppDataUtils.hpp"
 #include "Function/MonthUtils.hpp"
 
 #include <algorithm>
@@ -531,60 +532,22 @@ void ReportsTabContent::loadReport(bool syncFactionFromHeader,
     return;
   }
 
-  auto& repository = appData_->reportRepository();
-  std::wstring filePath = showFileOpenDialog(rememberDataFilePath);
+  const std::wstring filePath = showFileOpenDialog(rememberDataFilePath);
   if (filePath.empty())
   {
     return;
   }
 
-  if (appConfig_)
-  {
-    bool shouldSaveConfig = false;
-
-    if (rememberReportImportFolder)
-    {
-      const std::filesystem::path selectedPath(filePath);
-      if (selectedPath.has_parent_path())
-      {
-        appConfig_->setReportImportFolder(selectedPath.parent_path().wstring());
-        shouldSaveConfig = true;
-      }
-    }
-
-    if (rememberDataFilePath)
-    {
-      appConfig_->setDataFilePath(filePath);
-      shouldSaveConfig = true;
-    }
-
-    if (shouldSaveConfig)
-    {
-      appConfig_->save();
-    }
-  }
-
-  if (repository.addFromFile(filePath,
-                            appData_->factionRepository(),
-                            appData_->regionRepository(),
-                            appData_->unitRepository(),
-                            appData_->battleRepository(),
-                            appData_->eventRepository(),
-                            appData_->itemRepository(),
-                            appData_->skillRepository(),
-                            appData_->structureRepository(),
-                            appData_->structInfoRepository(),
-                            appData_->orderRepository(),
-                            appData_->getShipStructureIdThreshold(),
-                            appData_->getFlyingShipTypeTokens(),
-                            appData_->getMagicSkillTriggerPhrases(),
-                            syncFactionFromHeader))
+  if (AppDataUtils::importReportFromFile(*appData_, appConfig_, filePath,
+                                         syncFactionFromHeader,
+                                         rememberReportImportFolder,
+                                         rememberDataFilePath))
   {
     updateReportsList();
   }
   else
   {
-    std::wstring message = L"Failed to load report:\n\n" + repository.getLastError();
+    const std::wstring message = L"Failed to load report:\n\n" + appData_->reportRepository().getLastError();
     MessageBoxW(parentWindow_, message.c_str(), L"Error", MB_ICONERROR | MB_OK);
   }
 }
