@@ -57,6 +57,17 @@ public:
 
   const std::wstring& getIdentifierToken() const;
   const std::wstring& getItemName() const;
+  const std::wstring& getItemNamePlural() const;
+
+  /**
+  * @brief Returns the English plural of @p name.
+  *
+  * Rules applied in order:
+  *   - ends in "man"  → replace with "men"  (e.g. "lizardman" → "lizardmen")
+  *   - ends in "f"    → replace with "ves"  (e.g. "elf" → "elves", "dwarf" → "dwarves")
+  *   - otherwise      → append "s"
+  */
+  static std::wstring pluralizeName(const std::wstring& name);
   int getWeight() const;
   bool isMeeleWeapon() const;
   bool isRangedWeapon() const;
@@ -80,6 +91,7 @@ public:
   const std::map<std::wstring, int>& getProductionHelp() const;
 
   void setItemName(std::wstring itemName);
+  void setItemNamePlural(std::wstring itemNamePlural);
   void setWeight(int weight);
   void setMeeleWeapon(bool meeleWeapon);
   void setRangedWeapon(bool rangedWeapon);
@@ -106,6 +118,7 @@ public:
 private:
   std::wstring identifierToken_;
   std::wstring itemName_;
+  std::wstring itemNamePlural_;
   int          weight_ { 0 };
   bool         meeleWeapon_ { false };
   bool         rangedWeapon_ { false };

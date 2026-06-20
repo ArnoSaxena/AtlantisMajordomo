@@ -2400,6 +2400,56 @@ void MapTabContent::paintMap(HDC hdc) const
     SelectObject(memoryDc, oldBrush);
     DeleteObject(fillBrush);
 
+    // Peasant colour: outer strip of the NE wedge (center → NE corner → E corner).
+    // Covers the outermost 20% of the wedge depth (min 10 px), drawn as a trapezoid
+    // whose outer edge is the NE–E hex side and whose inner edge is 20% inward toward center.
+    if (appConfig_ && visual.region && !visual.region->getPeasantType().empty()
+        && visual.region->getPeasantNumber() > 0)
+    {
+      const std::array<int, 3> peasantRgb = appConfig_->getPeasantColour(visual.region->getPeasantType());
+      const COLORREF peasantColor = RGB(
+        std::clamp(peasantRgb[0], 0, 255),
+        std::clamp(peasantRgb[1], 0, 255),
+        std::clamp(peasantRgb[2], 0, 255));
+
+      const LONG cx = static_cast<LONG>(visual.center.x - scrollX_);
+      const LONG cy = static_cast<LONG>(visual.center.y - scrollY_);
+      const POINT neCorner = translated[2];
+      const POINT eCorner  = translated[3];
+
+      // Determine strip depth: 20% of the radial distance from center to NE corner,
+      // but at least 10 pixels so the marker is always visible at small hex sizes.
+      const double dxNE = static_cast<double>(neCorner.x - cx);
+      const double dyNE = static_cast<double>(neCorner.y - cy);
+      const double radialDist = std::sqrt(dxNE * dxNE + dyNE * dyNE);
+      const double fraction = (radialDist > 0.0)
+        ? std::min(1.0, std::max(0.20, 10.0 / radialDist))
+        : 0.20;
+
+      // lerp(a, b, t): from a toward b by factor t.
+      auto lerp = [](LONG a, LONG b, double t) -> LONG {
+        return static_cast<LONG>(a + t * static_cast<double>(b - a));
+      };
+
+      // Trapezoid: outer edge = neCorner→eCorner,
+      //            inner edge = points at (1-fraction) of the way from center to each corner.
+      POINT wedge[4];
+      wedge[0] = neCorner;
+      wedge[1] = eCorner;
+      wedge[2] = { lerp(cx, eCorner.x,  1.0 - fraction), lerp(cy, eCorner.y,  1.0 - fraction) };
+      wedge[3] = { lerp(cx, neCorner.x, 1.0 - fraction), lerp(cy, neCorner.y, 1.0 - fraction) };
+
+      HBRUSH peasantBrush    = CreateSolidBrush(peasantColor);
+      HPEN peasantBorderPen  = CreatePen(PS_SOLID, 1, RGB(0, 0, 0));
+      HGDIOBJ oldPBrush      = SelectObject(memoryDc, peasantBrush);
+      HGDIOBJ oldPPen        = SelectObject(memoryDc, peasantBorderPen);
+      Polygon(memoryDc, wedge, 4);
+      SelectObject(memoryDc, oldPBrush);
+      SelectObject(memoryDc, oldPPen);
+      DeleteObject(peasantBrush);
+      DeleteObject(peasantBorderPen);
+    }
+
     if (appData_ && appConfig_ && visual.region)
     {
       std::set<std::wstring> availableExitDirections;
@@ -6023,9 +6073,35 @@ void MapTabContent::populateForSaleList(const Region* region)
 
   const auto& forSale = region->getForSale();
   const auto& afterCommandForSale = region->getForSaleAfterOrders();
-  int itemIndex = 0;
+
+  // Build a sorted list: isMan items first, then the rest, each group in token order.
+  std::vector<std::wstring> sortedTokens;
+  sortedTokens.reserve(forSale.size());
   for (const auto& [token, amountPrice] : forSale)
   {
+    sortedTokens.push_back(token);
+  }
+  if (appData_)
+  {
+    std::stable_sort(sortedTokens.begin(), sortedTokens.end(),
+      [this](const std::wstring& a, const std::wstring& b)
+      {
+        const Item* ia = appData_->itemRepository().findByIdentifierToken(a);
+        const Item* ib = appData_->itemRepository().findByIdentifierToken(b);
+        const bool manA = ia && ia->isMan();
+        const bool manB = ib && ib->isMan();
+        if (manA != manB)
+        {
+          return manA > manB;
+        }
+        return false;
+      });
+  }
+
+  int itemIndex = 0;
+  for (const auto& token : sortedTokens)
+  {
+    const auto& amountPrice = forSale.at(token);
     LVITEMW item {};
     item.mask = LVIF_TEXT;
     item.iItem = itemIndex;

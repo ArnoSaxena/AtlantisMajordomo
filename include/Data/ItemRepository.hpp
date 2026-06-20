@@ -66,6 +66,20 @@ public:
 
   const Item* findByItemName(const std::wstring& itemName) const;
 
+  /**
+  * @brief Resolves a race name (possibly plural, e.g. "gnolls", "lizardmen") or
+  *        an already-correct token (e.g. "GNOL") to the canonical item token.
+  *
+  * Lookup order:
+  *   1. Exact token match via findByIdentifierToken.
+  *   2. Exact name match via findByItemName.
+  *   3. De-pluralized name: strips trailing 's', replaces "men"→"man",
+  *      or replaces "ves"→"f" (handles "elves"→"elf", "dwarves"→"dwarf").
+  *
+  * @return The identifier token when a match is found, or @p nameOrToken unchanged.
+  */
+  std::wstring resolveRaceNameToToken(const std::wstring& nameOrToken) const;
+
   void clear();
 
   std::size_t size() const;

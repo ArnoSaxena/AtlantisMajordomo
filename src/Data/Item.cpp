@@ -65,6 +65,11 @@ const std::wstring& Item::getItemName() const
   return itemName_;
 }
 
+const std::wstring& Item::getItemNamePlural() const
+{
+  return itemNamePlural_;
+}
+
 int Item::getWeight() const
 {
   return weight_;
@@ -165,9 +170,38 @@ const std::map<std::wstring, int>& Item::getProductionSkill() const
   return productionSkill_;
 }
 
+std::wstring Item::pluralizeName(const std::wstring& name)
+{
+  if (name.empty())
+  {
+    return name;
+  }
+
+  const std::size_t len = name.size();
+
+  // "lizardman" → "lizardmen", "man" → "men"
+  if (len >= 3 && name.compare(len - 3, 3, L"man") == 0)
+  {
+    return name.substr(0, len - 3) + L"men";
+  }
+
+  // "elf" → "elves", "dwarf" → "dwarves"
+  if (len >= 1 && name.back() == L'f')
+  {
+    return name.substr(0, len - 1) + L"ves";
+  }
+
+  return name + L"s";
+}
+
 void Item::setItemName(std::wstring itemName)
 {
   itemName_ = std::move(itemName);
+}
+
+void Item::setItemNamePlural(std::wstring itemNamePlural)
+{
+  itemNamePlural_ = std::move(itemNamePlural);
 }
 
 void Item::setWeight(int weight)

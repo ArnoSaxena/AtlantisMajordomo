@@ -205,6 +205,7 @@ bool AppConfig::load()
 
   bool hasColoursBlock = false;
   bool hasRegionsBlock = false;
+  bool hasPeasantsBlock = false;
   bool hasRoadEntry = false;
   bool hasStructureMarkerEntry = false;
   std::wstring coloursObject;
@@ -227,6 +228,25 @@ bool AppConfig::load()
           if (JsonUtils::parseRgbColorArray(jsonRgb, parsedRgb))
           {
             regionColor.second = parsedRgb;
+          }
+        }
+      }
+    }
+
+    std::wstring peasantsObject;
+    if (JsonUtils::extractJsonObjectField(coloursObject, L"peasants", peasantsObject))
+    {
+      hasPeasantsBlock = true;
+      DebugLog(L"AppConfig::load() - colours.peasants block found");
+      for (auto& peasantColor : peasantColors_)
+      {
+        std::wstring jsonRgb;
+        if (JsonUtils::extractJsonFieldValue(peasantsObject, peasantColor.first, jsonRgb))
+        {
+          std::array<int, 3> parsedRgb { 0, 0, 0 };
+          if (JsonUtils::parseRgbColorArray(jsonRgb, parsedRgb))
+          {
+            peasantColor.second = parsedRgb;
           }
         }
       }
@@ -270,7 +290,7 @@ bool AppConfig::load()
     DebugLog(L"AppConfig::load() - colours block NOT found in config");
   }
 
-  if (!hasColoursBlock || !hasRegionsBlock || !hasRoadEntry || !hasStructureMarkerEntry || !hasMainWindowWidth || !hasMainWindowHeight || !hasMapHexWidth || !hasExportOrdersFolder || !hasDataFilePath || !hasOnlyLeaderCanTeach || !hasLeaderMages || !hasFlyingShipsCsv || !hasFullMonthOrdersCsv || !hasMagicSkillTriggersCsv)
+  if (!hasColoursBlock || !hasRegionsBlock || !hasPeasantsBlock || !hasRoadEntry || !hasStructureMarkerEntry || !hasMainWindowWidth || !hasMainWindowHeight || !hasMapHexWidth || !hasExportOrdersFolder || !hasDataFilePath || !hasOnlyLeaderCanTeach || !hasLeaderMages || !hasFlyingShipsCsv || !hasFullMonthOrdersCsv || !hasMagicSkillTriggersCsv)
   {
     DebugLog(L"AppConfig::load() - missing fields detected, re-saving config with defaults");
     save();
@@ -317,6 +337,21 @@ bool AppConfig::save() const
     }
     file << L"\n";
   }
+      file << L"    },\n";
+      file << L"    \"peasants\": {\n";
+      for (size_t i = 0; i < peasantColors_.size(); ++i)
+      {
+        const auto& peasantColor = peasantColors_[i];
+        file << L"      \"" << JsonUtils::escapeJsonString(peasantColor.first) << L"\": ["
+            << peasantColor.second[0] << L", "
+            << peasantColor.second[1] << L", "
+            << peasantColor.second[2] << L"]";
+        if (i + 1 < peasantColors_.size())
+        {
+          file << L",";
+        }
+        file << L"\n";
+      }
       file << L"    },\n";
       file << L"    \"roads\": ["
         << roadColor_[0] << L", " << roadColor_[1] << L", " << roadColor_[2] << L"],\n";
@@ -520,8 +555,31 @@ std::array<int, 3> AppConfig::getRegionColor(const std::wstring& regionType) con
   return { 192, 192, 192 };
 }
 
-std::array<int, 3> AppConfig::getSelectedRegionBorderColor() const
+std::array<int, 3> AppConfig::getPeasantColour(const std::wstring& itemToken) const
 {
+  auto normalize = [](std::wstring value)
+  {
+    for (auto& ch : value)
+    {
+      ch = static_cast<wchar_t>(std::towupper(ch));
+    }
+    return value;
+  };
+
+  const std::wstring normalizedToken = normalize(itemToken);
+
+  for (const auto& entry : peasantColors_)
+  {
+    if (normalize(entry.first) == normalizedToken)
+    {
+      return entry.second;
+    }
+  }
+
+  return { 211, 211, 211 };
+}
+
+std::array<int, 3> AppConfig::getSelectedRegionBorderColor() const{
   return selectedRegionBorderColor_;
 }
 
@@ -623,6 +681,21 @@ void AppConfig::applyDefaults()
     { L"tunnels", { 65, 146, 137 } },
     { L"underforest", { 116, 158, 44 } },
     { L"unknown", { 192, 192, 192 } }
+  };
+  peasantColors_ = {
+    { L"CTAU", { 191, 139,  17 } },
+    { L"DRLF", { 148,   0, 211 } },
+    { L"GBLN", {  47, 176,  13 } },
+    { L"GNOL", { 107,  76,   5 } },
+    { L"GNOM", { 201, 169,  95 } },
+    { L"HDWA", { 100, 100, 100 } },
+    { L"HELF", { 211, 211, 211 } },
+    { L"HUMN", { 255, 242, 212 } },
+    { L"IDWA", {  54, 156, 232 } },
+    { L"LIZA", { 183, 214, 131 } },
+    { L"ORC",  { 168, 167,  19 } },
+    { L"UDWA", {  77,  60,  36 } },
+    { L"WELF", {  30,  92,  14 } }
   };
   roadColor_ = { 112, 128, 144 };
   structureMarkerColor_ = { 112, 128, 144 };

@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
 """
-Build script for AtlantisMajordomo
+Multi-platform build script for AtlantisMajordomo
 
 Usage:
-    python build.py --help                          # Show all options
-    python build.py                                 # Build release
-    python build.py --build-type debug              # Build debug
-    python build.py --debug                         # Enable #define DEBUG in Main.cpp
-    python build.py --clean                         # Clean build directory
-    python build.py --clean-all                     # Remove all artifacts (build, venv, cache)
-    python build.py --clean --build-type release    # Clean and build release
-    python build.py --run                           # Build and run
+    python build_multi.py --help                          # Show all options
+    python build_multi.py                                 # Build release
+    python build_multi.py --build-type debug              # Build debug
+    python build_multi.py --debug                         # Enable #define DEBUG in Main.cpp
+    python build_multi.py --clean                         # Clean build directory
+    python build_multi.py --clean-all                     # Remove all artifacts (build, venv, cache)
+    python build_multi.py --clean --build-type release    # Clean and build release
+    python build_multi.py --run                           # Build and run
+    python build_multi.py -g "Unix Makefiles"             # Use a specific CMake generator
 """
 
 import argparse
@@ -29,7 +30,7 @@ IS_WINDOWS = platform_module.system() == "Windows"
 src_working_dir = os.path.dirname(os.path.realpath(__file__))
 BUILD_DIR = os.path.join(src_working_dir, "build")
 EXECUTABLE_NAME = "AtlantisMajordomo.exe" if IS_WINDOWS else "AtlantisMajordomo"
-FALLBACK_CMAKE_GENERATOR = "Visual Studio 17 2022"
+FALLBACK_CMAKE_GENERATOR = "Visual Studio 17 2022" if IS_WINDOWS else "Ninja"
 
 
 def get_default_cmake_generator():
@@ -37,7 +38,8 @@ def get_default_cmake_generator():
     Read default CMake generator from user folder file.
 
     Hardcoded file name: cmake_build_generator.txt
-    Falls back to Visual Studio 17 2022 when file is missing/invalid.
+    Falls back to Visual Studio 17 2022 on Windows or Unix Makefiles on Linux
+    when the file is missing or invalid.
     """
     generator_file = os.path.join(os.path.expanduser("~"), "cmake_build_generator.txt")
 
@@ -59,8 +61,8 @@ DEFAULT_CMAKE_GENERATOR = get_default_cmake_generator()
 #
 
 parser = argparse.ArgumentParser(
-    description='Build the Atlantis Majordomo project',
-    epilog='Typical usage: python build.py --build-type release --run'
+    description='Build the Atlantis Majordomo project (Windows and Linux)',
+    epilog='Typical usage: python build_multi.py --build-type release --run'
 )
 
 parser.add_argument(
@@ -97,7 +99,7 @@ parser.add_argument(
     default=DEFAULT_CMAKE_GENERATOR,
     required=False,
     type=str,
-    help='CMake generator to use (default: from ~/cmake_build_generator.txt or Visual Studio 17 2022)'
+    help='CMake generator to use (default: from ~/cmake_build_generator.txt or platform default)'
 )
 
 parser.add_argument(
@@ -158,7 +160,7 @@ def describe_windows_return_code(return_code):
 
 def execute_cmd(cmd, description=""):
     """
-    Execute a shell command and handle errors
+    Execute a shell command and handle errors.
 
     Args:
         cmd: Command to execute
@@ -173,11 +175,10 @@ def execute_cmd(cmd, description=""):
     if args.verbose:
         print(f"[CMD] {command_display}\n")
 
-    # Use shell=False to keep execution and output in the current terminal.
     result = subprocess.run(cmd, shell=False)
     if result.returncode != 0:
         details = f"return code {result.returncode}"
-        if platform_module.system() == "Windows":
+        if IS_WINDOWS:
             details += f" [{describe_windows_return_code(result.returncode)}]"
 
         raise RuntimeError(f"Command failed with {details}: {command_display}")
@@ -209,7 +210,7 @@ def is_stale_cmake_cache():
 
 def clean():
     """
-    Clean build directory
+    Clean build directory.
     """
     if os.path.exists(BUILD_DIR):
         print(f"[*] Removing build directory: {BUILD_DIR}")
@@ -222,7 +223,7 @@ def clean():
 def clean_all():
     """
     Comprehensive cleanup - remove build directory,
-    virtual environment, and cache files
+    virtual environment, and cache files.
     """
     targets = [
         (BUILD_DIR, "build directory"),
@@ -322,7 +323,7 @@ def set_main_debug_define(debug_enabled):
 
 def configure():
     """
-    Configure CMake project
+    Configure CMake project.
     """
     os.makedirs(BUILD_DIR, exist_ok=True)
 
@@ -356,15 +357,21 @@ def configure():
 
 def build():
     """
-    Build the project
+    Build the project.
     """
-    cmake_cmd = ["cmake", "--build", BUILD_DIR, "--config", args.build_type.capitalize()]
+    is_vs_generator = "Visual Studio" in args.generator
+
+    if is_vs_generator:
+        cmake_cmd = ["cmake", "--build", BUILD_DIR, "--config", args.build_type.capitalize()]
+    else:
+        cmake_cmd = ["cmake", "--build", BUILD_DIR]
+
     execute_cmd(cmake_cmd, f"Building AtlantisMajordomo ({args.build_type})")
 
 
 def find_executable():
     """
-    Find the built executable
+    Find the built executable.
 
     Returns:
         Path to the executable or None if not found
@@ -389,7 +396,7 @@ def find_executable():
 
 def run():
     """
-    Run the compiled executable
+    Run the compiled executable.
     """
     exe_path = find_executable()
 
@@ -404,7 +411,7 @@ def run():
 
 def main():
     """
-    Main entry point
+    Main entry point.
     """
     try:
         if invoked_without_arguments:
@@ -414,11 +421,6 @@ def main():
             args.run = False
             args.clean_all = False
             args.debug = False
-
-        # Verify we're on Windows
-        if platform_module.system() != "Windows":
-            print("[-] ERROR: This script is designed for Windows only")
-            sys.exit(1)
 
         # Handle --clean-all first
         if args.clean_all:
@@ -434,6 +436,7 @@ def main():
             sys.exit(1)
 
         print(f"[*] Working directory: {src_working_dir}")
+        print(f"[*] Platform: {platform_module.system()}")
         print(f"[*] Build type: {args.build_type}")
         print(f"[*] CMake generator: {args.generator}")
         print(f"[*] DEBUG macro mode: {'on' if args.debug else 'off'}")
@@ -469,5 +472,5 @@ def main():
         sys.exit(1)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

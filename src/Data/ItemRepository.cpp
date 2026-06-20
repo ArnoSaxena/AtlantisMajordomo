@@ -150,6 +150,38 @@ const Item* ItemRepository::findByItemName(const std::wstring& itemName) const
   return it == items_.cend() ? nullptr : &(*it);
 }
 
+std::wstring ItemRepository::resolveRaceNameToToken(const std::wstring& nameOrToken) const
+{
+  if (nameOrToken.empty())
+  {
+    return nameOrToken;
+  }
+
+  // 1. Already a valid token?
+  if (const Item* item = findByIdentifierToken(nameOrToken))
+  {
+    return item->getIdentifierToken();
+  }
+
+  // 2. Exact singular name match.
+  if (const Item* item = findByItemName(nameOrToken))
+  {
+    return item->getIdentifierToken();
+  }
+
+  // 3. Plural name match (computed and stored during item parsing).
+  for (std::size_t i = 0; i < items_.size(); ++i)
+  {
+    if (items_[i].getItemNamePlural() == nameOrToken)
+    {
+      return items_[i].getIdentifierToken();
+    }
+  }
+
+  // No match — return original unchanged.
+  return nameOrToken;
+}
+
 void ItemRepository::clear()
 {
   items_.clear();

@@ -179,6 +179,13 @@ public:
     std::array<int, 3> getRegionColor(const std::wstring& regionType) const;
 
     /**
+    * @brief Returns configured RGB color for a peasant item token.
+    *
+    * Falls back to light gray when the token is not found.
+    */
+    std::array<int, 3> getPeasantColour(const std::wstring& itemToken) const;
+
+    /**
     * @brief Gets the configured RGB color for the selected region's border.
     */
     std::array<int, 3> getSelectedRegionBorderColor() const;
@@ -231,6 +238,7 @@ private:
   void applyDefaults();
 
   std::vector<std::pair<std::wstring, std::array<int, 3>>> regionColors_;
+  std::vector<std::pair<std::wstring, std::array<int, 3>>> peasantColors_;
   std::array<int, 3> roadColor_ { 0, 0, 0 };
   std::array<int, 3> structureMarkerColor_ { 0, 0, 0 };
   std::array<int, 3> selectedRegionBorderColor_ { 173, 216, 230 };

@@ -848,7 +848,8 @@ void Report::parseRegions(RegionRepository& regionRepository,
           peasantNumber = std::stoi(match[8].str());
         }
 
-        const std::wstring peasantType = match[9].matched ? match[9].str() : L"unknown";
+        const std::wstring peasantTypeName = match[9].matched ? match[9].str() : L"unknown";
+        const std::wstring peasantType = itemRepository.resolveRaceNameToToken(peasantTypeName);
 
         const std::size_t wagesLineIndex = index + continuationLineCount + 2;
         if (wagesLineIndex < lines_.size())
@@ -2635,6 +2636,7 @@ void Report::parseItems(ItemRepository& itemRepository)
         if (existingItem)
         {
           existingItem->setItemName(itemName);
+          existingItem->setItemNamePlural(Item::pluralizeName(itemName));
           existingItem->setWeight(weight);
           existingItem->setMoves(moves);
           existingItem->setWalkCapacity(walkCapacity);
@@ -2657,6 +2659,7 @@ void Report::parseItems(ItemRepository& itemRepository)
         Item* newItem = itemRepository.findByIdentifierToken(identifierToken);
         if (newItem)
         {
+          newItem->setItemNamePlural(Item::pluralizeName(itemName));
           newItem->setShipSpeedHexesPerMonth(shipSpeedHexesPerMonth);
           newItem->setShipSailingSkillRequired(shipSailingSkillRequired);
           newItem->setMagesStudy(magesStudy);

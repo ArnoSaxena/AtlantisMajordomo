@@ -1268,7 +1268,8 @@ bool DataSerializer::loadFromFile(AppData& appData, const std::wstring& filePath
         }
 
         appData.regionRepository().upsertRegion(x, y, z, type, province, hasSettlement,
-                                               settlementName, settlementType, peasantType,
+                                               settlementName, settlementType,
+                                               appData.itemRepository().resolveRaceNameToToken(peasantType),
                                                peasantNumber, wages, wagesMax, taxableIncome,
                                                month, year, visited);
 
