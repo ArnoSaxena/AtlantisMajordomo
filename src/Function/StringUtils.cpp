@@ -143,6 +143,8 @@ namespace StringUtils
         }
     }
 
+    // Add an CRLF to the new string for each single LF. 
+    // Just add the LF, if there is already an CR before it.
     std::wstring toCRLF(const std::wstring& input)
     {
         std::wstring result;

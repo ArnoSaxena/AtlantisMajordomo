@@ -333,6 +333,8 @@ private:
   void updateSelectedUnitDetailsByNumber(int unitNumber);
   void clearSelectedUnitDetails();
   void appendOrderLineToOrdersEditor(const std::wstring& orderLine);
+  void navigateToSkillList(const std::wstring& skillToken);
+  void showSkillDescription(const std::wstring& skillToken);
   void saveOrdersToSelectedUnit();
   void runOrderChecksForMainFaction();
   void updateWarningsSummaryLabel();

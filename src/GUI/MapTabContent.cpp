@@ -85,17 +85,28 @@ LRESULT CALLBACK readOnlyTextPopupWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM
     case WM_CREATE:
     {
       const auto* createStruct = reinterpret_cast<const CREATESTRUCTW*>(lp);
-      const auto* initialText = static_cast<const std::wstring*>(createStruct->lpCreateParams);
+
+      // We pass a small struct via lpCreateParams so we can also get the wrap flag.
+      // (See showReadOnlyTextPopup below.)
+      struct CreateData
+      {
+        const std::wstring* text;
+        bool softWrap;
+      };
+
+      auto* data = static_cast<CreateData*>(createStruct->lpCreateParams);
+
       HWND edit = CreateWindowExW(
         WS_EX_CLIENTEDGE,
         L"EDIT",
-        initialText ? initialText->c_str() : L"",
-        WS_CHILD | WS_VISIBLE | ES_LEFT | ES_MULTILINE | ES_AUTOVSCROLL | ES_AUTOHSCROLL |
-        ES_READONLY | WS_VSCROLL | WS_HSCROLL,
-        10,
-        10,
-        100,
-        100,
+        data && data->text ? data->text->c_str() : L"",
+        WS_CHILD | WS_VISIBLE |
+        ES_LEFT | ES_MULTILINE | ES_READONLY |
+        (data && data->softWrap ? (ES_WANTRETURN) : 0) |
+        WS_VSCROLL |
+        (data && data->softWrap ? 0 : (ES_AUTOHSCROLL | WS_HSCROLL)),
+        10, 10,
+        100, 100,
         hwnd,
         reinterpret_cast<HMENU>(static_cast<INT_PTR>(kReadOnlyTextPopupEditId)),
         GetModuleHandleW(nullptr),
@@ -103,10 +114,10 @@ LRESULT CALLBACK readOnlyTextPopupWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM
       );
 
       SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(edit));
-      if (edit)
-      {
-        SendMessageW(edit, EM_SETREADONLY, TRUE, 0);
-      }
+
+      if (data)
+        delete data;
+
       return 0;
     }
 
@@ -145,7 +156,7 @@ LRESULT CALLBACK readOnlyTextPopupWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM
   return DefWindowProcW(hwnd, msg, wp, lp);
 }
 
-void showReadOnlyTextPopup(HWND ownerWindow, const std::wstring& windowTitle, const std::wstring& text)
+void showReadOnlyTextPopup(HWND ownerWindow, const std::wstring& windowTitle, const std::wstring& text, bool softWrap = false)
 {
   HINSTANCE instance = GetModuleHandleW(nullptr);
 
@@ -192,6 +203,13 @@ void showReadOnlyTextPopup(HWND ownerWindow, const std::wstring& windowTitle, co
   const int x = ownerRect.left + ((ownerRect.right - ownerRect.left) - windowWidth) / 2;
   const int y = ownerRect.top + ((ownerRect.bottom - ownerRect.top) - windowHeight) / 2;
 
+  struct CreateData
+  {
+    const std::wstring* text;
+    bool softWrap;
+  };
+  auto* data = new CreateData{ &text, softWrap };
+
   HWND popup = CreateWindowExW(
     WS_EX_DLGMODALFRAME,
     kReadOnlyTextPopupClassName,
@@ -204,7 +222,7 @@ void showReadOnlyTextPopup(HWND ownerWindow, const std::wstring& windowTitle, co
     ownerWindow,
     nullptr,
     instance,
-    const_cast<std::wstring*>(&text)
+    data
   );
 
   if (!popup)
@@ -223,6 +241,8 @@ constexpr int kEventsTabIndex = 1;
 constexpr int kErrorsTabIndex = 2;
 constexpr int kWarningsTabIndex = 3;
 constexpr UINT kSkillStudyContextCommandId = 4711;
+constexpr UINT kSkillDescriptionListContextCommandId = 4712;
+constexpr UINT kSkillDescriptionPopupContextCommandId = 4713;
 
 
 POINT getRoadEndpointForDirection(const std::array<POINT, 6>& polygon, const std::wstring& direction)
@@ -3533,7 +3553,9 @@ bool MapTabContent::handleNotify(const NMHDR* hdr)
       return true;
     }
 
-    AppendMenuW(menu, MF_STRING, kSkillStudyContextCommandId, L"study");
+    AppendMenuW(menu, MF_STRING, kSkillStudyContextCommandId, L"Add Study Order");
+    AppendMenuW(menu, MF_STRING, kSkillDescriptionPopupContextCommandId, L"Skill Description");
+    AppendMenuW(menu, MF_STRING, kSkillDescriptionListContextCommandId, L"Skill Tab");
     const UINT selectedCommand = TrackPopupMenu(
       menu,
       TPM_RETURNCMD | TPM_RIGHTBUTTON,
@@ -3547,6 +3569,14 @@ bool MapTabContent::handleNotify(const NMHDR* hdr)
     if (selectedCommand == kSkillStudyContextCommandId)
     {
       appendOrderLineToOrdersEditor(L"study " + skillToken);
+    }
+    else if (selectedCommand == kSkillDescriptionListContextCommandId)
+    {
+      navigateToSkillList(skillToken);
+    }
+    else if (selectedCommand == kSkillDescriptionPopupContextCommandId)
+    {
+      showSkillDescription(skillToken);
     }
 
     return true;
@@ -5409,6 +5439,25 @@ void MapTabContent::appendOrderLineToOrdersEditor(const std::wstring& orderLine)
   SetFocus(ordersEditor_);
 }
 
+void MapTabContent::navigateToSkillList(const std::wstring& skillToken)
+{
+  // navigate to the skills tab and select the skill by the given skill token
+}
+
+void MapTabContent::showSkillDescription(const std::wstring& skillToken)
+{
+  if (!appData_ || skillToken.empty())
+  {
+    return;
+  }
+  std::wstring skillName = appData_->skillRepository().findByIdentifier(skillToken)->getName();
+  std::wstring skillDescription = appData_->skillRepository().findByIdentifier(skillToken)->getAllLevelDescriptions();
+  showReadOnlyTextPopup(GetParent(mapCanvas_),
+                          L"Skill Description " + skillName,
+                          StringUtils::toCRLF(skillDescription),
+                          true);
+}
+
 void MapTabContent::runOrderChecksForMainFaction()
 {
   if (!appData_)
@@ -5870,7 +5919,8 @@ void MapTabContent::onMapRightClick(POINT pointInMapClient)
   {
     showReadOnlyTextPopup(GetParent(mapCanvas_),
                           L"Region Report",
-                          StringUtils::toCRLF(region->region->getRegionReport()));
+                          StringUtils::toCRLF(region->region->getRegionReport()),
+                          false);
   }
   else if (selectedCommand == kRegionContextShowBattleReportCommandId && navigationCallback_)
   {

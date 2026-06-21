@@ -131,6 +131,22 @@ const std::wstring& Skill::getDescription(int level) const
   return d ? d->description : empty;
 }
 
+const std::wstring Skill::getAllLevelDescriptions() const
+{
+    std::wstring combined;
+    for (int l = kMinLevel; l <= kMaxLevel; ++l)
+    {
+        const auto* d = getLevelData(l);
+        if (d && !d->description.empty())
+        {
+            if (!combined.empty())
+                combined += L"\n\n";
+            combined += d->description;
+        }
+    }
+    return combined; // returns empty if nothing found
+}
+
 int Skill::getStudyCost() const
 {
   return studyCost_;

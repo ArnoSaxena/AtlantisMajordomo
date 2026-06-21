@@ -88,6 +88,7 @@ public:
   bool isMagic() const;
   bool isMagicFoundation() const;
   const std::wstring& getDescription(int level) const;
+  const std::wstring getAllLevelDescriptions() const;
   int getStudyCost() const;
   const std::vector<SkillPrerequisite>& getPrerequisites() const;
 
