@@ -22,6 +22,8 @@
 // 304c89c8-6d3c-4586-b0c4-fad2e67b2f65
 #pragma once
 
+#include "Data/Faction.hpp"
+
 #include <string>
 #include <vector>
 #include <map>
@@ -73,4 +75,11 @@ void syncOrderRepositoryForSavedUnit(AppData& appData,
 
 // Returns the next available unit number for a FORM order at the given coordinates.
 int computeNextNewUnitNumber(AppData* appData, int x, int y, int z);
+}
+
+namespace FactionAttitudeUtils
+{
+const wchar_t* attitudeToText(Faction::Attitude attitude);
+Faction::Attitude textToAttitude(const std::wstring& text);
+std::wstring normalizeAttitudeText(const std::wstring& text);
 }

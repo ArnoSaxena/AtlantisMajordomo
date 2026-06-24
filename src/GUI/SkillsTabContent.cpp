@@ -24,7 +24,7 @@
 #define NOMINMAX
 #endif
 
-#include "GUI/GuiUtils.hpp"
+#include "GUI/WinGuiUtils.hpp"
 #include "GUI/SkillsTabContent.hpp"
 
 #include "Data/AppData.hpp"
@@ -511,6 +511,17 @@ bool SkillsTabContent::handleVScroll(WPARAM wp, LPARAM lp)
   return true;
 }
 
+void SkillsTabContent::focusSkillByToken(const std::wstring& skillToken)
+{
+  if (!appData_ || skillToken.empty())
+  {
+    return;
+  }
+  selectedSkillToken_ = skillToken;
+  displayedLevel_ = 0;
+  updateSkillsList();
+}
+
 void SkillsTabContent::updateSkillsList()
 {
   ListView_DeleteAllItems(skillsList_);
@@ -759,7 +770,7 @@ void SkillsTabContent::saveSelectedSkill()
     return;
   }
 
-  const std::wstring editedToken = StringUtils::trimWhitespace(GuiUtils::getWindowText(tokenEdit_));
+  const std::wstring editedToken = StringUtils::trimWhitespace(WinGuiUtils::getWindowText(tokenEdit_));
   if (!editedToken.empty() && editedToken != selectedSkillToken_)
   {
     MessageBoxW(GetParent(skillsList_),
@@ -768,20 +779,20 @@ void SkillsTabContent::saveSelectedSkill()
                 MB_ICONWARNING | MB_OK);
   }
 
-  skill->setName(GuiUtils::getWindowText(nameEdit_));
+  skill->setName(WinGuiUtils::getWindowText(nameEdit_));
   skill->setMagicFoundation(Button_GetCheck(magicFoundationCheck_) == BST_CHECKED);
   skill->setMagic(Button_GetCheck(magicCheck_) == BST_CHECKED);
-  std::map<std::wstring, int> productionItems = StringUtils::parseStringIntMap(GuiUtils::getWindowText(productionItemsEdit_));
+  std::map<std::wstring, int> productionItems = StringUtils::parseStringIntMap(WinGuiUtils::getWindowText(productionItemsEdit_));
   if (Button_GetCheck(productionCheck_) != BST_CHECKED)
   {
     productionItems.clear();
   }
   skill->setProductionItems(displayedLevel_, std::move(productionItems));
 
-  const int studyCostValue = (std::max)(0, StringUtils::parseIntSafe(GuiUtils::getWindowText(studyCostEdit_)));
+  const int studyCostValue = (std::max)(0, StringUtils::parseIntSafe(WinGuiUtils::getWindowText(studyCostEdit_)));
   skill->setStudyCost(studyCostValue);
 
-  skill->setPrerequisites(SkillFormattingUtils::parsePrerequisites(GuiUtils::getWindowText(prerequisitesEdit_)));
+  skill->setPrerequisites(SkillFormattingUtils::parsePrerequisites(WinGuiUtils::getWindowText(prerequisitesEdit_)));
 
   updateSkillsList();
 }

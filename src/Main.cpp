@@ -20,21 +20,28 @@
  */
  
 // 304c89c8-6d3c-4586-b0c4-fad2e67b2f65
+
+#include "Data/AppData.hpp"
+#include <exception>
+#include <string>
+
+// ============================================================================
+// Windows build
+// ============================================================================
+#ifdef _WIN32
+
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
 
-#include "Data/AppData.hpp"
-#include "GUI/MainWindow.hpp"
+#include "GUI/MainWindowWin.hpp"
 
 #include <chrono>
-#include <exception>
 #include <fstream>
 #include <iomanip>
 #include <locale>
 #include <mutex>
 #include <sstream>
-#include <string>
 #include <windows.h>
 
 
@@ -272,7 +279,69 @@ int WINAPI wWinMain(
                 MB_ICONERROR | MB_OK);
     appResult = 1;
   }
-  
+
   ShutdownDebug();
   return appResult;
 }
+
+// ============================================================================
+// Linux / Qt build
+// ============================================================================
+#else
+
+#include "GUI/MainWindowQt.hpp"
+
+#include <QApplication>
+#include <QMessageBox>
+#include <QString>
+
+int main(int argc, char* argv[])
+{
+  QApplication app(argc, argv);
+
+  std::set_terminate([]()
+  {
+    std::string reason = "Unhandled C++ exception.";
+    try
+    {
+      std::exception_ptr current = std::current_exception();
+      if (current)
+      {
+        std::rethrow_exception(current);
+      }
+    }
+    catch (const std::exception& ex) { reason = ex.what(); }
+    catch (...) {}
+
+    QMessageBox::critical(nullptr,
+                          "Fatal Error",
+                          QString("Application terminated unexpectedly.\n\nReason: %1")
+                            .arg(QString::fromStdString(reason)));
+    std::abort();
+  });
+
+  try
+  {
+    AppData& appData = AppData::getInstance();
+    MainWindow window(appData);
+    window.show();
+    return app.exec();
+  }
+  catch (const std::exception& ex)
+  {
+    QMessageBox::critical(nullptr,
+                          "Fatal Error",
+                          QString("Unhandled exception:\n\n%1")
+                            .arg(QString::fromStdString(ex.what())));
+    return 1;
+  }
+  catch (...)
+  {
+    QMessageBox::critical(nullptr,
+                          "Fatal Error",
+                          "Unknown unhandled exception.");
+    return 1;
+  }
+}
+
+#endif // _WIN32

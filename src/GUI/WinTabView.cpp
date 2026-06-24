@@ -16,7 +16,7 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  *
- * File: TabView.cpp
+ * File: WinTabView.cpp
  */
  
 // 304c89c8-6d3c-4586-b0c4-fad2e67b2f65
@@ -24,7 +24,7 @@
 #define NOMINMAX
 #endif
 
-#include "GUI/TabView.hpp"
+#include "GUI/WinTabView.hpp"
 
 #include <stdexcept>
 #include <windowsx.h>
@@ -85,7 +85,7 @@ static bool registerPanelClass(HINSTANCE hInstance)
   return RegisterClassExW(&wc) != 0;
 }
 
-bool TabView::create(HWND parent, int id)
+bool WinTabView::create(HWND parent, int id)
 {
   parent_ = parent;
 
@@ -110,7 +110,7 @@ bool TabView::create(HWND parent, int id)
   return tabControl_ != nullptr;
 }
 
-HWND TabView::addTab(const std::wstring& label)
+HWND WinTabView::addTab(const std::wstring& label)
 {
   const int index = static_cast<int>(tabs_.size());
 
@@ -135,7 +135,7 @@ HWND TabView::addTab(const std::wstring& label)
   return panel;
 }
 
-HWND TabView::getPanel(int index) const
+HWND WinTabView::getPanel(int index) const
 {
   if (index < 0 || index >= static_cast<int>(tabs_.size()))
   {
@@ -144,7 +144,7 @@ HWND TabView::getPanel(int index) const
   return tabs_[static_cast<std::size_t>(index)].panel;
 }
 
-void TabView::resize(const RECT& rc)
+void WinTabView::resize(const RECT& rc)
 {
   SetWindowPos(tabControl_, nullptr, rc.left, rc.top,
     rc.right - rc.left, rc.bottom - rc.top,
@@ -167,18 +167,18 @@ void TabView::resize(const RECT& rc)
   }
 }
 
-void TabView::onSelectionChange()
+void WinTabView::onSelectionChange()
 {
   const int selected = TabCtrl_GetCurSel(tabControl_);
   showTab(selected);
 }
 
-HWND TabView::getTabControl() const
+HWND WinTabView::getTabControl() const
 {
   return tabControl_;
 }
 
-void TabView::showTab(int index)
+void WinTabView::showTab(int index)
 {
   for (int i = 0; i < static_cast<int>(tabs_.size()); ++i)
   {

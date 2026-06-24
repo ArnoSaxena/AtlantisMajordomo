@@ -20,8 +20,10 @@
  */
  
 // 304c89c8-6d3c-4586-b0c4-fad2e67b2f65
+#ifdef _WIN32
 #ifndef NOMINMAX
 #define NOMINMAX
+#endif
 #endif
 
 #include "AppConfig.hpp"
@@ -30,10 +32,14 @@
 #include "Function/StringUtils.hpp"
 
 #include <cwctype>
-#include <fstream>
 #include <filesystem>
+#include <fstream>
 
+#ifdef _WIN32
 #include <windows.h>
+#else
+#include <unistd.h>
+#endif
 
 namespace
 {
@@ -43,7 +49,7 @@ namespace
 
 AppConfig::AppConfig()
 {
-  configFilePath_ = getExecutableDirectory() + L"\\" + kConfigFileName;
+  configFilePath_ = (std::filesystem::path(getExecutableDirectory()) / kConfigFileName).wstring();
   applyDefaults();
 }
 
@@ -595,6 +601,7 @@ std::array<int, 3> AppConfig::getStructureMarkerColor() const
 
 std::wstring AppConfig::getExecutableDirectory()
 {
+#ifdef _WIN32
   wchar_t modulePath[MAX_PATH] = {};
   const DWORD length = GetModuleFileNameW(nullptr, modulePath, MAX_PATH);
   if (length > 0 && length < MAX_PATH)
@@ -626,21 +633,39 @@ std::wstring AppConfig::getExecutableDirectory()
   }
 
   return L".";
+#else
+  // Linux: resolve /proc/self/exe to get the real executable path
+  std::error_code ec;
+  const std::filesystem::path exePath = std::filesystem::canonical("/proc/self/exe", ec);
+  if (!ec && exePath.has_parent_path())
+  {
+    return exePath.parent_path().wstring();
+  }
+
+  // Fallback: current working directory
+  const std::filesystem::path cwd = std::filesystem::current_path(ec);
+  if (!ec)
+  {
+    return cwd.wstring();
+  }
+
+  return L".";
+#endif
 }
 
 std::wstring AppConfig::getDefaultSaveFilePath()
 {
-  return getExecutableDirectory() + L"\\dataset.dat";
+  return (std::filesystem::path(getExecutableDirectory()) / L"dataset.dat").wstring();
 }
 
 std::wstring AppConfig::getDefaultDataFilePath()
 {
-  return getExecutableDirectory() + L"\\data.txt";
+  return (std::filesystem::path(getExecutableDirectory()) / L"data.txt").wstring();
 }
 
 std::wstring AppConfig::getDefaultReportImportFolder()
 {
-  return getExecutableDirectory() + L"\\Reports";
+  return (std::filesystem::path(getExecutableDirectory()) / L"Reports").wstring();
 }
 
 std::wstring AppConfig::getDefaultExportOrdersFolder()
@@ -650,11 +675,11 @@ std::wstring AppConfig::getDefaultExportOrdersFolder()
 
 void AppConfig::applyDefaults()
 {
-  const std::wstring exeDir = getExecutableDirectory();
-  saveFilePath_ = exeDir + L"\\dataset.dat";
-  reportImportFolder_ = exeDir + L"\\Reports";
-  dataFilePath_ = exeDir + L"\\data.txt";
-  exportOrdersFolder_ = exeDir + L"\\Reports";
+  const std::filesystem::path exeDir(getExecutableDirectory());
+  saveFilePath_       = (exeDir / L"dataset.dat").wstring();
+  reportImportFolder_ = (exeDir / L"Reports").wstring();
+  dataFilePath_       = (exeDir / L"data.txt").wstring();
+  exportOrdersFolder_ = (exeDir / L"Reports").wstring();
   mainWindowWidth_ = 900;
   mainWindowHeight_ = 600;
   mapHexWidth_ = 40;

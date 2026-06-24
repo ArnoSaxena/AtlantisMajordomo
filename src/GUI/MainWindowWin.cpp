@@ -16,11 +16,11 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  *
- * File: MainWindow.cpp
+ * File: MainWindowWin.cpp
  */
  
 // 304c89c8-6d3c-4586-b0c4-fad2e67b2f65
-#include "GUI/MainWindow.hpp"
+#include "GUI/MainWindowWin.hpp"
 
 #include "Data/AppData.hpp"
 #include "Data/Commands.hpp"
@@ -37,7 +37,7 @@
 #include "GUI/ReportsTabContent.hpp"
 #include "GUI/SkillsTabContent.hpp"
 #include "GUI/SettingsDialog.hpp"
-#include "GUI/TabView.hpp"
+#include "GUI/WinTabView.hpp"
 
 #include <commctrl.h>
 #include <commdlg.h>
@@ -67,6 +67,7 @@ constexpr int IDM_HELP_DESCRIPTION = 9002;
 constexpr int IDM_TAB_CTX_LOAD_REPORT = 4001;
 
 constexpr UINT WM_APP_AUTOLOAD = WM_APP + 1;
+constexpr UINT WM_APP_INIT     = WM_APP + 2;
 
 static constexpr wchar_t kClassName[] = L"WindowsAppMainWnd";
 
@@ -744,7 +745,7 @@ bool MainWindow::create(HINSTANCE instance, AppData& appData)
 {
   instance_ = instance;
   appData_  = &appData;
-  tabView_  = std::make_unique<TabView>();
+  tabView_  = std::make_unique<WinTabView>();
 
   // Load (or create) a config file next to the executable.
   appConfig_.load();
@@ -765,7 +766,6 @@ bool MainWindow::create(HINSTANCE instance, AppData& appData)
   wc.lpfnWndProc   = wndProc;
   wc.hInstance     = instance;
   wc.hCursor       = LoadCursorW(nullptr, IDC_ARROW);
-  //wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
   wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_BTNFACE + 1);
   wc.lpszClassName = kClassName;
   HICON appIcon = LoadIconW(instance_, MAKEINTRESOURCEW(IDI_APP_ICON));
@@ -810,7 +810,7 @@ int MainWindow::run(int showCmd)
   return static_cast<int>(msg.wParam);
 }
 
-TabView& MainWindow::getTabView()
+WinTabView& MainWindow::getTabView()
 {
   return *tabView_;
 }
@@ -843,6 +843,16 @@ LRESULT MainWindow::handleMessage(UINT msg, WPARAM wp, LPARAM lp)
       tabView_->create(hwnd_, GUI::ControlIds::kMainTabView);
       initializeTabs();
 
+      // Defer the heavy tab-content creation so the window can be shown
+      // immediately; WM_APP_INIT runs as the very first message after the
+      // message loop starts.
+      PostMessageW(hwnd_, WM_APP_INIT, 0, 0);
+
+      return 0;
+    }
+
+    case WM_APP_INIT:
+    {
       reportsTabContent_ = std::make_unique<ReportsTabContent>();
       itemsTabContent_ = std::make_unique<ItemsTabContent>();
       skillsTabContent_ = std::make_unique<SkillsTabContent>();
@@ -851,15 +861,20 @@ LRESULT MainWindow::handleMessage(UINT msg, WPARAM wp, LPARAM lp)
       factionsTabContent_ = std::make_unique<FactionsTabContent>();
       battlesTabContent_ = std::make_unique<BattlesTabContent>();
 
-        if (!reportsTabContent_->create(hwnd_, instance_, *appData_, appConfig_)
-          || !mapTabContent_->create(hwnd_, instance_, *appData_, appConfig_)
-            || !itemsTabContent_->create(hwnd_, instance_, *appData_)
-            || !skillsTabContent_->create(hwnd_, instance_, *appData_)
-          || !eventsTabContent_->create(hwnd_, instance_, *appData_)
-          || !factionsTabContent_->create(hwnd_, instance_, *appData_)
-          || !battlesTabContent_->create(hwnd_, instance_, *appData_))
+      if (!reportsTabContent_->create(hwnd_, instance_, *appData_, appConfig_)
+        || !mapTabContent_->create(hwnd_, instance_, *appData_, appConfig_)
+          || !itemsTabContent_->create(hwnd_, instance_, *appData_)
+          || !skillsTabContent_->create(hwnd_, instance_, *appData_)
+        || !eventsTabContent_->create(hwnd_, instance_, *appData_)
+        || !factionsTabContent_->create(hwnd_, instance_, *appData_)
+        || !battlesTabContent_->create(hwnd_, instance_, *appData_))
       {
-        return -1;
+        MessageBoxW(hwnd_,
+                    L"Failed to create one or more tab panels. The application will close.",
+                    L"Initialization Error",
+                    MB_ICONERROR | MB_OK);
+        PostMessageW(hwnd_, WM_CLOSE, 0, 0);
+        return 0;
       }
 
       // Wire the map → battles navigation callback.
@@ -884,8 +899,27 @@ LRESULT MainWindow::handleMessage(UINT msg, WPARAM wp, LPARAM lp)
               }
               break;
             }
+            case MapTabContent::NavigationTarget::Skills:
+            {
+              HWND tabCtrl = tabView_->getTabControl();
+              if (tabCtrl && skillsTabIndex_ >= 0)
+              {
+                TabCtrl_SetCurSel(tabCtrl, skillsTabIndex_);
+                tabView_->onSelectionChange();
+                updateReportsTabVisibility();
+              }
+              if (skillsTabContent_)
+              {
+                const auto& p = std::get<MapTabContent::SkillNavigationPayload>(request.payload);
+                skillsTabContent_->focusSkillByToken(p.skillToken);
+              }
+              break;
+            }
           }
         });
+
+      // Force a layout pass so all newly created child panels are sized correctly.
+      SendMessageW(hwnd_, WM_SIZE, SIZE_RESTORED, 0);
 
       PostMessageW(hwnd_, WM_APP_AUTOLOAD, 0, 0);
 

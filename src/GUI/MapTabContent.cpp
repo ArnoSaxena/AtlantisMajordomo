@@ -30,7 +30,7 @@
 #include "Data/AppData.hpp"
 #include "Data/Commands.hpp"
 #include "Data/Faction.hpp"
-#include "GUI/GuiUtils.hpp"
+#include "GUI/WinGuiUtils.hpp"
 #include "Data/Item.hpp"
 #include "Data/Region.hpp"
 #include "Data/RegionRepository.hpp"
@@ -40,8 +40,7 @@
 #include "GUI/OrdersEditorUtils.hpp"
 #include "Function/AppDataUtils.hpp"
 #include "Function/CommandSimulationService.hpp"
-#include "Function/CoordinateFormattingUtils.hpp"
-#include "Function/HexDirectionUtils.hpp"
+#include "Function/CoordinateUtils.hpp"
 #include "Function/MonthUtils.hpp"
 #include "Function/OrderBusinessLogic.hpp"
 #include "Function/OrderParsingUtils.hpp"
@@ -85,6 +84,7 @@ LRESULT CALLBACK readOnlyTextPopupWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM
     case WM_CREATE:
     {
       const auto* createStruct = reinterpret_cast<const CREATESTRUCTW*>(lp);
+      //const auto* initialText = static_cast<const std::wstring*>(createStruct->lpCreateParams);
 
       // We pass a small struct via lpCreateParams so we can also get the wrap flag.
       // (See showReadOnlyTextPopup below.)
@@ -223,6 +223,7 @@ void showReadOnlyTextPopup(HWND ownerWindow, const std::wstring& windowTitle, co
     nullptr,
     instance,
     data
+    //const_cast<std::wstring*>(&text)
   );
 
   if (!popup)
@@ -5349,7 +5350,7 @@ void MapTabContent::saveOrdersToSelectedUnit()
     return;
   }
 
-  const std::wstring text = GuiUtils::getWindowText(ordersEditor_);
+  const std::wstring text = WinGuiUtils::getWindowText(ordersEditor_);
 
   const std::vector<std::wstring> orders = StringUtils::splitLines(text);
   unit->setOrders(orders);
@@ -5414,7 +5415,7 @@ void MapTabContent::appendOrderLineToOrdersEditor(const std::wstring& orderLine)
     return;
   }
 
-  std::wstring ordersText = GuiUtils::getWindowText(ordersEditor_);
+  std::wstring ordersText = WinGuiUtils::getWindowText(ordersEditor_);
 
   if (!ordersText.empty())
   {
@@ -5441,7 +5442,14 @@ void MapTabContent::appendOrderLineToOrdersEditor(const std::wstring& orderLine)
 
 void MapTabContent::navigateToSkillList(const std::wstring& skillToken)
 {
-  // navigate to the skills tab and select the skill by the given skill token
+  if (skillToken.empty() || !navigationCallback_)
+  {
+    return;
+  }
+  navigationCallback_(NavigationRequest{
+    NavigationTarget::Skills,
+    SkillNavigationPayload{ skillToken }
+  });
 }
 
 void MapTabContent::showSkillDescription(const std::wstring& skillToken)
@@ -5614,7 +5622,7 @@ void MapTabContent::searchAndSelectUnitById()
     return;
   }
 
-  const std::wstring unitIdText = GuiUtils::getWindowText(unitSearchEdit_);
+  const std::wstring unitIdText = WinGuiUtils::getWindowText(unitSearchEdit_);
   if (unitIdText.empty())
   {
     return;

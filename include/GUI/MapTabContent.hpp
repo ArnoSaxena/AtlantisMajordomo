@@ -118,7 +118,7 @@ public:
   *    accepts the payload data and selects the right item in its list:
   *      void focusSkillByToken(const std::wstring& skillToken);
   *
-  * 6. MainWindow.cpp / setNavigationCallback lambda — Add a new case to the
+  * 6. MainWindowWin.cpp / setNavigationCallback lambda — Add a new case to the
   *    switch statement:
   *      case MapTabContent::NavigationTarget::Skills:
   *      {
@@ -141,6 +141,7 @@ public:
   enum class NavigationTarget
   {
     Battles,
+    Skills,
   };
 
   /**
@@ -157,19 +158,25 @@ public:
     int year  { 0 };
   };
 
+  struct SkillNavigationPayload
+  {
+    std::wstring skillToken;
+  };
+
   /**
   * @brief Unified navigation request passed to the navigation callback.
   *
   * The active alternative in payload matches the value of target:
   *   NavigationTarget::Battles -> std::get<BattleNavigationPayload>(payload)
+  *   NavigationTarget::Skills  -> std::get<SkillNavigationPayload>(payload)
   *
   * Add a new payload struct and a new variant alternative here when a new
   * navigation target is introduced.
   */
   struct NavigationRequest
   {
-    NavigationTarget                     target;
-    std::variant<BattleNavigationPayload> payload;
+    NavigationTarget                                           target;
+    std::variant<BattleNavigationPayload, SkillNavigationPayload> payload;
   };
 
   /**
@@ -183,8 +190,8 @@ public:
   *   2. For NavigationTarget::Battles:
   *        a. TabCtrl_SetCurSel(tabCtrl, battlesTabIndex_) - switches the tab
   *           control selection to the Battles tab.
-  *        b. TabView::onSelectionChange() - updates panel visibility inside
-  *           TabView.
+  *        b. WinTabView::onSelectionChange() - updates panel visibility inside
+  *           WinTabView.
   *        c. MainWindow::updateReportsTabVisibility() - shows/hides all tab
   *           content controls to match the newly selected tab.
   *        d. BattlesTabContent::focusBattleByRegion(x, y, z, month, year) -

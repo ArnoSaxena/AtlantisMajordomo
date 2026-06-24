@@ -56,6 +56,7 @@ public:
   bool handleCommand(int commandId, int notificationCode = 0);
   bool handleVScroll(WPARAM wp, LPARAM lp);
   LRESULT getNotifyResult() const { return notifyResult_; }
+  void focusSkillByToken(const std::wstring& skillToken);
 
 private:
   AppData* appData_ { nullptr };

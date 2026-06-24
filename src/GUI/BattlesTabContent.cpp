@@ -25,7 +25,6 @@
 #include "Data/AppData.hpp"
 #include "Data/Battle.hpp"
 #include "Function/BattleFormattingUtils.hpp"
-#include "Function/CoordinateFormattingUtils.hpp"
 
 #include <commctrl.h>
 #include <sstream>

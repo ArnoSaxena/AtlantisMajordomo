@@ -16,7 +16,7 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  *
- * File: MainWindow.hpp
+ * File: MainWindowWin.hpp
  */
  
 // 304c89c8-6d3c-4586-b0c4-fad2e67b2f65
@@ -38,12 +38,12 @@ class SkillsTabContent;
 class FactionsTabContent;
 class BattlesTabContent;
 class MapTabContent;
-class TabView;
+class WinTabView;
 
 /**
 * @brief Top-level application window.
 *
-* Owns the main HWND and a TabView. The application data model is provided
+* Owns the main HWND and a WinTabView. The application data model is provided
 * externally so the GUI does not own domain objects directly.
 */
 class MainWindow
@@ -61,7 +61,7 @@ public:
   static constexpr wchar_t kAboutDescription[] =
     L"Yet another Atlantis Pbem player client.";
   // TODO: Need to create a more elaborate description.
-  static constexpr wchar_t kAboutVersion[] = L"1.3.8";
+  static constexpr wchar_t kAboutVersion[] = L"1.3.12";
 
   /**
   * @brief Registers the window class and creates the main window.
@@ -79,17 +79,17 @@ public:
   int run(int showCmd);
 
   /**
-  * @brief Returns the TabView so callers can add tabs or populate panels.
-  * @return Reference to the owned TabView.
+  * @brief Returns the WinTabView so callers can add tabs or populate panels.
+  * @return Reference to the owned WinTabView.
   */
-  TabView& getTabView();
+  WinTabView& getTabView();
 
 private:
   HWND                     hwnd_    { nullptr };
   HINSTANCE                instance_{ nullptr };
   AppData*                 appData_ { nullptr };
   AppConfig                appConfig_;
-  std::unique_ptr<TabView> tabView_;
+  std::unique_ptr<WinTabView> tabView_;
   std::unique_ptr<ReportsTabContent> reportsTabContent_;
   std::unique_ptr<ItemsTabContent> itemsTabContent_;
   std::unique_ptr<SkillsTabContent> skillsTabContent_;

@@ -21,7 +21,6 @@
  
 // 304c89c8-6d3c-4586-b0c4-fad2e67b2f65
 #include "Function/OrderBusinessLogic.hpp"
-#include "Function/FactionAttitudeUtils.hpp"
 
 #include "Data/AppData.hpp"
 #include "Data/Faction.hpp"
@@ -36,6 +35,62 @@
 
 #include <algorithm>
 #include <map>
+
+// ---------------------------------------------------------------------------
+// FactionAttitudeUtils implementation (merged from FactionAttitudeUtils.cpp)
+// ---------------------------------------------------------------------------
+namespace FactionAttitudeUtils
+{
+const wchar_t* attitudeToText(Faction::Attitude attitude)
+{
+  switch (attitude)
+  {
+    case Faction::Attitude::Hostile:
+      return L"Hostile";
+    case Faction::Attitude::Unfriendly:
+      return L"Unfriendly";
+    case Faction::Attitude::Neutral:
+      return L"Neutral";
+    case Faction::Attitude::Friendly:
+      return L"Friendly";
+    case Faction::Attitude::Ally:
+      return L"Ally";
+  }
+
+  return L"Neutral";
+}
+
+Faction::Attitude textToAttitude(const std::wstring& text)
+{
+  const std::wstring upper = StringUtils::toUpper(StringUtils::trimWhitespace(text));
+  if (upper == L"HOSTILE")
+  {
+    return Faction::Attitude::Hostile;
+  }
+
+  if (upper == L"UNFRIENDLY")
+  {
+    return Faction::Attitude::Unfriendly;
+  }
+
+  if (upper == L"FRIENDLY")
+  {
+    return Faction::Attitude::Friendly;
+  }
+
+  if (upper == L"ALLY")
+  {
+    return Faction::Attitude::Ally;
+  }
+
+  return Faction::Attitude::Neutral;
+}
+
+std::wstring normalizeAttitudeText(const std::wstring& text)
+{
+  return attitudeToText(textToAttitude(text));
+}
+} // namespace FactionAttitudeUtils
 
 namespace {
 // Helper to check if an order is a DECLARE DEFAULT order

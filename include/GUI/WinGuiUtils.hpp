@@ -16,31 +16,20 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  *
- * File: GuiUtils.cpp
+ * File: WinGuiUtils.hpp
  */
 
 // 304c89c8-6d3c-4586-b0c4-fad2e67b2f65
-#include "GUI/GuiUtils.hpp"
+#pragma once
 
-namespace GuiUtils
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+
+#include <string>
+#include <windows.h>
+
+namespace WinGuiUtils
 {
-
-std::wstring getWindowText(HWND control)
-{
-  if (!control)
-  {
-    return L"";
-  }
-
-  const int length = GetWindowTextLengthW(control);
-  if (length <= 0)
-  {
-    return L"";
-  }
-
-  std::wstring text(static_cast<std::size_t>(length) + 1, L'\0');
-  GetWindowTextW(control, text.data(), length + 1);
-  return text.c_str();
+std::wstring getWindowText(HWND control);
 }
-
-} // namespace GuiUtils

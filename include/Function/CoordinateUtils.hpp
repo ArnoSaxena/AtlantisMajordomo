@@ -1,0 +1,54 @@
+/* 
+ * Copyright (C) 2026 Arno Saxena
+ *
+ * Atlantis Majordomo
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *
+ * File: CoordinateUtils.hpp
+ */
+
+// 304c89c8-6d3c-4586-b0c4-fad2e67b2f65
+#pragma once
+
+#include <string>
+#include <utility>
+#include <vector>
+
+class Structure;
+
+namespace CoordinateUtils
+{
+// --- Coordinate formatting ---
+
+std::wstring formatCoordinates(int xCoordinate,
+                               int yCoordinate,
+                               int zCoordinate,
+                               bool omitDefaultZ = true,
+                               bool includeSpaces = false);
+
+// --- Hex direction helpers ---
+
+bool isWestDirection(const std::wstring& direction);
+bool isEastDirection(const std::wstring& direction);
+std::wstring normalizeHexDirection(const std::wstring& direction);
+std::vector<std::pair<int, int>> calculateMovePathCoordinates(int startX, int startY, const std::vector<std::wstring>& directions);
+int wrapMapXCoordinate(int xCoordinate, int minX, int maxX);
+std::wstring extractRoadDirectionFromStructure(const Structure& structure);
+}
+
+// Backwards-compatibility aliases so existing call sites continue to compile
+// without modification. New code should use CoordinateUtils:: directly.
+namespace CoordinateFormattingUtils = CoordinateUtils;
+namespace HexDirectionUtils         = CoordinateUtils;

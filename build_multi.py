@@ -249,38 +249,59 @@ def clean_all():
 
 def bump_about_version():
     """
-    Increment MainWindow::kAboutVersion patch number in MainWindow.hpp.
+    Increment the kAboutVersion patch number in each known header.
+    Handles both the Win32 header (wchar_t) and the Qt header (const char*).
+    Both files are bumped independently so they stay up-to-date on every build.
     """
-    header_path = os.path.join(src_working_dir, "include", "GUI", "MainWindow.hpp")
-    if not os.path.isfile(header_path):
-        raise RuntimeError(f"Version header not found: {header_path}")
+    headers = [
+        (
+            os.path.join(src_working_dir, "include", "GUI", "MainWindowWin.hpp"),
+            re.compile(
+                r'(static constexpr wchar_t kAboutVersion\[\] = L")([0-9]+)\.([0-9]+)\.([0-9]+)(";)',
+                re.MULTILINE
+            ),
+        ),
+        (
+            os.path.join(src_working_dir, "include", "GUI", "MainWindowQt.hpp"),
+            re.compile(
+                r'(static constexpr const char\* kAboutVersion = ")([0-9]+)\.([0-9]+)\.([0-9]+)(";)',
+                re.MULTILINE
+            ),
+        ),
+    ]
 
-    with open(header_path, "r", encoding="utf-8") as file:
-        content = file.read()
+    any_found = False
 
-    version_pattern = re.compile(
-        r'(static constexpr wchar_t kAboutVersion\[\] = L")([0-9]+)\.([0-9]+)\.([0-9]+)(";)',
-        re.MULTILINE
-    )
-    match = version_pattern.search(content)
-    if match is None:
-        raise RuntimeError("Could not locate MainWindow::kAboutVersion in MainWindow.hpp")
+    for header_path, version_pattern in headers:
+        if not os.path.isfile(header_path):
+            continue
 
-    major = int(match.group(2))
-    minor = int(match.group(3))
-    patch = int(match.group(4)) + 1
-    new_version = f"{major}.{minor}.{patch}"
+        with open(header_path, "r", encoding="utf-8") as file:
+            content = file.read()
 
-    updated_content = version_pattern.sub(
-        rf'\g<1>{new_version}\g<5>',
-        content,
-        count=1
-    )
+        match = version_pattern.search(content)
+        if match is None:
+            continue
 
-    with open(header_path, "w", encoding="utf-8", newline="") as file:
-        file.write(updated_content)
+        major = int(match.group(2))
+        minor = int(match.group(3))
+        patch = int(match.group(4)) + 1
+        new_version = f"{major}.{minor}.{patch}"
 
-    print(f"[*] Updated About version to {new_version}")
+        updated_content = version_pattern.sub(
+            rf'\g<1>{new_version}\g<5>',
+            content,
+            count=1
+        )
+
+        with open(header_path, "w", encoding="utf-8", newline="") as file:
+            file.write(updated_content)
+
+        print(f"[*] Updated {os.path.basename(header_path)} version to {new_version}")
+        any_found = True
+
+    if not any_found:
+        raise RuntimeError("Could not locate kAboutVersion in any known header file")
 
 
 def set_main_debug_define(debug_enabled):

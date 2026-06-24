@@ -8,24 +8,14 @@ if(NOT CMAKE_CONFIGURATION_TYPES)
   set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
 endif()
 
-add_executable(AtlantisMajordomo WIN32
-  src/GUI/AtlantisMajordomo.rc
+# ---------------------------------------------------------------------------
+# Common sources (shared by all platforms)
+# ---------------------------------------------------------------------------
+set(COMMON_SOURCES
   src/AppConfig.cpp
+  src/Main.cpp
   src/Data/AppData.cpp
   src/Data/Commands.cpp
-  src/Function/CommandSimulationService.cpp
-  src/Function/AppDataUtils.cpp
-  src/Function/BattleFormattingUtils.cpp
-  src/Function/CoordinateFormattingUtils.cpp
-  src/Function/FactionAttitudeUtils.cpp
-  src/Function/HexDirectionUtils.cpp
-  src/Function/JsonUtils.cpp
-  src/Function/MonthUtils.cpp
-  src/Function/OrderParsingUtils.cpp
-  src/Function/OrderWarningService.cpp
-  src/Function/OrderBusinessLogic.cpp
-  src/Function/SkillFormattingUtils.cpp
-  src/Function/StringUtils.cpp
   src/Data/DataSerializer.cpp
   src/Data/Event.cpp
   src/Data/EventRepository.cpp
@@ -49,39 +39,92 @@ add_executable(AtlantisMajordomo WIN32
   src/Data/StructInfoRepository.cpp
   src/Data/Order.cpp
   src/Data/OrderRepository.cpp
-  src/Main.cpp
-  src/GUI/MainWindow.cpp
-  src/GUI/EventsTabContent.cpp
-  src/GUI/GuiUtils.cpp
-  src/GUI/ReportsTabContent.cpp
-  src/GUI/MapTabContent.cpp
-  src/GUI/OrdersEditorUtils.cpp
-  src/GUI/ItemsTabContent.cpp
-  src/GUI/SkillsTabContent.cpp
-  src/GUI/FactionsTabContent.cpp
-  src/GUI/BattlesTabContent.cpp
-  src/GUI/TabView.cpp
-  src/GUI/SettingsDialog.cpp
   src/Data/Report.cpp
   src/Data/ReportRepository.cpp
+  src/Function/AppDataUtils.cpp
+  src/Function/BattleFormattingUtils.cpp
+  src/Function/CommandSimulationService.cpp
+  src/Function/CoordinateUtils.cpp
+  src/Function/JsonUtils.cpp
+  src/Function/MonthUtils.cpp
+  src/Function/OrderBusinessLogic.cpp
+  src/Function/OrderParsingUtils.cpp
+  src/Function/OrderWarningService.cpp
+  src/Function/SkillFormattingUtils.cpp
+  src/Function/StringUtils.cpp
 )
 
-target_include_directories(AtlantisMajordomo PRIVATE
-  include
-)
+# ---------------------------------------------------------------------------
+# Windows build  (Win32 API + native GUI)
+# ---------------------------------------------------------------------------
+if(WIN32)
 
-target_link_libraries(AtlantisMajordomo PRIVATE
-  comctl32
-)
+  set(GUI_SOURCES
+    src/GUI/AtlantisMajordomo.rc
+    src/GUI/MainWindowWin.cpp
+    src/GUI/EventsTabContent.cpp
+    src/GUI/WinGuiUtils.cpp
+    src/GUI/ReportsTabContent.cpp
+    src/GUI/MapTabContent.cpp
+    src/GUI/OrdersEditorUtils.cpp
+    src/GUI/ItemsTabContent.cpp
+    src/GUI/SkillsTabContent.cpp
+    src/GUI/FactionsTabContent.cpp
+    src/GUI/BattlesTabContent.cpp
+    src/GUI/WinTabView.cpp
+    src/GUI/SettingsDialog.cpp
+  )
 
-target_compile_definitions(AtlantisMajordomo PRIVATE
-  UNICODE
-  _UNICODE
-  WIN32_LEAN_AND_MEAN
-  NOMINMAX
-)
+  add_executable(AtlantisMajordomo WIN32
+    ${COMMON_SOURCES}
+    ${GUI_SOURCES}
+  )
 
-target_compile_options(AtlantisMajordomo PRIVATE
-  /W4
-  /permissive-
-)
+  target_link_libraries(AtlantisMajordomo PRIVATE comctl32)
+
+  target_compile_definitions(AtlantisMajordomo PRIVATE
+    UNICODE
+    _UNICODE
+    WIN32_LEAN_AND_MEAN
+    NOMINMAX
+  )
+
+  target_compile_options(AtlantisMajordomo PRIVATE
+    /W4
+    /permissive-
+  )
+
+# ---------------------------------------------------------------------------
+# Linux build  (Qt6)
+# ---------------------------------------------------------------------------
+elseif(UNIX)
+
+  find_package(Qt6 REQUIRED COMPONENTS Widgets)
+
+  set(CMAKE_AUTOMOC ON)
+
+  set(GUI_SOURCES
+    src/GUI/Linux/MainWindowQt.cpp
+    src/GUI/Linux/ReportsTabContentQt.cpp
+    src/GUI/Linux/EventsTabContentQt.cpp
+    src/GUI/Linux/BattlesTabContentQt.cpp
+  )
+
+  add_executable(AtlantisMajordomo
+    ${COMMON_SOURCES}
+    ${GUI_SOURCES}
+  )
+
+  target_link_libraries(AtlantisMajordomo PRIVATE Qt6::Widgets)
+
+  target_compile_options(AtlantisMajordomo PRIVATE
+    -Wall -Wextra -Wpedantic
+  )
+
+endif()
+
+# ---------------------------------------------------------------------------
+# Shared settings
+# ---------------------------------------------------------------------------
+target_include_directories(AtlantisMajordomo PRIVATE include)
+

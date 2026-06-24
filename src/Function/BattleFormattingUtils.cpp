@@ -23,7 +23,7 @@
 #include "Function/BattleFormattingUtils.hpp"
 
 #include "Data/Battle.hpp"
-#include "Function/CoordinateFormattingUtils.hpp"
+#include "Function/CoordinateUtils.hpp"
 
 #include <sstream>
 #include <string>

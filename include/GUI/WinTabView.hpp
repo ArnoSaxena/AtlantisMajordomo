@@ -16,7 +16,7 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  *
- * File: TabView.hpp
+ * File: WinTabView.hpp
  */
  
 // 304c89c8-6d3c-4586-b0c4-fad2e67b2f65
@@ -36,16 +36,16 @@
 * Each tab owns a child HWND that acts as a content panel. Panels can be
 * populated later by the caller via getPanel().
 */
-class TabView
+class WinTabView
 {
 public:
-  TabView() = default;
-  ~TabView() = default;
+  WinTabView() = default;
+  ~WinTabView() = default;
 
-  TabView(const TabView&) = delete;
-  TabView& operator=(const TabView&) = delete;
-  TabView(TabView&&) = delete;
-  TabView& operator=(TabView&&) = delete;
+  WinTabView(const WinTabView&) = delete;
+  WinTabView& operator=(const WinTabView&) = delete;
+  WinTabView(WinTabView&&) = delete;
+  WinTabView& operator=(WinTabView&&) = delete;
 
   /**
   * @brief Creates the tab control and its panels inside a parent window.

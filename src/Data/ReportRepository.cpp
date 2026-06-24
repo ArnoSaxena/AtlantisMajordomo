@@ -33,7 +33,7 @@
 #include "Data/UnitRepository.hpp"
 #include "DebugLog.hpp"
 #include "Function/CommandSimulationService.hpp"
-#include "Function/FactionAttitudeUtils.hpp"
+#include "Function/OrderBusinessLogic.hpp"
 #include "Function/StringUtils.hpp"
 
 #include <future>

@@ -24,7 +24,7 @@
 #define NOMINMAX
 #endif
 
-#include "GUI/GuiUtils.hpp"
+#include "GUI/WinGuiUtils.hpp"
 #include "GUI/ItemsTabContent.hpp"
 
 #include "Data/AppData.hpp"
@@ -749,7 +749,7 @@ void ItemsTabContent::saveSelectedItem()
     return;
   }
 
-  const std::wstring editedToken = StringUtils::trimWhitespace(GuiUtils::getWindowText(tokenEdit_));
+  const std::wstring editedToken = StringUtils::trimWhitespace(WinGuiUtils::getWindowText(tokenEdit_));
   if (!editedToken.empty() && editedToken != selectedItemToken_)
   {
     MessageBoxW(GetParent(itemsList_),
@@ -758,27 +758,27 @@ void ItemsTabContent::saveSelectedItem()
                 MB_ICONWARNING | MB_OK);
   }
 
-  item->setItemName(GuiUtils::getWindowText(nameEdit_));
-  item->setWeight(StringUtils::parseIntSafe(GuiUtils::getWindowText(weightEdit_)));
+  item->setItemName(WinGuiUtils::getWindowText(nameEdit_));
+  item->setWeight(StringUtils::parseIntSafe(WinGuiUtils::getWindowText(weightEdit_)));
   item->setMeeleWeapon(Button_GetCheck(meeleWeaponCheck_) == BST_CHECKED);
   item->setRangedWeapon(Button_GetCheck(rangedWeaponCheck_) == BST_CHECKED);
   item->setArmour(Button_GetCheck(armourCheck_) == BST_CHECKED);
   item->setResource(Button_GetCheck(resourceCheck_) == BST_CHECKED);
   item->setMount(Button_GetCheck(mountCheck_) == BST_CHECKED);
-  item->setMoves(StringUtils::parseIntSafe(GuiUtils::getWindowText(movesEdit_)));
-  item->setWalkCapacity(StringUtils::parseIntSafe(GuiUtils::getWindowText(walkCapacityEdit_)));
-  item->setRideCapacity(StringUtils::parseIntSafe(GuiUtils::getWindowText(rideCapacityEdit_)));
-  item->setSwimCapacity(StringUtils::parseIntSafe(GuiUtils::getWindowText(swimCapacityEdit_)));
-  item->setFlyCapacity(StringUtils::parseIntSafe(GuiUtils::getWindowText(flyCapacityEdit_)));
-  item->setShipSpeedHexesPerMonth(StringUtils::parseIntSafe(GuiUtils::getWindowText(shipSpeedEdit_)));
-  item->setShipSailingSkillRequired(StringUtils::parseIntSafe(GuiUtils::getWindowText(shipSailingSkillEdit_)));
-  item->setMagesStudy(StringUtils::parseIntSafe(GuiUtils::getWindowText(magesStudyEdit_)));
-  item->setDefaultSkillMax(StringUtils::parseIntSafe(GuiUtils::getWindowText(defaultSkillMaxEdit_)));
+  item->setMoves(StringUtils::parseIntSafe(WinGuiUtils::getWindowText(movesEdit_)));
+  item->setWalkCapacity(StringUtils::parseIntSafe(WinGuiUtils::getWindowText(walkCapacityEdit_)));
+  item->setRideCapacity(StringUtils::parseIntSafe(WinGuiUtils::getWindowText(rideCapacityEdit_)));
+  item->setSwimCapacity(StringUtils::parseIntSafe(WinGuiUtils::getWindowText(swimCapacityEdit_)));
+  item->setFlyCapacity(StringUtils::parseIntSafe(WinGuiUtils::getWindowText(flyCapacityEdit_)));
+  item->setShipSpeedHexesPerMonth(StringUtils::parseIntSafe(WinGuiUtils::getWindowText(shipSpeedEdit_)));
+  item->setShipSailingSkillRequired(StringUtils::parseIntSafe(WinGuiUtils::getWindowText(shipSailingSkillEdit_)));
+  item->setMagesStudy(StringUtils::parseIntSafe(WinGuiUtils::getWindowText(magesStudyEdit_)));
+  item->setDefaultSkillMax(StringUtils::parseIntSafe(WinGuiUtils::getWindowText(defaultSkillMaxEdit_)));
   item->setMan(Button_GetCheck(manCheck_) == BST_CHECKED);
-  item->setSkillsMax(StringUtils::parseStringIntMap(GuiUtils::getWindowText(skillsMaxEdit_)));
-  item->setResources(StringUtils::parseStringIntMap(GuiUtils::getWindowText(resourcesEdit_)));
-  item->setProductionSkill(StringUtils::parseStringIntMap(GuiUtils::getWindowText(productionSkillEdit_)));
-  item->setProductionHelp(StringUtils::parseStringIntMap(GuiUtils::getWindowText(productionHelpEdit_)));
+  item->setSkillsMax(StringUtils::parseStringIntMap(WinGuiUtils::getWindowText(skillsMaxEdit_)));
+  item->setResources(StringUtils::parseStringIntMap(WinGuiUtils::getWindowText(resourcesEdit_)));
+  item->setProductionSkill(StringUtils::parseStringIntMap(WinGuiUtils::getWindowText(productionSkillEdit_)));
+  item->setProductionHelp(StringUtils::parseStringIntMap(WinGuiUtils::getWindowText(productionHelpEdit_)));
 
   updateItemsList();
 }
