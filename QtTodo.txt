@@ -1,0 +1,126 @@
+Qt / Linux Conversion TODO
+==========================
+
+Files already converted
+-----------------------
+  MainWindowQt.hpp / src/GUI/Linux/MainWindowQt.cpp
+    - Top-level QMainWindow; owns QTabWidget, menus, config, auto-load, orders export.
+
+  ReportsTabContentQt.hpp / src/GUI/Linux/ReportsTabContentQt.cpp
+    - "Loaded Reports" tab: QListWidget + QSplitter detail pane (faction, month,
+      found/visited regions), context menu (Load / Remove), Clear button.
+    - Wired into MainWindowQt::deferredInit() and refreshAllTabs().
+
+Files that do NOT need a Qt equivalent
+---------------------------------------
+  WinGuiUtils.hpp / WinGuiUtils.cpp
+    - Win32 GetWindowText wrapper. Qt widgets expose .text() / .toPlainText()
+      directly; no helper needed.
+
+  WinTabView.hpp / WinTabView.cpp
+    - Win32 WC_TABCONTROL wrapper. Fully replaced by QTabWidget in MainWindowQt.
+
+  MainWindowWin.hpp / MainWindowWin.cpp
+    - Windows-only main window; superseded by MainWindowQt.
+
+  ReportsTabContent.hpp / ReportsTabContent.cpp
+    - Windows version of the reports tab; superseded by ReportsTabContentQt.
+
+  ControlIds.hpp
+    - Win32 child-window numeric IDs. Qt widgets are identified by pointer,
+      not integer ID; no equivalent needed.
+
+  ResourceIds.hpp
+    - Win32 RCDATA / icon resource IDs. Qt uses .qrc files; handle if/when
+      an application icon or embedded resource is needed on Linux.
+
+  AtlantisMajordomo.rc / AtlantisMajordomo.ico
+    - Windows resource script and icon. Replace with a .qrc entry if a Linux
+      app icon is required.
+
+  OrdersEditorUtils.hpp / OrdersEditorUtils.cpp
+    - Win32 context-menu + HWND edit-control helpers used exclusively by
+      MapTabContent. Port inline into MapTabContentQt when that tab is
+      implemented; no stand-alone Qt file is necessary.
+
+Files still to convert (suggested order)
+-----------------------------------------
+
+1. EventsTabContentQt
+   Windows source : EventsTabContent.hpp / EventsTabContent.cpp
+   Status         : DONE
+   Description    : Read-only list of events for the current turn.
+
+2. BattlesTabContentQt
+   Windows source : BattlesTabContent.hpp / BattlesTabContent.cpp
+   Status         : DONE
+   Description    : Date filter combo + battles list + summary/full-report panes.
+
+3. SkillsTabContentQt
+   Windows source : SkillsTabContent.hpp / SkillsTabContent.cpp
+   Complexity     : Medium
+   Description    : Skills list on the left; editable detail form on the right
+                    (name, token, prerequisites, production items, study cost,
+                    level dropdown, Save button).
+                    Win32: LVS_REPORT ListView + multiple EDIT / COMBOBOX controls.
+   Qt approach    : QSplitter with QListWidget on the left and a QFormLayout
+                    (QLineEdit fields + QComboBox + QPushButton) on the right.
+                    Replace WinGuiUtils::getWindowText calls with QLineEdit::text().
+
+4. ItemsTabContentQt
+   Windows source : ItemsTabContent.hpp / ItemsTabContent.cpp
+   Complexity     : Medium-High
+   Description    : Items list + large editable detail form (name, token, weight,
+                    moves, capacities, ship fields, mages study, skill-max map,
+                    resources map, production skill/help maps, Save button).
+                    Win32: LVS_REPORT ListView + ~15 EDIT controls.
+   Qt approach    : QSplitter with QListWidget on the left and a QScrollArea
+                    containing a QFormLayout on the right.
+                    Replace WinGuiUtils::getWindowText calls with QLineEdit::text().
+
+5. FactionsTabContentQt
+   Windows source : FactionsTabContent.hpp / FactionsTabContent.cpp
+   Complexity     : High
+   Description    : Factions list; detail pane with name/month/year/password edits,
+                    default-attitude combo, declared-attitudes sub-list, command-unit
+                    section, Save buttons, main-faction checkbox.
+                    Win32: LVS_REPORT ListView + COMBOBOX + multiple EDIT controls
+                    + second LVS_REPORT sub-list.
+   Qt approach    : QSplitter; left = QListWidget; right = QScrollArea with grouped
+                    QFormLayout sections + QComboBox + inner QTableWidget for
+                    attitudes + QPushButton controls.
+                    Replace WinGuiUtils::getWindowText calls with QLineEdit::text().
+
+6. SettingsDialogQt
+   Windows source : SettingsDialog.hpp / SettingsDialog.cpp
+   Complexity     : Medium
+   Description    : Modal dialog for application settings (report folder, data file
+                    path, flying ships CSV, magic skill triggers, order keywords,
+                    leader/mage flags).
+                    Win32: DialogBox with EDIT / CHECKBOX / BUTTON controls.
+   Qt approach    : QDialog with QFormLayout, QLineEdit fields, QCheckBox controls,
+                    QDialogButtonBox (OK / Cancel).
+                    After acceptance, call AppConfig setters and MainWindowQt slot
+                    onSettingsOptions().
+
+7. MapTabContentQt   *** most complex ***
+   Windows source : MapTabContent.hpp / MapTabContent.cpp
+   Complexity     : Very High
+   Description    : Hex map canvas, region/unit selection, units list, orders editor
+                    (multi-line edit + syntax highlighting), FORM-block insertion,
+                    unit-detail inner tabs (items, errors, warnings, events,
+                    capacities), unit search, order check/save/warning navigation,
+                    navigation callbacks to other tabs (Battles, Skills).
+                    Win32: custom-drawn HWND map, LVS_REPORT units list, rich-edit
+                    orders editor, inner WC_TABCONTROL for unit details.
+   Qt approach    :
+     - Subclass QWidget for the hex map canvas; override paintEvent / mouse events.
+     - QSplitter (map canvas | right panel).
+     - Right panel: QSplitter (units QTableWidget | lower panel).
+     - Lower panel: QTabWidget for unit details (items, errors, warnings, events,
+       capacities) + QPlainTextEdit orders editor.
+     - Orders context menu: use QPlainTextEdit::createStandardContextMenu() and
+       extend it with "Form New Unit" action (replaces OrdersEditorUtils).
+     - Navigation callbacks: emit Qt signals that MainWindowQt connects to
+       tabWidget_->setCurrentIndex().
+     - Order checking: port inline from MapTabContent; no Win32 dependency.
