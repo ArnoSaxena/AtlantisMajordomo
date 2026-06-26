@@ -30,7 +30,11 @@ class AppData;
 class QTabWidget;
 class BattlesTabContentQt;
 class EventsTabContentQt;
+class FactionsTabContentQt;
+class ItemsTabContentQt;
+class MapTabContentQt;
 class ReportsTabContentQt;
+class SkillsTabContentQt;
 
 /**
  * @brief Top-level application window for the Qt / Linux build.
@@ -71,6 +75,8 @@ private slots:
     void onSettingsOptions();
     void onHelpDescription();
     void onHelpAbout();
+    void onNavigateToBattle(int x, int y, int z, int month, int year);
+    void onNavigateToSkill(const QString& skillToken);
 
 private:
     void setupMenus();
@@ -87,6 +93,10 @@ private:
     ReportsTabContentQt*  reportsTabContent_   { nullptr };
     EventsTabContentQt*   eventsTabContent_    { nullptr };
     BattlesTabContentQt*  battlesTabContent_   { nullptr };
+    FactionsTabContentQt* factionsTabContent_  { nullptr };
+    ItemsTabContentQt*    itemsTabContent_     { nullptr };
+    SkillsTabContentQt*   skillsTabContent_    { nullptr };
+    MapTabContentQt*      mapTabContent_       { nullptr };
 
     QWidget*    reportsTab_  { nullptr };
     QWidget*    mapTab_      { nullptr };

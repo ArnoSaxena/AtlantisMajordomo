@@ -282,7 +282,8 @@ private:
   bool hasCapacityValues_ { false };
   bool hasShipCapacityValues_ { false };
   bool hasShipOwnerSkillValues_ { false };
-  bool shipIsFlying_ { false };
+  bool shipIsFlying_            { false };
+  bool shipIsCapableOfFlying_   { false };
   LRESULT notifyResult_ { 0 };
   bool trackingMouseLeave_ { false };
   std::wstring hoverRegionText_;
@@ -321,7 +322,7 @@ private:
   void paintMap(HDC hdc) const;
   const RegionVisual* hitTestRegion(POINT pointInMapClient) const;
   bool hitTestMapCoordinate(POINT pointInMapClient, int& xCoordinate, int& yCoordinate) const;
-  std::array<POINT, 6> buildHexagonPolygon(int centerX, int centerY, int hexWidth) const;
+  // buildHexagonPolygon moved to MapUtils::buildHexagonPolygon (Function/MapUtils.hpp)
   void populateUnitsForSelectedRegion();
   void populateItemsForSelectedUnit(const Unit* unit);
   void populateItemsForSelectedUnit(const UnitNew* unitNew);

@@ -132,4 +132,39 @@ bool importReportFromFile(AppData& appData,
   );
 }
 
+std::vector<int> getWarningUnitNumbersForLatestPeriod(const AppData& appData)
+{
+  int latestMonth = 0;
+  int latestYear  = 0;
+  const auto& reportRepo = appData.reportRepository();
+  for (std::size_t i = 0; i < reportRepo.size(); ++i)
+  {
+    const Report& r = reportRepo.at(i);
+    const int rm = r.getMonth();
+    const int ry = r.getYear();
+    if (rm >= 1 && rm <= 12 && ry > 0)
+    {
+      if (ry > latestYear || (ry == latestYear && rm > latestMonth))
+      {
+        latestMonth = rm;
+        latestYear  = ry;
+      }
+    }
+  }
+  const bool hasLatestPeriod = (latestMonth >= 1 && latestMonth <= 12 && latestYear > 0);
+
+  std::vector<int> result;
+  const auto& unitRepo = appData.unitRepository();
+  for (std::size_t i = 0; i < unitRepo.size(); ++i)
+  {
+    const Unit& unit = unitRepo.at(i);
+    if (unit.getWarnings().empty())
+      continue;
+    if (hasLatestPeriod && (unit.getMonth() != latestMonth || unit.getYear() != latestYear))
+      continue;
+    result.push_back(unit.getUnitNumber());
+  }
+  return result;
+}
+
 } // namespace AppDataUtils

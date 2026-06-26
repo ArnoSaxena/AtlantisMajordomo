@@ -32,6 +32,7 @@
 #include "Function/CommandSimulationService.hpp"
 #include "Function/OrderParsingUtils.hpp"
 #include "Function/StringUtils.hpp"
+#include "Function/UnitCapacityUtils.hpp"
 
 #include <algorithm>
 #include <cwctype>
@@ -944,69 +945,17 @@ void checkMoveCapacityWarningsForMainFaction(AppData& appData, int mainFactionNu
       continue;
     }
 
-    const int totalWeight = appData.itemRepository().calculateTotalWeight(unit->getItems());
-    int walkCapacity = 0;
-    for (const auto& [itemToken, count] : unit->getItems())
+    const UnitCapacityUtils::UnitCapacities caps =
+      UnitCapacityUtils::getUnitCapacities(*unit, appData);
+    bool overloaded = hasMoveOrder && caps.walkCapacity < 0;
+
+    if (!overloaded && hasSailOrder)
     {
-      if (count <= 0)
+      const UnitCapacityUtils::ShipCapacities ship =
+        UnitCapacityUtils::getShipCapacities(*unit, appData);
+      if (ship.hasCapacityValues)
       {
-        continue;
-      }
-
-      const Item* item = appData.itemRepository().findByIdentifierToken(itemToken);
-      if (!item)
-      {
-        continue;
-      }
-
-      const int itemWeight = item->getWeight();
-      if (item->isMan())
-      {
-        walkCapacity += (item->getWalkCapacity() + itemWeight) * count;
-      }
-      else if (item->isMount())
-      {
-        walkCapacity += itemWeight * count;
-      }
-    }
-    walkCapacity -= totalWeight;
-
-    bool overloaded = hasMoveOrder && walkCapacity < 0;
-
-    if (!overloaded && hasSailOrder && unit->getStructureId() > 0)
-    {
-      const Structure* structure = appData.structureRepository().findByIdAndCoordinates(
-        unit->getStructureId(), unit->getXCoordinate(), unit->getYCoordinate(), unit->getZCoordinate());
-
-      const StructInfo* structInfo = structure ? findStructInfoForStructure(appData, *structure) : nullptr;
-      if (structure && structInfo && structInfo->isShip())
-      {
-        const std::wstring& shipToken = structInfo->getItemIdentifierToken();
-        const Item* shipItem = shipToken.empty()
-          ? appData.itemRepository().findByItemName(structure->getStructureType())
-          : appData.itemRepository().findByIdentifierToken(shipToken);
-        if (!shipItem)
-        {
-          shipItem = appData.itemRepository().findByItemName(structure->getStructureName());
-        }
-
-        if (shipItem)
-        {
-          int combinedWeight = 0;
-          for (std::size_t innerIndex = 0; innerIndex < unitRepository.size(); ++innerIndex)
-          {
-            const Unit& candidate = unitRepository.at(innerIndex);
-            if (candidate.getStructureId() == unit->getStructureId() &&
-                candidate.getXCoordinate() == unit->getXCoordinate() &&
-                candidate.getYCoordinate() == unit->getYCoordinate() &&
-                candidate.getZCoordinate() == unit->getZCoordinate())
-            {
-              combinedWeight += appData.itemRepository().calculateTotalWeight(candidate.getItems());
-            }
-          }
-
-          overloaded = (shipItem->getSwimCapacity() - combinedWeight) < 0;
-        }
+        overloaded = ship.shipFreeCapacity < 0;
       }
     }
 

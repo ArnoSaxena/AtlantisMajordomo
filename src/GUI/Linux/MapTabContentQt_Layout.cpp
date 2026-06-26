@@ -1,0 +1,393 @@
+/* 
+ * Copyright (C) 2026 Arno Saxena
+ *
+ * Atlantis Majordomo
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *
+ * File: MapTabContentQt_Layout.cpp
+ *
+ * Step 7.2 — constructor and QSplitter wiring.
+ */
+
+// 304c89c8-6d3c-4586-b0c4-fad2e67b2f65
+
+#include "GUI/MapTabContentQt.hpp"
+
+#include <QHBoxLayout>
+#include <QHeaderView>
+#include <QLabel>
+#include <QLineEdit>
+#include <QListWidget>
+#include <QPlainTextEdit>
+#include <QPushButton>
+#include <QSizePolicy>
+#include <QSplitter>
+#include <QTabWidget>
+#include <QTableWidget>
+#include <QVBoxLayout>
+#include <QWidget>
+
+// ---------------------------------------------------------------------------
+// Constructor
+// ---------------------------------------------------------------------------
+
+MapTabContentQt::MapTabContentQt(AppData&   appData,
+                                  AppConfig& appConfig,
+                                  QWidget*   parent)
+    : QWidget(parent)
+    , appData_  (&appData)
+    , appConfig_(&appConfig)
+{
+    // -----------------------------------------------------------------------
+    // Top-level layout
+    // -----------------------------------------------------------------------
+    auto* topLayout = new QVBoxLayout(this);
+    topLayout->setContentsMargins(0, 0, 0, 0);
+    topLayout->setSpacing(0);
+
+    // -----------------------------------------------------------------------
+    // Outer horizontal splitter: left (details + map + units) | right (unit panel)
+    // -----------------------------------------------------------------------
+    mainSplitter_ = new QSplitter(Qt::Horizontal, this);
+    topLayout->addWidget(mainSplitter_);
+
+    // -----------------------------------------------------------------------
+    // Left container
+    // -----------------------------------------------------------------------
+    auto* leftContainer = new QWidget(mainSplitter_);
+    leftContainer->setMinimumWidth(420);
+    mainSplitter_->addWidget(leftContainer);
+
+    auto* leftLayout = new QVBoxLayout(leftContainer);
+    leftLayout->setContentsMargins(4, 4, 4, 4);
+    leftLayout->setSpacing(4);
+
+    // Inner horizontal splitter: region-details column | map canvas
+    detailsMapSplitter_ = new QSplitter(Qt::Horizontal, leftContainer);
+    leftLayout->addWidget(detailsMapSplitter_, 3); // stretch 3 so map area dominates
+
+    // -----------------------------------------------------------------------
+    // Details pane (left half of inner splitter)
+    // Region date, hover label, read-only region text, resource / sale / wanted lists.
+    // Content is populated by MapTabContentQt_RegionDetails.cpp (step 7.6).
+    // -----------------------------------------------------------------------
+    auto* detailsPane = new QWidget(detailsMapSplitter_);
+    detailsPane->setMinimumWidth(150);
+    detailsMapSplitter_->addWidget(detailsPane);
+
+    auto* detailsPaneLayout = new QVBoxLayout(detailsPane);
+    detailsPaneLayout->setContentsMargins(0, 0, 2, 0);
+    detailsPaneLayout->setSpacing(2);
+
+    regionDateLabel_   = new QLabel("\u2014", detailsPane);       // em-dash placeholder
+    hoverRegionLabel_  = new QLabel("Hover: \u2014", detailsPane);
+
+    regionDetailsView_ = new QPlainTextEdit(detailsPane);
+    regionDetailsView_->setReadOnly(true);
+    regionDetailsView_->setMinimumHeight(60);
+    regionDetailsView_->setPlaceholderText("No region selected");
+
+    regionResourcesLabel_ = new QLabel("Resources", detailsPane);
+    regionResourcesList_  = new QListWidget(detailsPane);
+    regionResourcesList_->setMinimumHeight(40);
+
+    regionForSaleLabel_ = new QLabel("For Sale", detailsPane);
+    regionForSaleList_  = new QListWidget(detailsPane);
+    regionForSaleList_->setMinimumHeight(40);
+
+    regionWantedLabel_ = new QLabel("Wanted", detailsPane);
+    regionWantedList_  = new QListWidget(detailsPane);
+    regionWantedList_->setMinimumHeight(40);
+
+    detailsPaneLayout->addWidget(regionDateLabel_);
+    detailsPaneLayout->addWidget(hoverRegionLabel_);
+    detailsPaneLayout->addWidget(regionDetailsView_, 2);
+    detailsPaneLayout->addWidget(regionResourcesLabel_);
+    detailsPaneLayout->addWidget(regionResourcesList_, 1);
+    detailsPaneLayout->addWidget(regionForSaleLabel_);
+    detailsPaneLayout->addWidget(regionForSaleList_, 1);
+    detailsPaneLayout->addWidget(regionWantedLabel_);
+    detailsPaneLayout->addWidget(regionWantedList_, 1);
+
+    // -----------------------------------------------------------------------
+    // Map canvas placeholder (right half of inner splitter)
+    // Replaced by the real MapCanvasWidget in step 7.9.
+    // -----------------------------------------------------------------------
+    mapCanvas_ = new QWidget(detailsMapSplitter_);
+    mapCanvas_->setMinimumWidth(200);
+    mapCanvas_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    mapCanvas_->setStyleSheet("background-color: #C8C8C8;");
+    detailsMapSplitter_->addWidget(mapCanvas_);
+
+    // Details : map initial split — 20 % : 80 %
+    detailsMapSplitter_->setSizes({160, 640});
+    detailsMapSplitter_->setStretchFactor(0, 0);
+    detailsMapSplitter_->setStretchFactor(1, 1);
+
+    // -----------------------------------------------------------------------
+    // Button row: check / warning navigation / unit search
+    // (below the map, above the units list)
+    // -----------------------------------------------------------------------
+    auto* buttonRowWidget = new QWidget(leftContainer);
+    buttonRowWidget->setFixedHeight(30);
+    leftLayout->addWidget(buttonRowWidget);
+
+    auto* buttonRowLayout = new QHBoxLayout(buttonRowWidget);
+    buttonRowLayout->setContentsMargins(0, 0, 0, 0);
+    buttonRowLayout->setSpacing(4);
+
+    checkOrdersButton_  = new QPushButton("Check Orders",  buttonRowWidget);
+    prevWarningButton_  = new QPushButton("\u25C4 Prev",   buttonRowWidget);  // ◄ Prev
+    clearWarningButton_ = new QPushButton("Clear",          buttonRowWidget);
+    nextWarningButton_  = new QPushButton("Next \u25BA",   buttonRowWidget);  // Next ►
+    warningsCountLabel_ = new QLabel("Warnings: 0",         buttonRowWidget);
+    unitSearchEdit_     = new QLineEdit(buttonRowWidget);
+    unitSearchEdit_->setPlaceholderText("Unit id\u2026");
+    unitSearchEdit_->setFixedWidth(90);
+    unitSearchButton_ = new QPushButton("Search", buttonRowWidget);
+
+    buttonRowLayout->addWidget(checkOrdersButton_);
+    buttonRowLayout->addWidget(prevWarningButton_);
+    buttonRowLayout->addWidget(clearWarningButton_);
+    buttonRowLayout->addWidget(nextWarningButton_);
+    buttonRowLayout->addWidget(warningsCountLabel_);
+    buttonRowLayout->addStretch();
+    buttonRowLayout->addWidget(unitSearchEdit_);
+    buttonRowLayout->addWidget(unitSearchButton_);
+
+    // -----------------------------------------------------------------------
+    // Units list (QTableWidget — filled by MapTabContentQt_UnitDetails.cpp, step 7.3)
+    // Columns mirror the Win32 LVS_REPORT: #, Name, Faction, Faction Name,
+    // Structure, Men, Silver, Flags, Skills, ! (errors), D (warnings).
+    // -----------------------------------------------------------------------
+    unitsList_ = new QTableWidget(0, 11, leftContainer);
+    unitsList_->setSelectionBehavior(QAbstractItemView::SelectRows);
+    unitsList_->setSelectionMode(QAbstractItemView::SingleSelection);
+    unitsList_->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    unitsList_->setAlternatingRowColors(true);
+    unitsList_->verticalHeader()->setVisible(false);
+    unitsList_->setHorizontalScrollMode(QAbstractItemView::ScrollPerPixel);
+    unitsList_->setHorizontalHeaderLabels({
+        "#", "Name", "Faction", "Faction Name",
+        "Structure", "Men", "Silver", "Flags", "Skills", "!", "D"
+    });
+    unitsList_->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
+    unitsList_->setColumnWidth(0, 50);
+    unitsList_->setColumnWidth(1, 180);
+    unitsList_->setColumnWidth(2, 50);
+    unitsList_->setColumnWidth(3, 120);
+    unitsList_->setColumnWidth(4, 150);
+    unitsList_->setColumnWidth(5, 60);
+    unitsList_->setColumnWidth(6, 70);
+    unitsList_->setColumnWidth(7, 200);
+    unitsList_->setColumnWidth(8, 200);
+    unitsList_->setColumnWidth(9, 28);
+    unitsList_->setColumnWidth(10, 28);
+    unitsList_->setMinimumHeight(80);
+    leftLayout->addWidget(unitsList_, 1);
+
+    // -----------------------------------------------------------------------
+    // Right panel: unit summary labels + detail tabs
+    // -----------------------------------------------------------------------
+    auto* rightPanel = new QWidget(mainSplitter_);
+    rightPanel->setMinimumWidth(250);
+    mainSplitter_->addWidget(rightPanel);
+
+    auto* rightLayout = new QVBoxLayout(rightPanel);
+    rightLayout->setContentsMargins(4, 4, 4, 4);
+    rightLayout->setSpacing(2);
+
+    selectedUnitLabel_    = new QLabel(rightPanel);
+    unitCoordinatesLabel_ = new QLabel(rightPanel);
+    unitFlagsLabel_       = new QLabel(rightPanel);
+    unitFlagsLabel_->setWordWrap(true);
+    unitWarningLabel_     = new QLabel(rightPanel);
+    unitWeightLabel_      = new QLabel(rightPanel);
+    unitCapacitiesLabel_  = new QLabel(rightPanel);
+    unitCapacitiesLabel_->setWordWrap(true);
+
+    rightLayout->addWidget(selectedUnitLabel_);
+    rightLayout->addWidget(unitCoordinatesLabel_);
+    rightLayout->addWidget(unitFlagsLabel_);
+    rightLayout->addWidget(unitWarningLabel_);
+    rightLayout->addWidget(unitWeightLabel_);
+    rightLayout->addWidget(unitCapacitiesLabel_);
+
+    // -----------------------------------------------------------------------
+    // Unit-detail tabs
+    // Tabs: Items | Skills | Orders | Events | Errors | Warnings
+    // Data population is implemented in steps 7.3 and 7.4.
+    // -----------------------------------------------------------------------
+    unitDetailsTabs_ = new QTabWidget(rightPanel);
+    rightLayout->addWidget(unitDetailsTabs_, 1);
+
+    // Items tab — mirrors Win32 unitItemsList_ (LVS_REPORT, 4 columns)
+    unitItemsList_ = new QTableWidget(0, 4, unitDetailsTabs_);
+    unitItemsList_->setSelectionBehavior(QAbstractItemView::SelectRows);
+    unitItemsList_->setSelectionMode(QAbstractItemView::SingleSelection);
+    unitItemsList_->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    unitItemsList_->verticalHeader()->setVisible(false);
+    unitItemsList_->setHorizontalHeaderLabels({"Token", "Name", "Amount", "after com."});
+    unitItemsList_->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
+    unitItemsList_->setColumnWidth(0, 70);
+    unitItemsList_->setColumnWidth(1, 100);
+    unitItemsList_->setColumnWidth(2, 60);
+    unitItemsList_->setColumnWidth(3, 70);
+    unitDetailsTabs_->addTab(unitItemsList_, "Items");
+
+    // Skills tab — mirrors Win32 unitSkillsList_
+    unitSkillsList_ = new QListWidget(unitDetailsTabs_);
+    unitDetailsTabs_->addTab(unitSkillsList_, "Skills");
+
+    // Orders tab — mirrors Win32 ordersEditor_ + saveOrdersButton_
+    {
+        auto* ordersPage   = new QWidget(unitDetailsTabs_);
+        auto* ordersLayout = new QVBoxLayout(ordersPage);
+        ordersLayout->setContentsMargins(0, 0, 0, 0);
+        ordersLayout->setSpacing(4);
+
+        ordersEditor_ = new QPlainTextEdit(ordersPage);
+        ordersEditor_->setEnabled(false);
+        ordersLayout->addWidget(ordersEditor_, 1);
+
+        saveOrdersButton_ = new QPushButton("Save Orders", ordersPage);
+        saveOrdersButton_->setEnabled(false);
+        ordersLayout->addWidget(saveOrdersButton_);
+
+        unitDetailsTabs_->addTab(ordersPage, "Orders");
+    }
+
+    // Events tab — mirrors Win32 unitEventsList_
+    unitEventsList_ = new QListWidget(unitDetailsTabs_);
+    unitDetailsTabs_->addTab(unitEventsList_, "Events");
+
+    // Errors tab — mirrors Win32 unitErrorsList_
+    unitErrorsList_ = new QListWidget(unitDetailsTabs_);
+    unitDetailsTabs_->addTab(unitErrorsList_, "Errors");
+
+    // Warnings tab — mirrors Win32 unitWarningsList_
+    unitWarningsList_ = new QListWidget(unitDetailsTabs_);
+    unitDetailsTabs_->addTab(unitWarningsList_, "Warnings");
+
+    unitDetailsTabs_->setCurrentIndex(0); // start on Items tab
+
+    // -----------------------------------------------------------------------
+    // Outer splitter initial sizes: left 75 % | right 25 %
+    // -----------------------------------------------------------------------
+    mainSplitter_->setSizes({750, 250});
+    mainSplitter_->setStretchFactor(0, 3);
+    mainSplitter_->setStretchFactor(1, 1);
+}
+
+// ---------------------------------------------------------------------------
+// Public methods
+// ---------------------------------------------------------------------------
+
+void MapTabContentQt::refresh()
+{
+    // TODO (steps 7.3 – 7.9): Repopulate all panels from current AppData state.
+}
+
+void MapTabContentQt::commitPendingEdits()
+{
+    // TODO (step 7.4): Save pending orders for the currently selected unit.
+}
+
+void MapTabContentQt::refreshItemsForCurrentUnit()
+{
+    // TODO (step 7.3): Refresh the items list without rebuilding the whole view.
+}
+
+// ---------------------------------------------------------------------------
+// Private slots — stub implementations (wired / implemented in steps 7.3–7.9)
+// ---------------------------------------------------------------------------
+
+void MapTabContentQt::onMapRegionLeftClicked(int /*regionX*/, int /*regionY*/)   {}
+void MapTabContentQt::onMapRegionDoubleClicked(int /*regionX*/, int /*regionY*/) {}
+void MapTabContentQt::onMapRegionRightClicked(QPoint /*screenPos*/, int /*regionX*/, int /*regionY*/) {}
+void MapTabContentQt::onMapNoRegionClicked()          {}
+void MapTabContentQt::onZSelectionRequested(QPoint /*screenPos*/) {}
+
+void MapTabContentQt::onUnitsSelectionChanged()       {}
+void MapTabContentQt::onUnitDetailsTabChanged(int /*index*/) {}
+
+void MapTabContentQt::onSaveOrdersClicked()           {}
+void MapTabContentQt::onCheckOrdersClicked()          {}
+
+void MapTabContentQt::onPrevWarningClicked()          {}
+void MapTabContentQt::onNextWarningClicked()          {}
+void MapTabContentQt::onClearWarningClicked()         {}
+
+void MapTabContentQt::onSearchUnitClicked()           {}
+
+
+// 304c89c8-6d3c-4586-b0c4-fad2e67b2f65
+
+#include "GUI/MapTabContentQt.hpp"
+
+// ---------------------------------------------------------------------------
+// Constructor / destructor
+// ---------------------------------------------------------------------------
+
+MapTabContentQt::MapTabContentQt(AppData&   appData,
+                                  AppConfig& appConfig,
+                                  QWidget*   parent)
+    : QWidget(parent)
+    , appData_  (&appData)
+    , appConfig_(&appConfig)
+{
+    // TODO (step 7.2): Build the nested QSplitter tree and all child widgets.
+}
+
+// ---------------------------------------------------------------------------
+// Public methods
+// ---------------------------------------------------------------------------
+
+void MapTabContentQt::refresh()
+{
+    // TODO (steps 7.3 – 7.9): Repopulate all panels.
+}
+
+void MapTabContentQt::commitPendingEdits()
+{
+    // TODO (step 7.4): Save pending orders for the currently selected unit.
+}
+
+void MapTabContentQt::refreshItemsForCurrentUnit()
+{
+    // TODO (step 7.3): Refresh the items list without rebuilding the whole view.
+}
+
+// ---------------------------------------------------------------------------
+// Private slots — stub implementations (wired / implemented in steps 7.3–7.9)
+// ---------------------------------------------------------------------------
+
+void MapTabContentQt::onMapRegionLeftClicked(int /*regionX*/, int /*regionY*/)   {}
+void MapTabContentQt::onMapRegionDoubleClicked(int /*regionX*/, int /*regionY*/) {}
+void MapTabContentQt::onMapRegionRightClicked(QPoint /*screenPos*/, int /*regionX*/, int /*regionY*/) {}
+void MapTabContentQt::onMapNoRegionClicked()   {}
+void MapTabContentQt::onZSelectionRequested(QPoint /*screenPos*/) {}
+
+void MapTabContentQt::onUnitsSelectionChanged()      {}
+void MapTabContentQt::onUnitDetailsTabChanged(int /*index*/) {}
+
+void MapTabContentQt::onSaveOrdersClicked()          {}
+void MapTabContentQt::onCheckOrdersClicked()         {}
+
+void MapTabContentQt::onPrevWarningClicked()         {}
+void MapTabContentQt::onNextWarningClicked()         {}
+void MapTabContentQt::onClearWarningClicked()        {}
+
+void MapTabContentQt::onSearchUnitClicked()          {}

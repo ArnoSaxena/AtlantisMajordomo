@@ -24,6 +24,11 @@
 #include "GUI/ReportsTabContentQt.hpp"
 #include "GUI/EventsTabContentQt.hpp"
 #include "GUI/BattlesTabContentQt.hpp"
+#include "GUI/FactionsTabContentQt.hpp"
+#include "GUI/ItemsTabContentQt.hpp"
+#include "GUI/SkillsTabContentQt.hpp"
+#include "GUI/SettingsDialogQt.hpp"
+#include "GUI/MapTabContentQt.hpp"
 
 #include "Data/AppData.hpp"
 #include "Data/Commands.hpp"
@@ -310,6 +315,34 @@ void MainWindow::deferredInit()
     battlesLayout->setContentsMargins(0, 0, 0, 0);
     battlesLayout->addWidget(battlesTabContent_);
 
+    // Items tab
+    itemsTabContent_ = new ItemsTabContentQt(appData_, itemsTab_);
+    QVBoxLayout* itemsLayout = new QVBoxLayout(itemsTab_);
+    itemsLayout->setContentsMargins(0, 0, 0, 0);
+    itemsLayout->addWidget(itemsTabContent_);
+
+    // Factions tab
+    factionsTabContent_ = new FactionsTabContentQt(appData_, factionsTab_);
+    QVBoxLayout* factionsLayout = new QVBoxLayout(factionsTab_);
+    factionsLayout->setContentsMargins(0, 0, 0, 0);
+    factionsLayout->addWidget(factionsTabContent_);
+
+    // Skills tab
+    skillsTabContent_ = new SkillsTabContentQt(appData_, skillsTab_);
+    QVBoxLayout* skillsLayout = new QVBoxLayout(skillsTab_);
+    skillsLayout->setContentsMargins(0, 0, 0, 0);
+    skillsLayout->addWidget(skillsTabContent_);
+
+    // Map tab
+    mapTabContent_ = new MapTabContentQt(appData_, appConfig_, mapTab_);
+    QVBoxLayout* mapLayout = new QVBoxLayout(mapTab_);
+    mapLayout->setContentsMargins(0, 0, 0, 0);
+    mapLayout->addWidget(mapTabContent_);
+    connect(mapTabContent_, &MapTabContentQt::navigateToBattle,
+            this, &MainWindow::onNavigateToBattle);
+    connect(mapTabContent_, &MapTabContentQt::navigateToSkill,
+            this, &MainWindow::onNavigateToSkill);
+
     // TODO: Create remaining Qt tab content widgets here as they are implemented.
 
     autoLoad();
@@ -418,6 +451,18 @@ void MainWindow::refreshAllTabs()
 
     if (battlesTabContent_)
         battlesTabContent_->refresh();
+
+    if (itemsTabContent_)
+        itemsTabContent_->refresh();
+
+    if (factionsTabContent_)
+        factionsTabContent_->refresh();
+
+    if (skillsTabContent_)
+        skillsTabContent_->refresh();
+
+    if (mapTabContent_)
+        mapTabContent_->refresh();
 
     // TODO: Call refresh() on remaining Qt tab content widgets as they are implemented.
 }
@@ -648,9 +693,32 @@ void MainWindow::onFileExportOrders()
 
 void MainWindow::onSettingsOptions()
 {
-    // TODO: Implement a Qt SettingsDialog equivalent.
-    QMessageBox::information(this, "Settings",
-        "Settings dialog is not yet implemented for the Qt build.");
+    SettingsDialogQt dlg(appData_, appConfig_, this);
+    if (dlg.exec() == QDialog::Accepted)
+    {
+        applyConfigToAppData();
+        refreshAllTabs();
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Navigation slots — triggered by MapTabContentQt signals
+// ---------------------------------------------------------------------------
+
+void MainWindow::onNavigateToBattle(int x, int y, int z, int month, int year)
+{
+    if (tabWidget_ && battlesTab_)
+        tabWidget_->setCurrentWidget(battlesTab_);
+    if (battlesTabContent_)
+        battlesTabContent_->focusBattleByRegion(x, y, z, month, year);
+}
+
+void MainWindow::onNavigateToSkill(const QString& skillToken)
+{
+    if (tabWidget_ && skillsTab_)
+        tabWidget_->setCurrentWidget(skillsTab_);
+    if (skillsTabContent_)
+        skillsTabContent_->focusSkillByToken(skillToken.toStdWString());
 }
 
 // ---------------------------------------------------------------------------

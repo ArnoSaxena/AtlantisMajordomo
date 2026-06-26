@@ -52,6 +52,8 @@ set(COMMON_SOURCES
   src/Function/OrderWarningService.cpp
   src/Function/SkillFormattingUtils.cpp
   src/Function/StringUtils.cpp
+  src/Function/MapUtils.cpp
+  src/Function/UnitCapacityUtils.cpp
 )
 
 # ---------------------------------------------------------------------------
@@ -66,6 +68,14 @@ if(WIN32)
     src/GUI/WinGuiUtils.cpp
     src/GUI/ReportsTabContent.cpp
     src/GUI/MapTabContent.cpp
+    src/GUI/MapTabContent_Layout.cpp
+    src/GUI/MapTabContent_MapCanvas.cpp
+    src/GUI/MapTabContent_UnitDetails.cpp
+    src/GUI/MapTabContent_Orders.cpp
+    src/GUI/MapTabContent_OrderChecks.cpp
+    src/GUI/MapTabContent_RegionDetails.cpp
+    src/GUI/MapTabContent_Navigation.cpp
+    src/GUI/MapTabContent_Events.cpp
     src/GUI/OrdersEditorUtils.cpp
     src/GUI/ItemsTabContent.cpp
     src/GUI/SkillsTabContent.cpp
@@ -108,6 +118,11 @@ elseif(UNIX)
     src/GUI/Linux/ReportsTabContentQt.cpp
     src/GUI/Linux/EventsTabContentQt.cpp
     src/GUI/Linux/BattlesTabContentQt.cpp
+    src/GUI/Linux/FactionsTabContentQt.cpp
+    src/GUI/Linux/ItemsTabContentQt.cpp
+    src/GUI/Linux/SkillsTabContentQt.cpp
+    src/GUI/Linux/SettingsDialogQt.cpp
+    src/GUI/Linux/MapTabContentQt_Layout.cpp
   )
 
   add_executable(AtlantisMajordomo

@@ -39,9 +39,15 @@ Files that do NOT need a Qt equivalent
       app icon is required.
 
   OrdersEditorUtils.hpp / OrdersEditorUtils.cpp
-    - Win32 context-menu + HWND edit-control helpers used exclusively by
-      MapTabContent. Port inline into MapTabContentQt when that tab is
-      implemented; no stand-alone Qt file is necessary.
+    - Win32 context-menu + HWND edit-control helpers.  After the MapTabContent
+      split, all actual usage is in MapTabContent_Orders.cpp only
+      (ordersEditorSubclassProc: showOrdersEditorMenu, insertFormBlockAtEnd,
+      kOrders*Cmd constants).  The other split files include the header via the
+      shared preamble but do not call anything in it.
+    - Port inline into sub-step 7.4 (MapTabContentQt_Orders.cpp): replace
+      showOrdersEditorMenu with QPlainTextEdit::createStandardContextMenu()
+      extended with a "Form New Unit" QAction, and replace insertFormBlockAtEnd
+      with a plain QString insertion.  No stand-alone Qt file is necessary.
 
 Files still to convert (suggested order)
 -----------------------------------------
@@ -58,7 +64,7 @@ Files still to convert (suggested order)
 
 3. SkillsTabContentQt
    Windows source : SkillsTabContent.hpp / SkillsTabContent.cpp
-   Complexity     : Medium
+   Status         : DONE
    Description    : Skills list on the left; editable detail form on the right
                     (name, token, prerequisites, production items, study cost,
                     level dropdown, Save button).
@@ -69,7 +75,7 @@ Files still to convert (suggested order)
 
 4. ItemsTabContentQt
    Windows source : ItemsTabContent.hpp / ItemsTabContent.cpp
-   Complexity     : Medium-High
+   Status         : DONE
    Description    : Items list + large editable detail form (name, token, weight,
                     moves, capacities, ship fields, mages study, skill-max map,
                     resources map, production skill/help maps, Save button).
@@ -80,7 +86,7 @@ Files still to convert (suggested order)
 
 5. FactionsTabContentQt
    Windows source : FactionsTabContent.hpp / FactionsTabContent.cpp
-   Complexity     : High
+   Status         : DONE
    Description    : Factions list; detail pane with name/month/year/password edits,
                     default-attitude combo, declared-attitudes sub-list, command-unit
                     section, Save buttons, main-faction checkbox.
@@ -93,7 +99,9 @@ Files still to convert (suggested order)
 
 6. SettingsDialogQt
    Windows source : SettingsDialog.hpp / SettingsDialog.cpp
+   Status         : DONE
    Complexity     : Medium
+   Est. cost      : 1x  (reference)
    Description    : Modal dialog for application settings (report folder, data file
                     path, flying ships CSV, magic skill triggers, order keywords,
                     leader/mage flags).
@@ -103,9 +111,9 @@ Files still to convert (suggested order)
                     After acceptance, call AppConfig setters and MainWindowQt slot
                     onSettingsOptions().
 
-7. MapTabContentQt   *** most complex ***
-   Windows source : MapTabContent.hpp / MapTabContent.cpp
-   Complexity     : Very High
+7. MapTabContentQt   *** most complex — implemented in sub-steps below ***
+   Windows source : MapTabContent.hpp + MapTabContent_*.cpp (9 split files)
+   Overall status : IN PROGRESS
    Description    : Hex map canvas, region/unit selection, units list, orders editor
                     (multi-line edit + syntax highlighting), FORM-block insertion,
                     unit-detail inner tabs (items, errors, warnings, events,
@@ -113,14 +121,169 @@ Files still to convert (suggested order)
                     navigation callbacks to other tabs (Battles, Skills).
                     Win32: custom-drawn HWND map, LVS_REPORT units list, rich-edit
                     orders editor, inner WC_TABCONTROL for unit details.
-   Qt approach    :
-     - Subclass QWidget for the hex map canvas; override paintEvent / mouse events.
-     - QSplitter (map canvas | right panel).
-     - Right panel: QSplitter (units QTableWidget | lower panel).
-     - Lower panel: QTabWidget for unit details (items, errors, warnings, events,
-       capacities) + QPlainTextEdit orders editor.
-     - Orders context menu: use QPlainTextEdit::createStandardContextMenu() and
-       extend it with "Form New Unit" action (replaces OrdersEditorUtils).
-     - Navigation callbacks: emit Qt signals that MainWindowQt connects to
-       tabWidget_->setCurrentIndex().
-     - Order checking: port inline from MapTabContent; no Win32 dependency.
+
+   Sub-steps (each a separate implementation pass)
+   ------------------------------------------------
+
+   7.1  MapTabContentQt.hpp  —  class skeleton
+        Complexity  : Low
+        Est. cost   : 0.4x
+        Status      : DONE
+        Description : QWidget subclass declaration; QSplitter layout members;
+                      all public methods (refresh, focusBattle, selectUnit, etc.);
+                      Qt signals for navigation; private member variables for all
+                      child widgets.  Prerequisite for all steps below.
+
+   7.2  MapTabContentQt_Layout.cpp  —  constructor + QSplitter wiring
+        Complexity  : Medium
+        Est. cost   : 1.0x
+        Status      : DONE
+        Source      : MapTabContent.cpp (create) + MapTabContent_Layout.cpp
+        Description : Build the nested QSplitter tree (map | right panel;
+                      units list | lower panel); set minimum sizes; wire
+                      splitter moved signals.
+
+   7.3  MapTabContentQt_UnitDetails.cpp  —  unit list + detail panel
+        Complexity  : Medium
+        Est. cost   : 1.5x
+        Status      : NOT STARTED
+        Source      : MapTabContent_UnitDetails.cpp
+        Description : QTableWidget (units list) + inner QTabWidget for unit
+                      details (items QTableWidget, skills QListWidget, errors /
+                      warnings / events QListWidget, weight/capacity labels).
+                      Replaces LVS_REPORT ListViews and inner WC_TABCONTROL.
+
+   7.4  MapTabContentQt_Orders.cpp  —  orders editor + save/edit logic
+        Complexity  : Medium
+        Est. cost   : 1.0x
+        Status      : NOT STARTED
+        Source      : MapTabContent_Orders.cpp
+        Description : QPlainTextEdit orders editor; context menu via
+                      createStandardContextMenu() extended with "Form New Unit"
+                      action (replaces OrdersEditorUtils); save/append helpers.
+
+   7.5  MapTabContentQt_OrderChecks.cpp  —  warning navigation
+        Complexity  : Low
+        Est. cost   : 0.6x
+        Status      : NOT STARTED
+        Source      : MapTabContent_OrderChecks.cpp
+        Description : runOrderChecksForMainFaction, updateWarningsSummaryLabel,
+                      selectPrevious/NextWarningUnit, clearWarningsForSelectedUnit.
+                      Pure logic; minimal Qt UI dependency.
+
+   7.6  MapTabContentQt_RegionDetails.cpp  —  region info pane
+        Complexity  : Low
+        Est. cost   : 0.5x
+        Status      : NOT STARTED
+        Source      : MapTabContent_RegionDetails.cpp
+        Description : updateRegionDetailsView; populate resources / for-sale /
+                      wanted QListWidgets; QLabel region summary line.
+
+   7.7  MapTabContentQt_Navigation.cpp  —  unit search + selection callbacks
+        Complexity  : Low
+        Est. cost   : 0.6x
+        Status      : NOT STARTED
+        Source      : MapTabContent_Navigation.cpp
+        Description : Unit search QLineEdit + button; selectUnitInMap;
+                      focusOriginUnitForSelectedUnitNew; setNavigationCallback
+                      replaced by Qt signals/slots.
+
+   7.8  MapTabContentQt_Events.cpp  —  Qt signal routing
+        Complexity  : Medium
+        Est. cost   : 0.8x
+        Status      : NOT STARTED
+        Source      : MapTabContent_Events.cpp
+        Description : Slots that replace handleNotify / handleCommand /
+                      handleDrawItem; connect child widget signals (selection
+                      changed, tab changed, button clicked) to the appropriate
+                      member methods.
+
+   7.9  MapTabContentQt_MapCanvas.cpp  —  custom hex-map QWidget  *** hardest ***
+        Source      : MapTabContent_MapCanvas.cpp
+        Overall est.: 10x  (split across 7.9.1 – 7.9.5 below)
+        Overall status : NOT STARTED
+
+   7.9.1  MapCanvasWidget class skeleton + hit-test + coordinate math
+          Complexity  : Low-Medium
+          Est. cost   : 1.5x
+          Status      : NOT STARTED
+          Description : Declare MapCanvasWidget as a QWidget subclass (header).
+                        Port recalculateVisibleMap() — pure coordinate/polygon
+                        math that builds visibleRegions_, contentWidth_,
+                        contentHeight_, available Z-levels; no drawing.
+                        Port hitTestRegion() and hitTestMapCoordinate() using
+                        QPolygon::containsPoint instead of CreatePolygonRgn /
+                        PtInRegion.  Add getRegionFillColor() returning QColor.
+                        Prerequisite for all steps below.
+
+   7.9.2  Scrollbar integration + resize + mouse/wheel events
+          Complexity  : Medium
+          Est. cost   : 2x
+          Status      : NOT STARTED
+          Description : resizeEvent and wheelEvent handlers; updateScrollbars()
+                        that sets QScrollBar ranges/page-step from contentWidth_ /
+                        contentHeight_ / viewport size (replaces Win32
+                        updateMapScrollbars + WM_HSCROLL / WM_VSCROLL logic).
+                        mousePressEvent (left / right), mouseDoubleClickEvent,
+                        mouseMoveEvent, leaveEvent — each delegates to the
+                        onMapLeftClick / onMapDoubleClick / onMapRightClick /
+                        updateHoverTooltip / hideHoverTooltip helpers.
+                        QLabel hover display (replaces hoverRegionLabel_ HWND).
+
+   7.9.3  paintEvent — background, region fills, empty hex grid, peasant wedge
+          Complexity  : Medium-High
+          Est. cost   : 2.5x
+          Status      : NOT STARTED
+          Description : paintEvent using QPainter + double-buffer (QPixmap or
+                        direct QPainter on widget). Three passes:
+                        (a) fill empty hex outlines with light-gray QPen for all
+                            grid positions that have no region (replaces GDI
+                            empty-hex loop with NULL_BRUSH + gray pen Polygon).
+                        (b) fill each visibleRegion_ hex with QColor from
+                            getRegionFillColor(); QPainter::drawPolygon.
+                        (c) peasant-colour NE-wedge trapezoid: QPainterPath or
+                            QPolygon of 4 points computed from hex corners
+                            (replaces the GDI lerp/trapezoid logic).
+                        Prerequisite: 7.9.1 (visibleRegions_ available).
+
+   7.9.4  paintEvent — roads, settlements, battles, structure markers,
+                        selected-region border
+          Complexity  : Medium
+          Est. cost   : 2x
+          Status      : NOT STARTED
+          Description : Four overlay passes drawn on top of 7.9.3:
+                        (a) Road lines: QPainter::drawLine from hex center to
+                            border midpoint for each road direction; color from
+                            appConfig_->getRoadColor().
+                        (b) Settlement markers: village = unfilled ellipse;
+                            town = filled core + unfilled outer ring;
+                            city = filled core + two unfilled rings.
+                        (c) Battle cross: two QPainter::drawLine calls at the
+                            bottom of the hex in red (RGB 200,0,0).
+                        (d) Structure dots: small filled Ellipse at NW corner
+                            (replaces markerCenterX/Y GDI Ellipse); ship dot
+                            at SW corner; caravanserai = orange dot; shaft =
+                            dark-outlined ring.
+                        (e) Selected-region border: QPen width-3, configured
+                            highlight color, NULL-brush polygon outline on top
+                            of all fill passes.
+
+   7.9.5  paintEvent — move-path arrows; read-only popup; context menus
+          Complexity  : Medium
+          Est. cost   : 2x
+          Status      : NOT STARTED
+          Description : Three remaining responsibilities:
+                        (a) Move-path arrows: iterate movePathCoordinates_ pairs;
+                            draw shaft with QPainter::drawLine (green/blue/red
+                            depending on sail/capacity flags) and arrowhead as a
+                            filled QPolygon; black border drawn first at wider
+                            pen width (replaces the GDI arrowBorderPen /
+                            arrowPen / arrowBrush Polygon logic).
+                        (b) Read-only text popup: replace readOnlyTextPopupWndProc
+                            + showReadOnlyTextPopup with a small QDialog containing
+                            a read-only QPlainTextEdit; wired to showSkillDescription
+                            and the region-report / battle-report context actions.
+                        (c) Context menus: right-click region QMenu with
+                            "Show Region Report" and "Show Battle Report" actions
+                            (replaces TrackPopupMenu); Z-level selector QMenu
+                            (replaces showZSelectionContextMenu).
