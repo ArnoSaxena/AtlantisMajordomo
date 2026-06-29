@@ -1,5 +1,4 @@
-- map tab
-
+- cleanup and correct capacity calculations for walk/ride/swim etc ..
 
 - right click on unit skills 
 -- option to open a pop up window with the skill description
@@ -14,14 +13,14 @@
 - right click on warning
 -- option clear warning
 
+- icon for Qt Linux version
+- smaller size buttons, fonts, table lines etc.. in case of smaller laptop displays
 
+
+Maybe:
 - rework region parsing
 -- collect all region text blocks and store into list of region text blocks
 -- parse units/structures except exits in paralell for all region text blocks
 -- parse all exits of text blocks in parallel and add every not present region
 
 
-- colours for shaft marker, structure marker, ship marker, flying ship marker, caravanserai marker into config file
-
-- use one of the wedges of the hex as colour marker for the present peasants in the region
-- light green line instead of black for the region outline if the current main faction is guarding.
