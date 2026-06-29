@@ -27,7 +27,17 @@
 #endif
 
 #include <array>
+
+#ifdef _WIN32
 #include <windows.h>
+#else
+// Win32-compatible point shape for non-Windows builds.
+struct POINT
+{
+	long x;
+	long y;
+};
+#endif
 
 /**
  * @brief Pure geometric utilities for hex-map calculations.

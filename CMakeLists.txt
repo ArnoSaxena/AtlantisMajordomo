@@ -123,6 +123,13 @@ elseif(UNIX)
     src/GUI/Linux/SkillsTabContentQt.cpp
     src/GUI/Linux/SettingsDialogQt.cpp
     src/GUI/Linux/MapTabContentQt_Layout.cpp
+    src/GUI/Linux/MapTabContentQt_UnitDetails.cpp
+    src/GUI/Linux/MapTabContentQt_Orders.cpp
+    src/GUI/Linux/MapTabContentQt_OrderChecks.cpp
+    src/GUI/Linux/MapTabContentQt_RegionDetails.cpp
+    src/GUI/Linux/MapTabContentQt_Navigation.cpp
+    src/GUI/Linux/MapTabContentQt_Events.cpp
+    src/GUI/Linux/MapTabContentQt_MapCanvas.cpp
   )
 
   add_executable(AtlantisMajordomo

@@ -42,6 +42,8 @@
 #include "Function/OrderBusinessLogic.hpp"
 #include "Function/StringUtils.hpp"
 
+#include <algorithm>
+#include <cstddef>
 #include <fstream>
 #include <sstream>
 #include <iomanip>

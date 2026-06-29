@@ -21,6 +21,7 @@
  
 #include "Function/StringUtils.hpp"
 
+#include <algorithm>
 #include <map>
 #include <sstream>
 #include <string>

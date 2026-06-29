@@ -28,6 +28,7 @@
 #include "Function/StringUtils.hpp"
 
 #include <algorithm>
+#include <cstddef>
 #include <cwctype>
 #include <set>
 

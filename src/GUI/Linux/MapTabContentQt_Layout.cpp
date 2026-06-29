@@ -24,6 +24,7 @@
 // 304c89c8-6d3c-4586-b0c4-fad2e67b2f65
 
 #include "GUI/MapTabContentQt.hpp"
+#include "GUI/MapCanvasWidget.hpp"
 
 #include <QHBoxLayout>
 #include <QHeaderView>
@@ -122,13 +123,12 @@ MapTabContentQt::MapTabContentQt(AppData&   appData,
     detailsPaneLayout->addWidget(regionWantedList_, 1);
 
     // -----------------------------------------------------------------------
-    // Map canvas placeholder (right half of inner splitter)
-    // Replaced by the real MapCanvasWidget in step 7.9.
+    // Map canvas (right half of inner splitter)
+    // Step 7.9.1 introduces the MapCanvasWidget skeleton.
     // -----------------------------------------------------------------------
-    mapCanvas_ = new QWidget(detailsMapSplitter_);
+    mapCanvas_ = new MapCanvasWidget(*appData_, *appConfig_, detailsMapSplitter_);
     mapCanvas_->setMinimumWidth(200);
     mapCanvas_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
-    mapCanvas_->setStyleSheet("background-color: #C8C8C8;");
     detailsMapSplitter_->addWidget(mapCanvas_);
 
     // Details : map initial split — 20 % : 80 %
@@ -283,6 +283,44 @@ MapTabContentQt::MapTabContentQt(AppData&   appData,
 
     unitDetailsTabs_->setCurrentIndex(0); // start on Items tab
 
+        connect(unitsList_, &QTableWidget::itemSelectionChanged,
+            this, &MapTabContentQt::onUnitsSelectionChanged);
+        connect(unitDetailsTabs_, &QTabWidget::currentChanged,
+            this, &MapTabContentQt::onUnitDetailsTabChanged);
+        connect(saveOrdersButton_, &QPushButton::clicked,
+            this, &MapTabContentQt::onSaveOrdersClicked);
+        connect(checkOrdersButton_, &QPushButton::clicked,
+            this, &MapTabContentQt::onCheckOrdersClicked);
+        connect(prevWarningButton_, &QPushButton::clicked,
+            this, &MapTabContentQt::onPrevWarningClicked);
+        connect(nextWarningButton_, &QPushButton::clicked,
+            this, &MapTabContentQt::onNextWarningClicked);
+        connect(clearWarningButton_, &QPushButton::clicked,
+            this, &MapTabContentQt::onClearWarningClicked);
+        connect(unitSearchButton_, &QPushButton::clicked,
+            this, &MapTabContentQt::onSearchUnitClicked);
+        connect(unitSearchEdit_, &QLineEdit::returnPressed,
+            this, &MapTabContentQt::onSearchUnitClicked);
+
+        ordersEditor_->setContextMenuPolicy(Qt::CustomContextMenu);
+        connect(ordersEditor_, &QPlainTextEdit::customContextMenuRequested,
+            this, &MapTabContentQt::onOrdersEditorContextMenuRequested);
+
+        unitSkillsList_->setContextMenuPolicy(Qt::CustomContextMenu);
+        connect(unitSkillsList_, &QListWidget::customContextMenuRequested,
+            this, &MapTabContentQt::onUnitSkillsContextMenuRequested);
+
+            connect(mapCanvas_, &MapCanvasWidget::mapRegionLeftClicked,
+                this, &MapTabContentQt::onMapRegionLeftClicked);
+            connect(mapCanvas_, &MapCanvasWidget::mapRegionDoubleClicked,
+                this, &MapTabContentQt::onMapRegionDoubleClicked);
+            connect(mapCanvas_, &MapCanvasWidget::mapRegionRightClicked,
+                this, &MapTabContentQt::onMapRegionRightClicked);
+            connect(mapCanvas_, &MapCanvasWidget::mapNoRegionClicked,
+                this, &MapTabContentQt::onMapNoRegionClicked);
+            connect(mapCanvas_, &MapCanvasWidget::zSelectionRequested,
+                this, &MapTabContentQt::onZSelectionRequested);
+
     // -----------------------------------------------------------------------
     // Outer splitter initial sizes: left 75 % | right 25 %
     // -----------------------------------------------------------------------
@@ -291,103 +329,3 @@ MapTabContentQt::MapTabContentQt(AppData&   appData,
     mainSplitter_->setStretchFactor(1, 1);
 }
 
-// ---------------------------------------------------------------------------
-// Public methods
-// ---------------------------------------------------------------------------
-
-void MapTabContentQt::refresh()
-{
-    // TODO (steps 7.3 – 7.9): Repopulate all panels from current AppData state.
-}
-
-void MapTabContentQt::commitPendingEdits()
-{
-    // TODO (step 7.4): Save pending orders for the currently selected unit.
-}
-
-void MapTabContentQt::refreshItemsForCurrentUnit()
-{
-    // TODO (step 7.3): Refresh the items list without rebuilding the whole view.
-}
-
-// ---------------------------------------------------------------------------
-// Private slots — stub implementations (wired / implemented in steps 7.3–7.9)
-// ---------------------------------------------------------------------------
-
-void MapTabContentQt::onMapRegionLeftClicked(int /*regionX*/, int /*regionY*/)   {}
-void MapTabContentQt::onMapRegionDoubleClicked(int /*regionX*/, int /*regionY*/) {}
-void MapTabContentQt::onMapRegionRightClicked(QPoint /*screenPos*/, int /*regionX*/, int /*regionY*/) {}
-void MapTabContentQt::onMapNoRegionClicked()          {}
-void MapTabContentQt::onZSelectionRequested(QPoint /*screenPos*/) {}
-
-void MapTabContentQt::onUnitsSelectionChanged()       {}
-void MapTabContentQt::onUnitDetailsTabChanged(int /*index*/) {}
-
-void MapTabContentQt::onSaveOrdersClicked()           {}
-void MapTabContentQt::onCheckOrdersClicked()          {}
-
-void MapTabContentQt::onPrevWarningClicked()          {}
-void MapTabContentQt::onNextWarningClicked()          {}
-void MapTabContentQt::onClearWarningClicked()         {}
-
-void MapTabContentQt::onSearchUnitClicked()           {}
-
-
-// 304c89c8-6d3c-4586-b0c4-fad2e67b2f65
-
-#include "GUI/MapTabContentQt.hpp"
-
-// ---------------------------------------------------------------------------
-// Constructor / destructor
-// ---------------------------------------------------------------------------
-
-MapTabContentQt::MapTabContentQt(AppData&   appData,
-                                  AppConfig& appConfig,
-                                  QWidget*   parent)
-    : QWidget(parent)
-    , appData_  (&appData)
-    , appConfig_(&appConfig)
-{
-    // TODO (step 7.2): Build the nested QSplitter tree and all child widgets.
-}
-
-// ---------------------------------------------------------------------------
-// Public methods
-// ---------------------------------------------------------------------------
-
-void MapTabContentQt::refresh()
-{
-    // TODO (steps 7.3 – 7.9): Repopulate all panels.
-}
-
-void MapTabContentQt::commitPendingEdits()
-{
-    // TODO (step 7.4): Save pending orders for the currently selected unit.
-}
-
-void MapTabContentQt::refreshItemsForCurrentUnit()
-{
-    // TODO (step 7.3): Refresh the items list without rebuilding the whole view.
-}
-
-// ---------------------------------------------------------------------------
-// Private slots — stub implementations (wired / implemented in steps 7.3–7.9)
-// ---------------------------------------------------------------------------
-
-void MapTabContentQt::onMapRegionLeftClicked(int /*regionX*/, int /*regionY*/)   {}
-void MapTabContentQt::onMapRegionDoubleClicked(int /*regionX*/, int /*regionY*/) {}
-void MapTabContentQt::onMapRegionRightClicked(QPoint /*screenPos*/, int /*regionX*/, int /*regionY*/) {}
-void MapTabContentQt::onMapNoRegionClicked()   {}
-void MapTabContentQt::onZSelectionRequested(QPoint /*screenPos*/) {}
-
-void MapTabContentQt::onUnitsSelectionChanged()      {}
-void MapTabContentQt::onUnitDetailsTabChanged(int /*index*/) {}
-
-void MapTabContentQt::onSaveOrdersClicked()          {}
-void MapTabContentQt::onCheckOrdersClicked()         {}
-
-void MapTabContentQt::onPrevWarningClicked()         {}
-void MapTabContentQt::onNextWarningClicked()         {}
-void MapTabContentQt::onClearWarningClicked()        {}
-
-void MapTabContentQt::onSearchUnitClicked()          {}

@@ -24,6 +24,7 @@
 #include "Function/StringUtils.hpp"
 
 #include <array>
+#include <cstddef>
 #include <cwctype>
 
 namespace

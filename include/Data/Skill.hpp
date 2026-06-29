@@ -23,6 +23,7 @@
 #pragma once
 
 #include <array>
+#include <cstddef>
 #include <map>
 #include <optional>
 #include <string>

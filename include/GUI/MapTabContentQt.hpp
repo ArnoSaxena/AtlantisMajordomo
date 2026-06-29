@@ -26,6 +26,8 @@
 #include <QString>
 #include <QWidget>
 
+#include "GUI/MapCanvasWidget.hpp"
+
 #include <string>
 #include <vector>
 
@@ -44,11 +46,8 @@ class QPushButton;
 class QSplitter;
 class QTabWidget;
 class QTableWidget;
+class QWidget;
 
-// Forward declaration for the custom hex-map canvas widget (implemented in
-// MapTabContentQt_MapCanvas.cpp, step 7.9.1).  Using QWidget* until that
-// step is complete is also acceptable; this declaration documents intent.
-class MapCanvasWidget;
 
 /**
  * @brief Content widget for the "Map" tab (Qt / Linux build).
@@ -152,6 +151,12 @@ private slots:
     // Unit search — wired in 7.8; implemented in 7.7
     // -----------------------------------------------------------------------
     void onSearchUnitClicked();
+
+    // -----------------------------------------------------------------------
+    // Context menus — wired in 7.8
+    // -----------------------------------------------------------------------
+    void onOrdersEditorContextMenuRequested(const QPoint& pos);
+    void onUnitSkillsContextMenuRequested(const QPoint& pos);
 
 private:
     // -----------------------------------------------------------------------

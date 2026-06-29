@@ -146,67 +146,177 @@ Files still to convert (suggested order)
    7.3  MapTabContentQt_UnitDetails.cpp  —  unit list + detail panel
         Complexity  : Medium
         Est. cost   : 1.5x
-        Status      : NOT STARTED
+        Status      : DONE
         Source      : MapTabContent_UnitDetails.cpp
         Description : QTableWidget (units list) + inner QTabWidget for unit
                       details (items QTableWidget, skills QListWidget, errors /
                       warnings / events QListWidget, weight/capacity labels).
                       Replaces LVS_REPORT ListViews and inner WC_TABCONTROL.
 
+   Cross-step notes from completed passes (7.2 / 7.3)
+   --------------------------------------------------
+   - Keep constructor/layout ownership in MapTabContentQt_Layout.cpp only.
+     Put data-population and slot behavior in the dedicated step files to avoid
+     duplicate symbol definitions.
+   - Current mapCanvas_ member in MapTabContentQt.hpp is a QWidget* placeholder.
+     Step 7.9.1 should introduce/instantiate MapCanvasWidget and then reconnect
+     map-specific signal flow.
+   - unitsList_ row 0 stores semantic identity in Qt::UserRole:
+       > 0  regular Unit number
+       < 0  UnitNew number (absolute value)
+       = 0  structure-only row (no unit selected)
+     Preserve this contract in 7.4/7.5/7.7 logic.
+   - 7.3 now connects unitsList_ selection and unitDetailsTabs_ tab changes in
+     layout; 7.8 should add remaining connects only (do not rebind these).
+   - refresh() and refreshItemsForCurrentUnit() now live in 7.3 and are active.
+     Later steps should call these methods, not re-implement them.
+   - Tab indexes are now effectively fixed by layout order:
+       Items=0, Skills=1, Orders=2, Events=3, Errors=4, Warnings=5.
+     Keep this order stable or update caption/visibility logic together.
+   - Orders editing is intentionally guarded via setOrdersEditingEnabled().
+     Step 7.4 should continue to use this gate for Unit vs UnitNew behavior.
+
    7.4  MapTabContentQt_Orders.cpp  —  orders editor + save/edit logic
         Complexity  : Medium
         Est. cost   : 1.0x
-        Status      : NOT STARTED
+        Status      : DONE
         Source      : MapTabContent_Orders.cpp
         Description : QPlainTextEdit orders editor; context menu via
                       createStandardContextMenu() extended with "Form New Unit"
                       action (replaces OrdersEditorUtils); save/append helpers.
+   Cross-step notes from 7.4
+   -------------------------
+   - onSaveOrdersClicked() is implemented and uses the existing UnitNew/FormBlock
+     logic from Win32. It calls updateWarningsSummaryLabel() to update the warnings
+     counter after save (7.5 will implement that function).
+   - appendOrderLineToOrdersEditor() trims whitespace and appends to the editor
+     with proper newline handling; used by 7.7 and future order-insert flows.
+   - Context menu is fully implemented but requires step 7.8 to wire the signal.
+     See TODO comment at end of MapTabContentQt_Orders.cpp for the connect() line.
+   - canEditOrdersForUnit() is in 7.3 and checks main-faction membership.
+   - setOrdersEditingEnabled() is in 7.3 and controls the read-only state.
+   - UnitNew orders: ordersEditor_ displays the extracted FORM/END block from the
+     origin unit (see populateItemsForSelectedUnit in 7.3); editing is disabled.
 
    7.5  MapTabContentQt_OrderChecks.cpp  —  warning navigation
         Complexity  : Low
         Est. cost   : 0.6x
-        Status      : NOT STARTED
+        Status      : DONE
         Source      : MapTabContent_OrderChecks.cpp
         Description : runOrderChecksForMainFaction, updateWarningsSummaryLabel,
                       selectPrevious/NextWarningUnit, clearWarningsForSelectedUnit.
                       Pure logic; minimal Qt UI dependency.
 
+   Cross-step notes from 7.5
+   -------------------------
+   - Three button slots now implemented: onPrevWarningClicked(),
+     onNextWarningClicked(), onClearWarningClicked().
+   - selectPreviousWarningUnit() and selectNextWarningUnit() wrap the warning
+     unit list with circular navigation (cycle through all units with warnings).
+   - runOrderChecksForMainFaction() orchestrates the full check flow:
+     1. saveOrdersToSelectedUnit() (from 7.4)
+     2. OrderWarningService::runForMainFaction() (data layer)
+     3. populateUnitsForSelectedRegion() (from 7.3 - refresh unit list)
+     4. updateWarningsSummaryLabel() (update warning count)
+     5. updateSelectedUnitDetailsByNumber() (from 7.3 - refresh detail pane)
+   - selectUnitInMap(int) is declared but not yet implemented (will be in 7.7).
+   - Button signal wiring deferred to 7.8 (will connect button clicked() signals).
+   - warningsCountLabel_ is wired in layout (7.2); text updates via
+     warningsCountLabel_->setText() using QLabel API.
+
    7.6  MapTabContentQt_RegionDetails.cpp  —  region info pane
         Complexity  : Low
         Est. cost   : 0.5x
-        Status      : NOT STARTED
+        Status      : DONE
         Source      : MapTabContent_RegionDetails.cpp
         Description : updateRegionDetailsView; populate resources / for-sale /
                       wanted QListWidgets; QLabel region summary line.
 
+   Cross-step notes from 7.6
+   -------------------------
+   - updateRegionDetailsView(Region*) is the entry point: called after region
+     selection (wired in 7.8) or when unit/structure changes.
+   - regionDetailsView_ is a read-only QPlainTextEdit with coordinates, region
+     type, settlement info, and structure/fleet details of the selected unit.
+   - regionDateLabel_ shows the current report date (month/year).
+   - Three QListWidget views display before/after resource states, formatted
+     as space-separated columns (QListWidget is single-column, so data is
+     formatted as strings with padding).
+   - Men items are sorted first in for-sale list (via isMan() check).
+   - Token case-folding: lookups try both original and uppercase token to
+     handle resource-name variations (matching Win32 behavior).
+   - List items are non-selectable (Qt::ItemIsSelectable flag removed) to
+     prevent interactive selection in a read-only display.
+   - updateRegionDetailsView() is only called from 7.8 (onMapRegionLeftClicked);
+     7.7 does not call this.
+
    7.7  MapTabContentQt_Navigation.cpp  —  unit search + selection callbacks
         Complexity  : Low
         Est. cost   : 0.6x
-        Status      : NOT STARTED
+        Status      : DONE
         Source      : MapTabContent_Navigation.cpp
         Description : Unit search QLineEdit + button; selectUnitInMap;
                       focusOriginUnitForSelectedUnitNew; setNavigationCallback
                       replaced by Qt signals/slots.
 
+   Cross-step notes from 7.7
+   -------------------------
+   - searchAndSelectUnitById() parses unitSearchEdit_->text() as int and calls
+     selectUnitInMap(). Input validation: empty string or non-numeric is silently
+     ignored; invalid unit number shows a MessageBox warning.
+   - selectUnitInMap(int unitNumber) is the core navigation routine:
+     1. Validates unit exists (shows warning if not)
+     2. Updates selectedZ_, selectedRegionX_, selectedRegionY_, hasSelectedRegion_
+     3. Calls refresh() to repopulate units list and detail tabs
+     4. Calls updateRegionDetailsView() to display region info
+     5. Finds and selects the unit row in unitsList_ by Qt::UserRole semantic
+     6. TODO: Map canvas scrolling is deferred to 7.9.2 (after MapCanvasWidget exists)
+   - focusOriginUnitForSelectedUnitNew() is called when focus is on ordersEditor_
+     and selectedUnitIsNew_ is true. It extracts the origin unit from UnitNew,
+     calls selectUnitInMap() to navigate to it, then focuses ordersEditor_ again.
+   - navigateToSkillList(wstring) is called by skill-description display logic
+     and emits the Qt signal navigateToSkill(QString).
+   - returnPressed signal wiring is connected in 7.8
+     (unitSearchEdit_ -> onSearchUnitClicked).
+   - Unit row lookup in unitsList_ uses Qt::UserRole of first column to match
+     semantic identity (unitNumber or negated UnitNew number). Must preserve
+     this contract from 7.3.
+
    7.8  MapTabContentQt_Events.cpp  —  Qt signal routing
         Complexity  : Medium
         Est. cost   : 0.8x
-        Status      : NOT STARTED
+        Status      : DONE
         Source      : MapTabContent_Events.cpp
         Description : Slots that replace handleNotify / handleCommand /
                       handleDrawItem; connect child widget signals (selection
                       changed, tab changed, button clicked) to the appropriate
                       member methods.
 
+   Cross-step notes from 7.8
+   -------------------------
+   - Constructor wiring now includes all remaining button/edit/list signals:
+     save/check buttons, warning nav buttons, search button, search returnPressed,
+     orders editor custom context menu, and skills list custom context menu.
+   - commitPendingEdits() now delegates to saveOrdersToSelectedUnit().
+   - onCheckOrdersClicked() delegates to runOrderChecksForMainFaction().
+   - onSearchUnitClicked() delegates to searchAndSelectUnitById().
+   - Orders editor context menu now uses createStandardContextMenu() and adds
+     "Form New Unit" action (inline replacement of OrdersEditorUtils behavior).
+   - Skills list context menu actions:
+     Add Study Order, Skill Description, Skill Tab.
+   - Map callbacks are now routed into slots for left-click/no-region behavior.
+     Right-click map context and Z-level selector are deferred to 7.9.5 when
+     MapCanvasWidget owns full context menu behavior.
+
    7.9  MapTabContentQt_MapCanvas.cpp  —  custom hex-map QWidget  *** hardest ***
         Source      : MapTabContent_MapCanvas.cpp
         Overall est.: 10x  (split across 7.9.1 – 7.9.5 below)
-        Overall status : NOT STARTED
+        Overall status : IN PROGRESS
 
    7.9.1  MapCanvasWidget class skeleton + hit-test + coordinate math
           Complexity  : Low-Medium
           Est. cost   : 1.5x
-          Status      : NOT STARTED
+          Status      : DONE
           Description : Declare MapCanvasWidget as a QWidget subclass (header).
                         Port recalculateVisibleMap() — pure coordinate/polygon
                         math that builds visibleRegions_, contentWidth_,
@@ -215,6 +325,23 @@ Files still to convert (suggested order)
                         QPolygon::containsPoint instead of CreatePolygonRgn /
                         PtInRegion.  Add getRegionFillColor() returning QColor.
                         Prerequisite for all steps below.
+
+   Cross-step notes from 7.9.1
+   ---------------------------
+   - Added MapCanvasWidget class in include/GUI/MapCanvasWidget.hpp and
+     implementation in src/GUI/Linux/MapTabContentQt_MapCanvas.cpp.
+   - mapCanvas_ in MapTabContentQt is now MapCanvasWidget* (not QWidget*).
+   - recalculateVisibleMap() is ported with rollover/padding logic and updates:
+     availableZLevels_, map bounds, visibleRegions_, contentWidth_/contentHeight_.
+   - hitTestRegion() and hitTestMapCoordinate() use QPolygon::containsPoint
+     with Qt::WindingFill (Win32 PtInRegion equivalent).
+   - getRegionFillColor() maps AppConfig region colors to QColor with clamping.
+   - Current scroll offsets are stored in MapCanvasWidget (scrollX_/scrollY_) and
+     default to 0 in 7.9.1; 7.9.2 will own scrollbar + wheel integration.
+   - Mouse event skeleton is active and emits Qt signals for left/right/double
+     click and no-region/z-selection flows; 7.9.2/7.9.5 will extend behavior.
+   - Layout now instantiates MapCanvasWidget directly and wires its signals to
+     existing MapTabContentQt slots in 7.8.
 
    7.9.2  Scrollbar integration + resize + mouse/wheel events
           Complexity  : Medium

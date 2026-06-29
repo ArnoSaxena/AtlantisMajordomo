@@ -61,7 +61,7 @@ public:
   static constexpr wchar_t kAboutDescription[] =
     L"Yet another Atlantis Pbem player client.";
   // TODO: Need to create a more elaborate description.
-  static constexpr wchar_t kAboutVersion[] = L"1.3.18";
+  static constexpr wchar_t kAboutVersion[] = L"1.3.19";
 
   /**
   * @brief Registers the window class and creates the main window.
