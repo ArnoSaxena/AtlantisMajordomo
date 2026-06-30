@@ -24,15 +24,24 @@
 
 #include <QColor>
 #include <QPoint>
+#include <QRect>
 #include <QPolygon>
+#include <QString>
 #include <QWidget>
 
 #include <string>
+#include <utility>
 #include <vector>
 
 class AppConfig;
 class AppData;
 class Region;
+class QEvent;
+class QMouseEvent;
+class QPaintEvent;
+class QResizeEvent;
+class QScrollBar;
+class QWheelEvent;
 
 class MapCanvasWidget : public QWidget
 {
@@ -51,6 +60,12 @@ public:
     void setSelectedZ(int selectedZ);
     void setSelectedRegion(bool hasSelectedRegion, int selectedRegionX, int selectedRegionY);
     void recalculateVisibleMap();
+    bool centerOnRegion(int regionX, int regionY);
+    void setMovePathOverlay(const std::vector<std::pair<int, int>>& coordinates,
+                            bool isSail,
+                            bool hasNegativeCapacity,
+                            bool sailRouteInvalid);
+    void clearMovePathOverlay();
 
     const std::vector<int>& availableZLevels() const { return availableZLevels_; }
     int selectedZ() const { return selectedZ_; }
@@ -67,14 +82,30 @@ signals:
     void mapRegionRightClicked(QPoint screenPos, int regionX, int regionY);
     void mapNoRegionClicked();
     void zSelectionRequested(QPoint screenPos);
+    void hoverTextChanged(const QString& hoverText);
 
 protected:
+    void paintEvent(QPaintEvent* event) override;
+    void resizeEvent(QResizeEvent* event) override;
+    void wheelEvent(QWheelEvent* event) override;
     void mousePressEvent(QMouseEvent* event) override;
     void mouseDoubleClickEvent(QMouseEvent* event) override;
+    void mouseMoveEvent(QMouseEvent* event) override;
+    void leaveEvent(QEvent* event) override;
 
 private:
+    QRect viewportRect() const;
+    void updateScrollbars();
+    void onMapLeftClick(const QPoint& pointInMapClient);
+    void onMapDoubleClick(const QPoint& pointInMapClient);
+    void onMapRightClick(const QPoint& pointInMapClient, const QPoint& screenPos);
+    void updateHoverTooltip(const QPoint& pointInMapClient);
+    void hideHoverTooltip();
+
     AppData* appData_ { nullptr };
     AppConfig* appConfig_ { nullptr };
+    QScrollBar* horizontalScrollBar_ { nullptr };
+    QScrollBar* verticalScrollBar_ { nullptr };
 
     std::vector<RegionVisual> visibleRegions_;
     std::vector<int> availableZLevels_;
@@ -96,4 +127,10 @@ private:
     int contentHeight_ { 0 };
     int scrollX_ { 0 };
     int scrollY_ { 0 };
+    QString hoverText_;
+
+    std::vector<std::pair<int, int>> movePathCoordinates_;
+    bool movePathIsSail_ { false };
+    bool movePathHasNegativeCapacity_ { false };
+    bool movePathSailRouteInvalid_ { false };
 };

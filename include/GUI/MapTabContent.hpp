@@ -27,6 +27,7 @@
 
 #include <windows.h>
 #include "GUI/ControlIds.hpp"
+#include "GUI/UiSizeProfile.hpp"
 #include <array>
 #include <functional>
 #include <string>
@@ -367,4 +368,11 @@ private:
   RECT getLeftRightSplitterRect() const;
   RECT getDetailsMapSplitterRect() const;
   RECT getTopBottomSplitterRect() const;
+  UiSizeProfile::Profile resolveRequestedUiProfile() const;
+  UiSizeProfile::Metrics resolveUiMetrics() const;
+  int resolveScaledMapHexWidth(const UiSizeProfile::Metrics& metrics) const;
+  void applyListColumnWidths(const UiSizeProfile::Metrics& metrics,
+                             int leftPanelWidth,
+                             int rightPanelWidth,
+                             int detailsWidth);
 };

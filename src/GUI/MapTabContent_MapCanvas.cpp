@@ -633,7 +633,8 @@ void MapTabContent::recalculateVisibleMap()
   mapRightPaddingColumns_ = rightPaddingColumns;
   hasMapBounds_ = true;
 
-  const int hexWidth = (std::max)(12, appConfig_->getMapHexWidth());
+  const UiSizeProfile::Metrics uiMetrics = resolveUiMetrics();
+  const int hexWidth = resolveScaledMapHexWidth(uiMetrics);
   const int hexHeight = (std::max)(14, static_cast<int>(std::lround(static_cast<double>(hexWidth) * std::sqrt(3.0) / 2.0)));
   const int columnStep = (std::max)(10, static_cast<int>(std::lround(hexWidth * 0.75)));
   const int rowStep = hexHeight;
@@ -798,7 +799,8 @@ void MapTabContent::paintMap(HDC hdc) const
       }
     }
 
-    const int hexWidth = (std::max)(12, appConfig_->getMapHexWidth());
+    const UiSizeProfile::Metrics uiMetrics = resolveUiMetrics();
+    const int hexWidth = resolveScaledMapHexWidth(uiMetrics);
     const int columnStep = (std::max)(10, static_cast<int>(std::lround(hexWidth * 0.75)));
     HPEN emptyHexPen = CreatePen(PS_SOLID, 1, RGB(192, 192, 192)); // colour of empty hex borders
     HGDIOBJ oldEmptyPen = SelectObject(memoryDc, emptyHexPen);
@@ -988,7 +990,8 @@ void MapTabContent::paintMap(HDC hdc) const
     if (visual.region->getContainsSettlement())
     {
       const std::wstring settlementType = StringUtils::toLower(visual.region->getSettlementType());
-      const int markerDiameter = (std::max)(4, (std::max)(12, appConfig_->getMapHexWidth()) / 4);
+      const UiSizeProfile::Metrics uiMetrics = resolveUiMetrics();
+      const int markerDiameter = (std::max)(4, resolveScaledMapHexWidth(uiMetrics) / 4);
       const int coreDiameter = (std::max)(2, markerDiameter / 4);
       const int townRingDiameter = markerDiameter;
       const int cityInnerRingDiameter = (std::max)(coreDiameter + 3, markerDiameter * 2 / 3);
@@ -1095,7 +1098,8 @@ void MapTabContent::paintMap(HDC hdc) const
         const int centerX = visual.center.x - scrollX_;
         const int centerY = visual.center.y - scrollY_;
 
-        const int hexWidth = (std::max)(12, appConfig_ ? appConfig_->getMapHexWidth() : 12);
+        const UiSizeProfile::Metrics uiMetrics = resolveUiMetrics();
+        const int hexWidth = resolveScaledMapHexWidth(uiMetrics);
         const int hexHeight = (std::max)(14, static_cast<int>(std::lround(static_cast<double>(hexWidth) * std::sqrt(3.0) / 2.0)));
         const int crossSize = (std::max)(4, (((hexHeight * 2) / 5) * 2) / 3);
         const int halfCross = crossSize / 2;
@@ -1500,7 +1504,8 @@ bool MapTabContent::hitTestMapCoordinate(POINT pointInMapClient, int& xCoordinat
     break;
   }
 
-  const int hexWidth = (std::max)(12, appConfig_->getMapHexWidth());
+  const UiSizeProfile::Metrics uiMetrics = resolveUiMetrics();
+  const int hexWidth = resolveScaledMapHexWidth(uiMetrics);
   const int hexHeight = (std::max)(14, static_cast<int>(std::lround(static_cast<double>(hexWidth) * std::sqrt(3.0) / 2.0)));
   const int columnStep = (std::max)(10, static_cast<int>(std::lround(hexWidth * 0.75)));
   const int rowStep = hexHeight;

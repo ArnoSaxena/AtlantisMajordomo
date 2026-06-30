@@ -35,6 +35,7 @@
 #include "Data/Structure.hpp"
 #include "Data/Unit.hpp"
 #include "Data/UnitNew.hpp"
+#include "Function/HexDirectionUtils.hpp"
 #include "Function/SkillFormattingUtils.hpp"
 #include "Function/StringUtils.hpp"
 #include "Function/UnitCapacityUtils.hpp"
@@ -47,8 +48,10 @@
 #include <QTableWidgetItem>
 
 #include <algorithm>
+#include <cwctype>
 #include <map>
 #include <set>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -991,6 +994,10 @@ void MapTabContentQt::updateSelectedUnitDetailsByNumber(int unitNumber)
     if (!appData_)
     {
         selectedUnitIsNew_ = false;
+        if (mapCanvas_)
+        {
+            mapCanvas_->clearMovePathOverlay();
+        }
         clearSelectedUnitDetails();
         return;
     }
@@ -1037,6 +1044,10 @@ void MapTabContentQt::updateSelectedUnitDetailsByNumber(int unitNumber)
         {
             ordersEditor_->clear();
         }
+        if (mapCanvas_)
+        {
+            mapCanvas_->clearMovePathOverlay();
+        }
         setOrdersEditingEnabled(false);
         return;
     }
@@ -1077,6 +1088,139 @@ void MapTabContentQt::updateSelectedUnitDetailsByNumber(int unitNumber)
     {
         ordersEditor_->setPlainText(toQString(StringUtils::joinLines(unit->getOrders()) + L"\r\n"));
     }
+
+    std::vector<std::pair<int, int>> movePathCoordinates;
+    bool movePathIsSail = false;
+    bool movePathHasNegativeCapacity = false;
+    bool movePathSailRouteInvalid = false;
+
+    const auto& orders = unit->getOrders();
+    for (const auto& order : orders)
+    {
+        const std::wstring trimmedOrder = StringUtils::trimWhitespace(order);
+        const std::wstring lowerOrder = StringUtils::toLower(trimmedOrder);
+
+        const std::size_t movePos = lowerOrder.find(L"move");
+        const std::size_t advancePos = lowerOrder.find(L"advance");
+        const std::size_t sailPos = lowerOrder.find(L"sail");
+        if ((movePos != std::wstring::npos && movePos <= 2) ||
+            (advancePos != std::wstring::npos && advancePos <= 2) ||
+            (sailPos != std::wstring::npos && sailPos <= 2))
+        {
+            std::vector<std::wstring> directions;
+            std::wstringstream stream(trimmedOrder);
+            std::wstring token;
+            bool foundMoveLikeCommand = false;
+            bool isSailCommand = false;
+            bool inStructure = (unit->getStructureId() > 0);
+
+            while (stream >> token)
+            {
+                const std::wstring lowerToken = StringUtils::toLower(token);
+                if (lowerToken == L"move" || lowerToken == L"advance" || lowerToken == L"sail" ||
+                    (!lowerToken.empty() && lowerToken[0] == L'@' &&
+                     (lowerToken.find(L"move") != std::wstring::npos ||
+                      lowerToken.find(L"advance") != std::wstring::npos ||
+                      lowerToken.find(L"sail") != std::wstring::npos)))
+                {
+                    foundMoveLikeCommand = true;
+                    isSailCommand = (lowerToken.find(L"sail") != std::wstring::npos);
+                }
+                else if (foundMoveLikeCommand)
+                {
+                    const bool isNumericToken = !token.empty() &&
+                        std::all_of(token.begin(), token.end(),
+                            [](wchar_t ch) { return iswdigit(ch) != 0; });
+                    if (isNumericToken)
+                    {
+                        inStructure = true;
+                        continue;
+                    }
+
+                    if (lowerToken == L"in")
+                    {
+                        if (!inStructure)
+                        {
+                            continue;
+                        }
+                        continue;
+                    }
+
+                    const std::wstring normalized = HexDirectionUtils::normalizeHexDirection(lowerToken);
+                    if (!normalized.empty())
+                    {
+                        directions.push_back(normalized);
+                        inStructure = false;
+                    }
+                }
+            }
+
+            if (!directions.empty())
+            {
+                if (isSailCommand)
+                {
+                    if (!hasShipOwnerSkillValues_)
+                    {
+                        break;
+                    }
+
+                    movePathCoordinates = HexDirectionUtils::calculateMovePathCoordinates(
+                        unit->getXCoordinate(),
+                        unit->getYCoordinate(),
+                        directions);
+                    movePathIsSail = true;
+
+                    bool routeInvalid = false;
+                    if (!shipIsFlying_)
+                    {
+                        const RegionRepository& regionRepository = appData_->regionRepository();
+                        const int unitZ = unit->getZCoordinate();
+                        for (std::size_t si = 0; si + 1 < movePathCoordinates.size(); ++si)
+                        {
+                            const int sx = movePathCoordinates[si].first;
+                            const int sy = movePathCoordinates[si].second;
+                            const int ex = movePathCoordinates[si + 1].first;
+                            const int ey = movePathCoordinates[si + 1].second;
+                            const Region* startRegion = regionRepository.findByCoordinates(sx, sy, unitZ);
+                            const Region* endRegion = regionRepository.findByCoordinates(ex, ey, unitZ);
+                            const bool startOcean = startRegion && startRegion->isOcean();
+                            const bool endOcean = endRegion && endRegion->isOcean();
+                            if (!startOcean && !endOcean)
+                            {
+                                routeInvalid = true;
+                                break;
+                            }
+                        }
+                    }
+                    movePathSailRouteInvalid = routeInvalid;
+
+                    const bool shipSkillInsufficient =
+                        hasShipOwnerSkillValues_ && shipOwnerSailingDisplay_ < shipSkillNeedDisplay_;
+                    movePathHasNegativeCapacity = routeInvalid || (shipFreeCapacityDisplay_ < 0) || shipSkillInsufficient;
+                }
+                else
+                {
+                    movePathCoordinates = HexDirectionUtils::calculateMovePathCoordinates(
+                        unit->getXCoordinate(),
+                        unit->getYCoordinate(),
+                        directions);
+                    movePathIsSail = false;
+                    movePathHasNegativeCapacity = (capacityWalkDisplay_ < 0);
+                }
+            }
+
+            break;
+        }
+    }
+
+    if (mapCanvas_)
+    {
+        mapCanvas_->setMovePathOverlay(movePathCoordinates,
+                                       movePathIsSail,
+                                       movePathHasNegativeCapacity,
+                                       movePathSailRouteInvalid);
+    }
+
     setOrdersEditingEnabled(canEditOrdersForUnit(unit));
 }
 
@@ -1146,6 +1290,11 @@ void MapTabContentQt::clearSelectedUnitDetails()
     if (ordersEditor_)
     {
         ordersEditor_->clear();
+    }
+
+    if (mapCanvas_)
+    {
+        mapCanvas_->clearMovePathOverlay();
     }
 
     setOrdersEditingEnabled(false);

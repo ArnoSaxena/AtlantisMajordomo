@@ -37,6 +37,7 @@
 #include "Data/Structure.hpp"
 #include "GUI/ControlIds.hpp"
 #include "GUI/OrdersEditorUtils.hpp"
+#include "GUI/WinSizingUtils.hpp"
 #include "Function/AppDataUtils.hpp"
 #include "Function/CommandSimulationService.hpp"
 #include "Function/CoordinateUtils.hpp"
@@ -62,6 +63,7 @@
 void MapTabContent::resize(const RECT& displayRect)
 {
   displayRect_ = displayRect;
+  const UiSizeProfile::Metrics uiMetrics = resolveUiMetrics();
 
   if (!mapCanvas_ || !unitsList_ || !unitWeightLabel_ || !unitCapacitiesLabel_ || !unitItemsList_ || !unitErrorsList_ || !unitWarningsList_ || !unitEventsList_ || !unitDetailsTabs_ || !regionDateLabel_ || !regionDetailsView_ || !unitSearchEdit_ || !unitSearchButton_ || !regionResourcesList_ || 
       !regionResourcesLabel_ || !regionForSaleList_ || !regionForSaleLabel_ || !regionWantedList_ || !regionWantedLabel_ ||
@@ -89,7 +91,7 @@ void MapTabContent::resize(const RECT& displayRect)
     static_cast<int>(topPanelRatio_ * static_cast<float>(usableHeight)),
     minTop,
     maxTop);
-  const int buttonRowHeight = 24;
+  const int buttonRowHeight = (std::max)(uiMetrics.buttonHeight, WinSizingUtils::scalePx(24, uiMetrics));
   const int buttonRowGap = kMargin;
   const int listHeight = (std::max)(0, usableHeight - mapHeight - buttonRowGap - buttonRowHeight - kMargin);
 
@@ -101,6 +103,8 @@ void MapTabContent::resize(const RECT& displayRect)
     maxDetails);
   const int mapWidth = (std::max)(0, leftPanelWidth - detailsWidth - kMargin);
   const int rightPanelX = displayRect.left + kMargin + leftPanelWidth + kMargin;
+
+  applyListColumnWidths(uiMetrics, leftPanelWidth, rightPanelWidth, detailsWidth);
 
   SetWindowPos(
     mapCanvas_,
@@ -117,12 +121,12 @@ void MapTabContent::resize(const RECT& displayRect)
   const int detailsStartY = displayRect.top + kMargin;
   const int detailsMaxHeight = (std::max)(0, mapHeight);
   
-  const int labelHeight = 16;
-  const int dateLabelHeight = 20;
-  const int hoverLabelHeight = 20;
+  const int labelHeight = WinSizingUtils::scalePx(16, uiMetrics);
+  const int dateLabelHeight = WinSizingUtils::scalePx(20, uiMetrics);
+  const int hoverLabelHeight = WinSizingUtils::scalePx(20, uiMetrics);
   const int headerLineGap = 2;
-  const int dateDetailsGap = 6;
-  const int listMinHeight = 60;
+  const int dateDetailsGap = WinSizingUtils::scalePx(6, uiMetrics);
+  const int listMinHeight = WinSizingUtils::scalePx(60, uiMetrics);
   
   // Divide the available space
   const int detailsHeight = detailsMaxHeight / 3;
@@ -215,16 +219,16 @@ void MapTabContent::resize(const RECT& displayRect)
   const int editorPanelX = rightPanelX;
   const int editorPanelWidth = rightPanelWidth;
 
-  const int lineHeight = 20;
-  const int checkButtonWidth = 110;
+  const int lineHeight = WinSizingUtils::scalePx(20, uiMetrics);
+  const int checkButtonWidth = WinSizingUtils::scalePx(110, uiMetrics);
   const int checkButtonHeight = buttonRowHeight;
   const int checkButtonX = displayRect.left + kMargin;
   const int checkButtonY = buttonRowY;
   SetWindowPos(checkOrdersButton_, HWND_TOP, checkButtonX, checkButtonY,
                checkButtonWidth, checkButtonHeight, SWP_NOACTIVATE);
 
-  const int warningButtonWidth = 100;
-  const int warningButtonsGap = 6;
+  const int warningButtonWidth = WinSizingUtils::scalePx(100, uiMetrics);
+  const int warningButtonsGap = WinSizingUtils::scalePx(6, uiMetrics);
   const int lastWarningX = checkButtonX + checkButtonWidth + warningButtonsGap;
   SetWindowPos(lastWarningButton_, HWND_TOP, lastWarningX, buttonRowY,
                warningButtonWidth, buttonRowHeight, SWP_NOACTIVATE);
@@ -237,10 +241,10 @@ void MapTabContent::resize(const RECT& displayRect)
   SetWindowPos(nextWarningButton_, HWND_TOP, nextWarningX, buttonRowY,
                warningButtonWidth, buttonRowHeight, SWP_NOACTIVATE);
 
-  const int searchButtonWidth = 72;
-  const int searchFieldGap = 6;
-  const int searchLabelWidth = 52;
-  const int previousSearchEditWidth = 100;
+  const int searchButtonWidth = WinSizingUtils::scalePx(72, uiMetrics);
+  const int searchFieldGap = WinSizingUtils::scalePx(6, uiMetrics);
+  const int searchLabelWidth = WinSizingUtils::scalePx(52, uiMetrics);
+  const int previousSearchEditWidth = WinSizingUtils::scalePx(100, uiMetrics);
   const int searchEditWidth = previousSearchEditWidth;
   const int searchButtonX = displayRect.left + kMargin + leftPanelWidth - searchButtonWidth -
                             (previousSearchEditWidth - searchEditWidth);
@@ -287,7 +291,7 @@ void MapTabContent::resize(const RECT& displayRect)
 
   // Calculate available height for items, summary labels, skills, and errors
   int availableHeight = bottomY - rightPanelY;
-  const int capacitiesLabelHeight = (3 * lineHeight) + 4;
+  const int capacitiesLabelHeight = (3 * lineHeight) + WinSizingUtils::scalePx(4, uiMetrics);
   const int summaryLabelsHeight = lineHeight + capacitiesLabelHeight + listMargin;
   const int availableForLists = (std::max)(0, availableHeight - summaryLabelsHeight - (2 * (labelHeight + listMargin)));
   int itemsListHeight = (std::max)(listMinHeight, availableForLists / 3);
@@ -327,9 +331,9 @@ void MapTabContent::resize(const RECT& displayRect)
   const int tabHeightRaw = static_cast<int>(tabClientRect.bottom - tabClientRect.top);
   const int tabContentWidth = (std::max)(0, tabWidthRaw);
   const int tabContentHeight = (std::max)(0, tabHeightRaw);
-  const int tabContentPadding = 4;
+  const int tabContentPadding = WinSizingUtils::scalePx(4, uiMetrics);
 
-  const int buttonHeight = 30;
+  const int buttonHeight = (std::max)(uiMetrics.buttonHeight, WinSizingUtils::scalePx(30, uiMetrics));
   const int ordersButtonY = tabContentY + (std::max)(0, tabContentHeight - buttonHeight);
   const int ordersEditorHeight = (std::max)(0, tabContentHeight - buttonHeight - tabContentPadding);
 
@@ -342,7 +346,7 @@ void MapTabContent::resize(const RECT& displayRect)
   SetWindowPos(saveOrdersButton_, HWND_TOP,
                tabContentX,
                ordersButtonY,
-               120,
+               WinSizingUtils::scalePx(120, uiMetrics),
                buttonHeight,
                SWP_NOACTIVATE);
 

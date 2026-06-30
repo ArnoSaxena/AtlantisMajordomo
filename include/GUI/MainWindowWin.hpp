@@ -26,6 +26,7 @@
 #endif
 
 #include "AppConfig.hpp"
+#include "GUI/UiScaleManagerWin.hpp"
 
 #include <windows.h>
 #include <memory>
@@ -61,7 +62,7 @@ public:
   static constexpr wchar_t kAboutDescription[] =
     L"Yet another Atlantis Pbem player client.";
   // TODO: Need to create a more elaborate description.
-  static constexpr wchar_t kAboutVersion[] = L"1.3.19";
+  static constexpr wchar_t kAboutVersion[] = L"1.3.31";
 
   /**
   * @brief Registers the window class and creates the main window.
@@ -97,6 +98,8 @@ private:
   std::unique_ptr<MapTabContent> mapTabContent_;
   std::unique_ptr<FactionsTabContent> factionsTabContent_;
   std::unique_ptr<BattlesTabContent> battlesTabContent_;
+  UiScaleManagerWin uiScaleManager_;
+  bool hasAppliedUiScale_ { false };
   int reportsTabIndex_ { -1 };
   int mapTabIndex_ { -1 };
   int eventsTabIndex_ { -1 };
@@ -113,4 +116,6 @@ private:
   void updateReportsTabVisibility();
   void showLoadedReportsTabContextMenu(POINT screenPoint);
   void persistWindowSizeToConfig();
+  bool refreshUiScaleFromWindow(bool forceApply);
+  void applyCurrentUiScale();
 };

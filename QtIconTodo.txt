@@ -1,0 +1,168 @@
+Qt / Linux App Icon TODO
+========================
+
+Objective
+---------
+Add a proper application icon to the Qt/Linux build so icon identity is consistent
+in the window titlebar, task switcher, and desktop launcher contexts.
+
+Scope priority
+--------------
+- Primary target: Qt/Linux runtime icon wiring in src/Main.cpp and MainWindowQt.
+- Secondary target: Linux desktop integration (.desktop + installed icon sizes).
+
+High-level answer
+-----------------
+Yes, this is straightforward and low risk.
+The reliable path is: add a Qt resource collection (.qrc), set icon at
+QApplication + QMainWindow level, then add desktop integration assets.
+
+Constraints and guardrails
+--------------------------
+- GUI/resource changes only; no business/data-layer changes.
+- Reuse existing repository icon assets where possible.
+- Keep Windows .rc/.ico path unchanged.
+- Keep each step independently reversible.
+
+
+Current known assets and gaps
+-----------------------------
+- Existing assets:
+  - AtlantisMajordomo.svg
+  - src/GUI/AtlantisMajordomo_256.png
+  - src/GUI/AtlantisMajordomo.ico (Windows-focused)
+- Current gaps:
+  - No .qrc resource file for Qt icon embedding.
+  - No QApplication::setWindowIcon(...) call in Linux main path.
+  - No setWindowIcon(...) call in MainWindowQt constructor.
+  - No Linux .desktop launcher file in repo.
+  - No multi-size PNG icon set for hicolor theme install paths.
+
+
+Suggested implementation steps
+------------------------------
+
+1. Asset policy + source-of-truth selection
+   Status         : NOT STARTED
+   Complexity     : Low
+   Est. cost      : 0.05x
+   Files          : QtIconTodo.txt (notes only)
+   Description    :
+     - Confirm source-of-truth icon asset (SVG preferred for generation).
+     - Define canonical icon name for Linux desktop integration:
+       AtlantisMajordomo.
+
+2. Add Qt resource collection for icon
+   Status         : NOT STARTED
+   Complexity     : Low
+   Est. cost      : 0.10x
+   Files (new)    : src/GUI/Linux/AtlantisMajordomo.qrc
+   Description    :
+     - Create a .qrc file that embeds icon assets for runtime loading.
+     - Add aliases (for example /icons/app-icon-256.png) for stable lookups.
+
+3. Wire .qrc into Linux CMake target
+   Status         : NOT STARTED
+   Complexity     : Low
+   Est. cost      : 0.05x
+   Files          : CMakeLists.txt
+   Description    :
+     - Add the .qrc to Linux GUI_SOURCES (AUTORCC path).
+     - Ensure no impact to WIN32 build sources.
+
+4. Set QApplication icon (process-level)
+   Status         : NOT STARTED
+   Complexity     : Low
+   Est. cost      : 0.05x
+   Files          : src/Main.cpp
+   Description    :
+     - In Linux/Qt main path, call QApplication::setWindowIcon(QIcon(...)).
+     - Use a qrc path so icon is available regardless of current working dir.
+
+5. Set MainWindowQt icon (window-level)
+   Status         : NOT STARTED
+   Complexity     : Low
+   Est. cost      : 0.05x
+   Files          : src/GUI/Linux/MainWindowQt.cpp
+   Description    :
+     - Call setWindowIcon(QIcon(...)) in MainWindow constructor.
+     - Keep this consistent with QApplication icon for predictable behavior.
+
+6. Add Linux desktop launcher file
+   Status         : NOT STARTED
+   Complexity     : Low
+   Est. cost      : 0.08x
+   Files (new)    : packaging/linux/AtlantisMajordomo.desktop
+   Description    :
+     - Add .desktop file with Name, Exec, Icon, Type, Categories.
+     - Use Icon=AtlantisMajordomo (theme name, not full file path).
+
+7. Provide multi-size PNG icon set
+   Status         : NOT STARTED
+   Complexity     : Medium
+   Est. cost      : 0.12x
+   Files (new)    : packaging/linux/icons/hicolor/*/apps/AtlantisMajordomo.png
+   Description    :
+     - Add at least: 16, 24, 32, 48, 64, 128, 256 px PNGs.
+     - Optional but recommended: 512 px.
+
+8. Add CMake install rules for Linux desktop assets
+   Status         : NOT STARTED
+   Complexity     : Medium
+   Est. cost      : 0.10x
+   Files          : CMakeLists.txt (or Linux packaging cmake include)
+   Description    :
+     - Install .desktop to share/applications.
+     - Install icons to share/icons/hicolor/<size>/apps.
+     - Keep install logic guarded for UNIX path.
+
+9. Runtime and desktop validation pass
+   Status         : NOT STARTED
+   Complexity     : Low
+   Est. cost      : 0.07x
+   Description    :
+     - Validate icon in window titlebar/task switcher.
+     - Validate launcher icon appears after desktop database/icon cache refresh.
+     - Verify behavior on at least two desktop environments if possible.
+
+10. Documentation + maintenance note
+    Status         : NOT STARTED
+    Complexity     : Low
+    Est. cost      : 0.03x
+    Files          : QtTodo.txt (or dedicated packaging notes file)
+    Description    :
+      - Document where source icon comes from and how size variants are generated.
+      - Document where launcher + icon install assets live.
+
+
+Estimated total
+---------------
+- Runtime icon only (Steps 2-5): ~0.25x
+- Full desktop integration (Steps 2-9): ~0.62x
+- With docs/polish (Steps 2-10): ~0.65x
+
+
+Step-gate policy (stability between steps)
+------------------------------------------
+- Gate 1: Isolated changes
+  Only touch files listed for the current step.
+
+- Gate 2: Build checkpoint
+  After each major phase (Runtime wiring, Desktop assets), run a user build
+  checkpoint before proceeding.
+
+- Gate 3: Runtime checkpoint
+  Confirm app opens and icon appears in window/task context before desktop work.
+
+- Gate 4: Desktop checkpoint
+  Confirm .desktop launcher resolves icon theme name correctly after install.
+
+- Gate 5: Reversible steps
+  Keep each step small so regressions can be reverted independently.
+
+
+Suggested execution order
+-------------------------
+- Phase A (runtime icon): steps 1-5
+- Phase B (desktop integration): steps 6-9
+- Phase C (documentation): step 10

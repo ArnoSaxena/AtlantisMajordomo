@@ -346,7 +346,7 @@ Files still to convert (suggested order)
    7.9.2  Scrollbar integration + resize + mouse/wheel events
           Complexity  : Medium
           Est. cost   : 2x
-          Status      : NOT STARTED
+          Status      : DONE
           Description : resizeEvent and wheelEvent handlers; updateScrollbars()
                         that sets QScrollBar ranges/page-step from contentWidth_ /
                         contentHeight_ / viewport size (replaces Win32
@@ -357,10 +357,30 @@ Files still to convert (suggested order)
                         updateHoverTooltip / hideHoverTooltip helpers.
                         QLabel hover display (replaces hoverRegionLabel_ HWND).
 
+   Cross-step notes from 7.9.2
+   ---------------------------
+   - MapCanvasWidget now owns two child QScrollBar controls (horizontal/vertical)
+     and keeps scrollX_/scrollY_ synchronized via valueChanged handlers.
+   - updateScrollbars() is active and called from recalculateVisibleMap() and
+     resizeEvent(); it computes viewport size (accounting for visible scrollbar
+     thickness), clamps scroll offsets, and sets range/page-step.
+   - wheelEvent() scrolls vertically by default and horizontally with Shift;
+     each wheel notch uses scrollbar singleStep (20 px), matching Win32 line-scroll
+     behavior.
+   - Mouse routing is now split into helper methods:
+     onMapLeftClick, onMapDoubleClick, onMapRightClick, updateHoverTooltip,
+     hideHoverTooltip.
+   - Hover text is emitted via MapCanvasWidget::hoverTextChanged(QString) and
+     wired in layout to hoverRegionLabel_ (Qt replacement of Win32 SetWindowText).
+     Empty/non-map hover falls back to "Hover: -".
+   - centerOnRegion(x, y) is implemented in MapCanvasWidget and now called from
+     selectUnitInMap() (7.7), so unit-search/navigation recenters the map.
+   - Right-click region context menu and Z-level popup remain deferred to 7.9.5.
+
    7.9.3  paintEvent — background, region fills, empty hex grid, peasant wedge
           Complexity  : Medium-High
           Est. cost   : 2.5x
-          Status      : NOT STARTED
+       Status      : DONE
           Description : paintEvent using QPainter + double-buffer (QPixmap or
                         direct QPainter on widget). Three passes:
                         (a) fill empty hex outlines with light-gray QPen for all
@@ -373,11 +393,24 @@ Files still to convert (suggested order)
                             (replaces the GDI lerp/trapezoid logic).
                         Prerequisite: 7.9.1 (visibleRegions_ available).
 
+   Cross-step notes from 7.9.3
+   ---------------------------
+   - MapCanvasWidget::paintEvent(QPaintEvent*) is implemented and clips drawing
+     to the map viewport (excluding child scrollbar areas).
+   - Pass (a) empty-hex drawing is active: parity-aware map-coordinate iteration,
+     skip occupied region coordinates, draw light-gray outline polygons.
+   - Pass (b) region fill drawing is active: each visible region hex is translated
+     by scroll offsets and filled with getRegionFillColor(); border uses black pen.
+   - Pass (c) peasant wedge drawing is active: NE/E edge trapezoid with minimum
+     visible depth and black border, color sourced from AppConfig peasant color map.
+   - Overlay passes for roads/settlements/battles/structure markers/selection border
+     remain deferred to 7.9.4.
+
    7.9.4  paintEvent — roads, settlements, battles, structure markers,
                         selected-region border
           Complexity  : Medium
           Est. cost   : 2x
-          Status      : NOT STARTED
+        Status      : DONE
           Description : Four overlay passes drawn on top of 7.9.3:
                         (a) Road lines: QPainter::drawLine from hex center to
                             border midpoint for each road direction; color from
@@ -395,10 +428,28 @@ Files still to convert (suggested order)
                             highlight color, NULL-brush polygon outline on top
                             of all fill passes.
 
+   Cross-step notes from 7.9.4
+   ---------------------------
+   - Road overlays are now drawn from region-center to edge-midpoint for each
+     discovered road direction; only directions that are both valid exits and
+     present in structure-road data are rendered.
+   - Settlement glyphs are active:
+     village = unfilled ring, town = filled core + outer ring,
+     city = filled core + two rings (fallback = village-style ring).
+   - Battle crosses now use latest report period (month/year from ReportRepository),
+     matching Win32 behavior where map markers follow currently displayed data.
+   - Structure marker overlay is active:
+     top marker = default or caravanserai orange, shaft = dark outline ring,
+     ship marker = light-blue SW dot with black outline for flying ships.
+   - Selected-region border is now drawn with configured highlight color and
+     width 3 on top of current map rendering.
+   - Move-path arrows, read-only popup dialog, and right-click context menus
+     remain deferred to 7.9.5.
+
    7.9.5  paintEvent — move-path arrows; read-only popup; context menus
           Complexity  : Medium
           Est. cost   : 2x
-          Status      : NOT STARTED
+       Status      : DONE
           Description : Three remaining responsibilities:
                         (a) Move-path arrows: iterate movePathCoordinates_ pairs;
                             draw shaft with QPainter::drawLine (green/blue/red
@@ -414,3 +465,22 @@ Files still to convert (suggested order)
                             "Show Region Report" and "Show Battle Report" actions
                             (replaces TrackPopupMenu); Z-level selector QMenu
                             (replaces showZSelectionContextMenu).
+
+   Cross-step notes from 7.9.5
+   ---------------------------
+   - Move-path overlay state is now tracked in MapCanvasWidget
+     (coordinates + sail/capacity flags) and rendered in paintEvent as
+     black-bordered shafts with colored fill (green/light-blue/red) plus
+     arrowhead polygons.
+   - Qt unit-detail selection now computes first MOVE/ADVANCE/SAIL command path
+     (including IN/structure-entry token handling) and pushes overlay data to
+     MapCanvasWidget; clearing unit selection clears the overlay.
+   - Read-only popup is implemented as a modal QDialog with read-only
+     QPlainTextEdit + Close button and is used for skill descriptions,
+     region reports, and battle-report text display.
+   - Region right-click menu is active with "Show Region Report" and
+     "Show Battle Report" (battle enabled only when present for latest report
+     period; falls back to Battles-tab navigation when full text is unavailable).
+   - Z-level context menu is active; selecting a level clears current map/unit
+     selection, clears move-path overlay, refreshes map data, and updates
+     region details.

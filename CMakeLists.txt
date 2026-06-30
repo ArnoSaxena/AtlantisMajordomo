@@ -63,9 +63,12 @@ if(WIN32)
 
   set(GUI_SOURCES
     src/GUI/AtlantisMajordomo.rc
+    src/GUI/UiSizeProfile.cpp
+    src/GUI/UiScaleManagerWin.cpp
     src/GUI/MainWindowWin.cpp
     src/GUI/EventsTabContent.cpp
     src/GUI/WinGuiUtils.cpp
+    src/GUI/WinSizingUtils.cpp
     src/GUI/ReportsTabContent.cpp
     src/GUI/MapTabContent.cpp
     src/GUI/MapTabContent_Layout.cpp

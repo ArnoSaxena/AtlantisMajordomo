@@ -38,6 +38,27 @@
 
 namespace
 {
+int findComboItemByTextInsensitive(HWND comboHandle, const wchar_t* text)
+{
+  if (comboHandle == nullptr || text == nullptr)
+  {
+    return -1;
+  }
+
+  const int itemCount = static_cast<int>(SendMessageW(comboHandle, CB_GETCOUNT, 0, 0));
+  for (int index = 0; index < itemCount; ++index)
+  {
+    wchar_t itemText[64] = {};
+    SendMessageW(comboHandle, CB_GETLBTEXT, static_cast<WPARAM>(index), reinterpret_cast<LPARAM>(itemText));
+    if (_wcsicmp(itemText, text) == 0)
+    {
+      return index;
+    }
+  }
+
+  return -1;
+}
+
 void loadListFromCsv(HWND listHandle, const std::wstring& csv)
 {
   if (!listHandle)
@@ -271,7 +292,25 @@ bool SettingsDialog::applySettingsFromControls(HWND hwnd, bool closeOnSuccess)
     appConfig_->setMagicSkillTriggersCsv(magicTriggersCsv);
     appConfig_->setDataFilePath(dataFilePath);
     appConfig_->setReportImportFolder(reportFolderPath);
+
+    if (uiSizeModeCombo_)
+    {
+      wchar_t selectedMode[32] = {};
+      const int selectedIndex = static_cast<int>(SendMessageW(uiSizeModeCombo_, CB_GETCURSEL, 0, 0));
+      if (selectedIndex >= 0)
+      {
+        SendMessageW(uiSizeModeCombo_, CB_GETLBTEXT, static_cast<WPARAM>(selectedIndex), reinterpret_cast<LPARAM>(selectedMode));
+        appConfig_->setUiSizeMode(selectedMode);
+      }
+    }
+
     appConfig_->save();
+
+    const HWND owner = GetWindow(hwnd, GW_OWNER);
+    if (owner && IsWindow(owner))
+    {
+      PostMessageW(owner, SettingsDialog::kUiSizingChangedMessage, 0, 0);
+    }
   }
 
   if (closeOnSuccess)
@@ -633,6 +672,44 @@ int SettingsDialog::showDialog(HWND parentHwnd, AppData& appData, AppConfig& app
     nullptr
   );
 
+  CreateWindowExW(
+    0,
+    L"STATIC",
+    L"UI size mode:",
+    WS_CHILD | WS_VISIBLE,
+    20,
+    114,
+    100,
+    20,
+    hwnd_,
+    nullptr,
+    GetModuleHandleW(nullptr),
+    nullptr
+  );
+
+  uiSizeModeCombo_ = CreateWindowExW(
+    0,
+    L"COMBOBOX",
+    L"",
+    WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL | CBS_DROPDOWNLIST,
+    130,
+    110,
+    160,
+    260,
+    hwnd_,
+    reinterpret_cast<HMENU>(static_cast<intptr_t>(IDC_UI_SIZE_MODE_COMBO)),
+    GetModuleHandleW(nullptr),
+    nullptr
+  );
+
+  if (uiSizeModeCombo_)
+  {
+    SendMessageW(uiSizeModeCombo_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Auto"));
+    SendMessageW(uiSizeModeCombo_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Compact"));
+    SendMessageW(uiSizeModeCombo_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Standard"));
+    SendMessageW(uiSizeModeCombo_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Large"));
+  }
+
   /*
   CreateWindowExW(
     0,
@@ -724,7 +801,7 @@ int SettingsDialog::showDialog(HWND parentHwnd, AppData& appData, AppConfig& app
     L"Full-month orders",
     WS_CHILD | WS_VISIBLE,
     265,
-    114,
+    148,
     180,
     20,
     hwnd_,
@@ -739,7 +816,7 @@ int SettingsDialog::showDialog(HWND parentHwnd, AppData& appData, AppConfig& app
     L"",
     WS_CHILD | WS_VISIBLE | WS_VSCROLL | LBS_NOTIFY,
     265,
-    138,
+    172,
     220,
     170,
     hwnd_,
@@ -754,7 +831,7 @@ int SettingsDialog::showDialog(HWND parentHwnd, AppData& appData, AppConfig& app
     L"",
     WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
     265,
-    318,
+    352,
     220,
     24,
     hwnd_,
@@ -769,7 +846,7 @@ int SettingsDialog::showDialog(HWND parentHwnd, AppData& appData, AppConfig& app
     L"Add",
     WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
     265,
-    348,
+    382,
     70,
     24,
     hwnd_,
@@ -784,7 +861,7 @@ int SettingsDialog::showDialog(HWND parentHwnd, AppData& appData, AppConfig& app
     L"Remove",
     WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
     345,
-    348,
+    382,
     80,
     24,
     hwnd_,
@@ -799,7 +876,7 @@ int SettingsDialog::showDialog(HWND parentHwnd, AppData& appData, AppConfig& app
     L"Magic skill triggers",
     WS_CHILD | WS_VISIBLE,
     20,
-    114,
+    148,
     180,
     20,
     hwnd_,
@@ -814,7 +891,7 @@ int SettingsDialog::showDialog(HWND parentHwnd, AppData& appData, AppConfig& app
     L"",
     WS_CHILD | WS_VISIBLE | WS_VSCROLL | LBS_NOTIFY,
     20,
-    138,
+    172,
     220,
     170,
     hwnd_,
@@ -829,7 +906,7 @@ int SettingsDialog::showDialog(HWND parentHwnd, AppData& appData, AppConfig& app
     L"",
     WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
     20,
-    318,
+    352,
     220,
     24,
     hwnd_,
@@ -844,7 +921,7 @@ int SettingsDialog::showDialog(HWND parentHwnd, AppData& appData, AppConfig& app
     L"Add",
     WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
     20,
-    348,
+    382,
     70,
     24,
     hwnd_,
@@ -859,7 +936,7 @@ int SettingsDialog::showDialog(HWND parentHwnd, AppData& appData, AppConfig& app
     L"Remove",
     WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
     100,
-    348,
+    382,
     80,
     24,
     hwnd_,
@@ -932,6 +1009,11 @@ int SettingsDialog::showDialog(HWND parentHwnd, AppData& appData, AppConfig& app
   {
     SetWindowTextW(reportFolderPathEdit_, appConfig_->getReportImportFolder().c_str());
   }
+  if (uiSizeModeCombo_)
+  {
+    const int index = findComboItemByTextInsensitive(uiSizeModeCombo_, appConfig_->getUiSizeMode().c_str());
+    SendMessageW(uiSizeModeCombo_, CB_SETCURSEL, static_cast<WPARAM>((index >= 0) ? index : 0), 0);
+  }
   if (leaderMagesCheck_)
   {
     SendMessageW(leaderMagesCheck_,
@@ -959,6 +1041,9 @@ int SettingsDialog::showDialog(HWND parentHwnd, AppData& appData, AppConfig& app
   appConfig_ = nullptr;
   hwnd_ = nullptr;
   shipThresholdEdit_ = nullptr;
+  dataFilePathEdit_ = nullptr;
+  reportFolderPathEdit_ = nullptr;
+  uiSizeModeCombo_ = nullptr;
   //flyingShipsList_ = nullptr;
   fullMonthOrdersList_ = nullptr;
   magicTriggersList_ = nullptr;

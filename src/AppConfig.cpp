@@ -45,6 +45,30 @@ namespace
 {
   constexpr wchar_t kConfigFileName[] = L"atlantis_majordomo.config.json";
   constexpr int kConfigVersion = 1;
+
+  std::wstring normalizeUiSizeMode(const std::wstring& input)
+  {
+    std::wstring normalized = StringUtils::trimWhitespace(input);
+    for (wchar_t& ch : normalized)
+    {
+      ch = static_cast<wchar_t>(std::towlower(ch));
+    }
+
+    if (normalized == L"compact")
+    {
+      return L"Compact";
+    }
+    if (normalized == L"standard")
+    {
+      return L"Standard";
+    }
+    if (normalized == L"large")
+    {
+      return L"Large";
+    }
+
+    return L"Auto";
+  }
 }
 
 AppConfig::AppConfig()
@@ -144,6 +168,15 @@ bool AppConfig::load()
       mapHexWidth_ = parsedMapHexWidth;
       DebugLog(L"AppConfig::load() - mapHexWidth: " + std::to_wstring(mapHexWidth_));
     }
+  }
+
+  bool hasUiSizeMode = false;
+  std::wstring configuredUiSizeMode;
+  if (JsonUtils::extractJsonStringField(content, L"uiSizeMode", configuredUiSizeMode))
+  {
+    uiSizeMode_ = normalizeUiSizeMode(configuredUiSizeMode);
+    hasUiSizeMode = true;
+    DebugLog(L"AppConfig::load() - uiSizeMode: " + uiSizeMode_);
   }
 
   bool hasOnlyLeaderCanTeach = false;
@@ -296,7 +329,7 @@ bool AppConfig::load()
     DebugLog(L"AppConfig::load() - colours block NOT found in config");
   }
 
-  if (!hasColoursBlock || !hasRegionsBlock || !hasPeasantsBlock || !hasRoadEntry || !hasStructureMarkerEntry || !hasMainWindowWidth || !hasMainWindowHeight || !hasMapHexWidth || !hasExportOrdersFolder || !hasDataFilePath || !hasOnlyLeaderCanTeach || !hasLeaderMages || !hasFlyingShipsCsv || !hasFullMonthOrdersCsv || !hasMagicSkillTriggersCsv)
+  if (!hasColoursBlock || !hasRegionsBlock || !hasPeasantsBlock || !hasRoadEntry || !hasStructureMarkerEntry || !hasMainWindowWidth || !hasMainWindowHeight || !hasMapHexWidth || !hasUiSizeMode || !hasExportOrdersFolder || !hasDataFilePath || !hasOnlyLeaderCanTeach || !hasLeaderMages || !hasFlyingShipsCsv || !hasFullMonthOrdersCsv || !hasMagicSkillTriggersCsv)
   {
     DebugLog(L"AppConfig::load() - missing fields detected, re-saving config with defaults");
     save();
@@ -323,6 +356,7 @@ bool AppConfig::save() const
   file << L"  \"mainWindowWidth\": " << mainWindowWidth_ << L",\n";
   file << L"  \"mainWindowHeight\": " << mainWindowHeight_ << L",\n";
   file << L"  \"mapHexWidth\": " << mapHexWidth_ << L",\n";
+  file << L"  \"uiSizeMode\": \"" << JsonUtils::escapeJsonString(uiSizeMode_) << L"\",\n";
   file << L"  \"onlyLeaderCanTeach\": " << (onlyLeaderCanTeach_ ? L"true" : L"false") << L",\n";
   file << L"  \"leaderMages\": " << (leaderMages_ ? L"true" : L"false") << L",\n";
   file << L"  \"flyingShipsCsv\": \"" << JsonUtils::escapeJsonString(flyingShipsCsv_) << L"\",\n";
@@ -476,6 +510,16 @@ void AppConfig::setMapHexWidth(int mapHexWidth)
   {
     mapHexWidth_ = mapHexWidth;
   }
+}
+
+const std::wstring& AppConfig::getUiSizeMode() const
+{
+  return uiSizeMode_;
+}
+
+void AppConfig::setUiSizeMode(const std::wstring& uiSizeMode)
+{
+  uiSizeMode_ = normalizeUiSizeMode(uiSizeMode);
 }
 
 bool AppConfig::getOnlyLeaderCanTeach() const
@@ -683,6 +727,7 @@ void AppConfig::applyDefaults()
   mainWindowWidth_ = 900;
   mainWindowHeight_ = 600;
   mapHexWidth_ = 40;
+  uiSizeMode_ = L"Auto";
   onlyLeaderCanTeach_ = false;
   leaderMages_ = true;
   flyingShipsCsv_.clear();

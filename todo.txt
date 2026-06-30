@@ -1,3 +1,5 @@
+- add another size factor to controll the size of the map hex fields in addition to the UI size controls.
+
 - cleanup and correct capacity calculations for walk/ride/swim etc ..
 
 - right click on unit skills 

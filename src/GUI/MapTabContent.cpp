@@ -37,6 +37,7 @@
 #include "Data/Structure.hpp"
 #include "GUI/ControlIds.hpp"
 #include "GUI/OrdersEditorUtils.hpp"
+#include "GUI/WinSizingUtils.hpp"
 #include "Function/AppDataUtils.hpp"
 #include "Function/CommandSimulationService.hpp"
 #include "Function/CoordinateUtils.hpp"
@@ -51,6 +52,7 @@
 #include <array>
 #include <cmath>
 #include <commctrl.h>
+#include <cctype>
 #include <cwctype>
 #include <map>
 #include <set>
@@ -874,6 +876,8 @@ bool MapTabContent::create(HWND parentWindow, HINSTANCE instance, AppData& appDa
   setOrdersEditingEnabled(false);
   clearSelectedUnitDetails();
 
+  applyListColumnWidths(resolveUiMetrics(), 420, 420, 220);
+
   refresh();
   return true;
 }
@@ -976,6 +980,161 @@ void MapTabContent::refreshItemsForCurrentUnit()
     return;
   }
   updateSelectedUnitDetailsByNumber(selectedUnitNumber_);
+}
+
+UiSizeProfile::Profile MapTabContent::resolveRequestedUiProfile() const
+{
+  if (appConfig_ == nullptr)
+  {
+    return UiSizeProfile::Profile::Auto;
+  }
+
+  std::wstring mode = appConfig_->getUiSizeMode();
+  for (wchar_t& ch : mode)
+  {
+    ch = static_cast<wchar_t>(std::towlower(ch));
+  }
+
+  if (mode == L"compact")
+  {
+    return UiSizeProfile::Profile::Compact;
+  }
+  if (mode == L"standard")
+  {
+    return UiSizeProfile::Profile::Standard;
+  }
+  if (mode == L"large")
+  {
+    return UiSizeProfile::Profile::Large;
+  }
+
+  return UiSizeProfile::Profile::Auto;
+}
+
+UiSizeProfile::Metrics MapTabContent::resolveUiMetrics() const
+{
+  const HWND referenceWindow = mapCanvas_ != nullptr ? mapCanvas_ : GetDesktopWindow();
+  const UiSizeProfile::DisplayInfo displayInfo = UiSizeProfile::queryDisplayInfoForWindow(referenceWindow);
+  const UiSizeProfile::Profile effectiveProfile = UiSizeProfile::resolveProfile(resolveRequestedUiProfile(), displayInfo);
+  return UiSizeProfile::getMetrics(effectiveProfile);
+}
+
+int MapTabContent::resolveScaledMapHexWidth(const UiSizeProfile::Metrics& metrics) const
+{
+  const int baseHexWidth = (appConfig_ != nullptr) ? appConfig_->getMapHexWidth() : 40;
+  const int clampedBase = (std::max)(12, baseHexWidth);
+  const int scaled = static_cast<int>(std::lround(static_cast<double>(clampedBase) * metrics.mapHexWidthScale));
+  return (std::max)(12, scaled);
+}
+
+void MapTabContent::applyListColumnWidths(const UiSizeProfile::Metrics& metrics,
+                                          int leftPanelWidth,
+                                          int rightPanelWidth,
+                                          int detailsWidth)
+{
+  (void)leftPanelWidth;
+  const int safeRightPanelWidth = (std::max)(160, rightPanelWidth);
+  const int safeDetailsWidth = (std::max)(140, detailsWidth);
+
+  if (unitsList_ != nullptr)
+  {
+    struct UnitsColumnBase
+    {
+      int index;
+      int width;
+    };
+
+    const UnitsColumnBase unitColumns[] = {
+      { 0, 50 },
+      { 1, 180 },
+      { 2, 50 },
+      { 3, 120 },
+      { 4, 150 },
+      { 5, 90 },
+      { 6, 96 },
+      { 7, 240 },
+      { 8, 260 },
+      { 9, 28 },
+      { 10, 28 },
+    };
+
+    for (const UnitsColumnBase& column : unitColumns)
+    {
+      ListView_SetColumnWidth(unitsList_,
+                              column.index,
+                              WinSizingUtils::scalePx(column.width, metrics));
+    }
+  }
+
+  if (unitItemsList_ != nullptr)
+  {
+    const int tokenCol = (std::max)(48, safeRightPanelWidth * 20 / 100);
+    const int nameCol = (std::max)(80, safeRightPanelWidth * 42 / 100);
+    const int amountCol = (std::max)(56, safeRightPanelWidth * 16 / 100);
+    const int afterComCol = (std::max)(70, safeRightPanelWidth * 18 / 100);
+    ListView_SetColumnWidth(unitItemsList_, 0, tokenCol);
+    ListView_SetColumnWidth(unitItemsList_, 1, nameCol);
+    ListView_SetColumnWidth(unitItemsList_, 2, amountCol);
+    ListView_SetColumnWidth(unitItemsList_, 3, afterComCol);
+  }
+
+  if (unitSkillsList_ != nullptr)
+  {
+    const int skillIdCol = (std::max)(56, safeRightPanelWidth * 38 / 100);
+    const int levelCol = (std::max)(52, safeRightPanelWidth * 20 / 100);
+    const int afterComCol = (std::max)(70, safeRightPanelWidth * 34 / 100);
+    ListView_SetColumnWidth(unitSkillsList_, 0, skillIdCol);
+    ListView_SetColumnWidth(unitSkillsList_, 1, levelCol);
+    ListView_SetColumnWidth(unitSkillsList_, 2, afterComCol);
+  }
+
+  if (regionResourcesList_ != nullptr)
+  {
+    const int tokenCol = (std::max)(56, safeDetailsWidth * 44 / 100);
+    const int amountCol = (std::max)(52, safeDetailsWidth * 24 / 100);
+    const int afterComCol = (std::max)(56, safeDetailsWidth * 26 / 100);
+    ListView_SetColumnWidth(regionResourcesList_, 0, tokenCol);
+    ListView_SetColumnWidth(regionResourcesList_, 1, amountCol);
+    ListView_SetColumnWidth(regionResourcesList_, 2, afterComCol);
+  }
+
+  if (regionForSaleList_ != nullptr)
+  {
+    const int tokenCol = (std::max)(54, safeDetailsWidth * 36 / 100);
+    const int amountCol = (std::max)(48, safeDetailsWidth * 20 / 100);
+    const int priceCol = (std::max)(46, safeDetailsWidth * 16 / 100);
+    const int afterComCol = (std::max)(56, safeDetailsWidth * 24 / 100);
+    ListView_SetColumnWidth(regionForSaleList_, 0, tokenCol);
+    ListView_SetColumnWidth(regionForSaleList_, 1, amountCol);
+    ListView_SetColumnWidth(regionForSaleList_, 2, priceCol);
+    ListView_SetColumnWidth(regionForSaleList_, 3, afterComCol);
+  }
+
+  if (regionWantedList_ != nullptr)
+  {
+    const int tokenCol = (std::max)(54, safeDetailsWidth * 36 / 100);
+    const int amountCol = (std::max)(48, safeDetailsWidth * 20 / 100);
+    const int priceCol = (std::max)(46, safeDetailsWidth * 16 / 100);
+    const int afterComCol = (std::max)(56, safeDetailsWidth * 24 / 100);
+    ListView_SetColumnWidth(regionWantedList_, 0, tokenCol);
+    ListView_SetColumnWidth(regionWantedList_, 1, amountCol);
+    ListView_SetColumnWidth(regionWantedList_, 2, priceCol);
+    ListView_SetColumnWidth(regionWantedList_, 3, afterComCol);
+  }
+
+  const int detailTextWidth = (std::max)(140, safeRightPanelWidth - WinSizingUtils::scalePx(24, metrics));
+  if (unitErrorsList_ != nullptr)
+  {
+    ListView_SetColumnWidth(unitErrorsList_, 0, detailTextWidth);
+  }
+  if (unitWarningsList_ != nullptr)
+  {
+    ListView_SetColumnWidth(unitWarningsList_, 0, detailTextWidth);
+  }
+  if (unitEventsList_ != nullptr)
+  {
+    ListView_SetColumnWidth(unitEventsList_, 0, detailTextWidth);
+  }
 }
 
 // TODO: add z display to tab label (display "Map z:<z_coord>")

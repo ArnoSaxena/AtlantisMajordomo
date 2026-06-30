@@ -93,7 +93,7 @@ MapTabContentQt::MapTabContentQt(AppData&   appData,
     detailsPaneLayout->setSpacing(2);
 
     regionDateLabel_   = new QLabel("\u2014", detailsPane);       // em-dash placeholder
-    hoverRegionLabel_  = new QLabel("Hover: \u2014", detailsPane);
+    hoverRegionLabel_  = new QLabel("Hover: -", detailsPane);
 
     regionDetailsView_ = new QPlainTextEdit(detailsPane);
     regionDetailsView_->setReadOnly(true);
@@ -320,6 +320,15 @@ MapTabContentQt::MapTabContentQt(AppData&   appData,
                 this, &MapTabContentQt::onMapNoRegionClicked);
             connect(mapCanvas_, &MapCanvasWidget::zSelectionRequested,
                 this, &MapTabContentQt::onZSelectionRequested);
+            connect(mapCanvas_, &MapCanvasWidget::hoverTextChanged,
+                this,
+                [this](const QString& hoverText)
+                {
+                    if (hoverRegionLabel_)
+                    {
+                        hoverRegionLabel_->setText(hoverText);
+                    }
+                });
 
     // -----------------------------------------------------------------------
     // Outer splitter initial sizes: left 75 % | right 25 %

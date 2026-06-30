@@ -118,10 +118,10 @@ void MapTabContentQt::selectUnitInMap(int unitNumber)
         }
     }
 
-    // TODO (step 7.9.2): Map canvas scrolling to center on the selected region.
-    // Currently, mapCanvas_ is a QWidget* placeholder. Once 7.9.1 instantiates
-    // MapCanvasWidget, this section will scroll the map to the region's center
-    // and invalidate for repainting.
+    if (mapCanvas_)
+    {
+        (void)mapCanvas_->centerOnRegion(selectedRegionX_, selectedRegionY_);
+    }
 }
 
 bool MapTabContentQt::focusOriginUnitForSelectedUnitNew()

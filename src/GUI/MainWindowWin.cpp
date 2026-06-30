@@ -37,6 +37,7 @@
 #include "GUI/ReportsTabContent.hpp"
 #include "GUI/SkillsTabContent.hpp"
 #include "GUI/SettingsDialog.hpp"
+#include "GUI/WinSizingUtils.hpp"
 #include "GUI/WinTabView.hpp"
 
 #include <commctrl.h>
@@ -68,6 +69,10 @@ constexpr int IDM_TAB_CTX_LOAD_REPORT = 4001;
 
 constexpr UINT WM_APP_AUTOLOAD = WM_APP + 1;
 constexpr UINT WM_APP_INIT     = WM_APP + 2;
+
+#ifndef WM_DPICHANGED
+#define WM_DPICHANGED 0x02E0
+#endif
 
 static constexpr wchar_t kClassName[] = L"WindowsAppMainWnd";
 
@@ -108,6 +113,131 @@ static RECT getTabDisplayRect(HWND tabControl, const RECT& tabBounds)
 
 namespace
 {
+  UiSizeProfile::Profile uiSizeProfileFromConfigMode(const std::wstring& configuredMode)
+  {
+    std::wstring normalized = configuredMode;
+    for (wchar_t& ch : normalized)
+    {
+      ch = static_cast<wchar_t>(std::towlower(ch));
+    }
+
+    if (normalized == L"compact")
+    {
+      return UiSizeProfile::Profile::Compact;
+    }
+    if (normalized == L"standard")
+    {
+      return UiSizeProfile::Profile::Standard;
+    }
+    if (normalized == L"large")
+    {
+      return UiSizeProfile::Profile::Large;
+    }
+
+    return UiSizeProfile::Profile::Auto;
+  }
+
+  struct FontApplyContext
+  {
+    HFONT normalFont { nullptr };
+    HFONT smallFont { nullptr };
+    const UiSizeProfile::Metrics* metrics { nullptr };
+  };
+
+  bool areMetricsEqual(const UiSizeProfile::Metrics& lhs, const UiSizeProfile::Metrics& rhs)
+  {
+    return lhs.baseFontPx == rhs.baseFontPx
+      && lhs.smallFontPx == rhs.smallFontPx
+      && lhs.buttonHeight == rhs.buttonHeight
+      && lhs.buttonMinWidth == rhs.buttonMinWidth
+      && lhs.rowHeight == rhs.rowHeight
+      && lhs.headerHeight == rhs.headerHeight
+      && lhs.spacing == rhs.spacing
+      && lhs.margin == rhs.margin
+      && lhs.dialogWidthScale == rhs.dialogWidthScale
+      && lhs.dialogHeightScale == rhs.dialogHeightScale
+      && lhs.mapHexWidthScale == rhs.mapHexWidthScale;
+  }
+
+  HFONT fontForWindow(HWND hwnd, const FontApplyContext& context)
+  {
+    wchar_t className[64] = {};
+    GetClassNameW(hwnd, className, static_cast<int>(std::size(className)));
+    if (context.smallFont != nullptr && _wcsicmp(className, STATUSCLASSNAMEW) == 0)
+    {
+      return context.smallFont;
+    }
+    return context.normalFont;
+  }
+
+  BOOL CALLBACK applyFontToChildProc(HWND childHwnd, LPARAM lp)
+  {
+    const auto* context = reinterpret_cast<const FontApplyContext*>(lp);
+    if (context == nullptr)
+    {
+      return TRUE;
+    }
+
+    HFONT font = fontForWindow(childHwnd, *context);
+    if (font != nullptr)
+    {
+      WinSizingUtils::applyControlFont(childHwnd, font);
+    }
+
+    if (context->metrics != nullptr)
+    {
+      wchar_t className[64] = {};
+      GetClassNameW(childHwnd, className, static_cast<int>(std::size(className)));
+      if (_wcsicmp(className, WC_LISTVIEWW) == 0)
+      {
+        WinSizingUtils::listViewApplyDensity(childHwnd,
+                                             *context->metrics,
+                                             context->normalFont,
+                                             context->smallFont);
+      }
+      else if (_wcsicmp(className, WC_COMBOBOXW) == 0)
+      {
+        WinSizingUtils::comboApplyHeight(childHwnd, *context->metrics);
+      }
+      else if (_wcsicmp(className, L"EDIT") == 0)
+      {
+        WinSizingUtils::editApplyHeight(childHwnd, *context->metrics);
+      }
+    }
+
+    return TRUE;
+  }
+
+  struct OwnedWindowApplyContext
+  {
+    HWND ownerHwnd { nullptr };
+    FontApplyContext fonts {};
+  };
+
+  BOOL CALLBACK applyFontToOwnedWindowProc(HWND candidateHwnd, LPARAM lp)
+  {
+    const auto* context = reinterpret_cast<const OwnedWindowApplyContext*>(lp);
+    if (context == nullptr || context->ownerHwnd == nullptr || candidateHwnd == context->ownerHwnd)
+    {
+      return TRUE;
+    }
+
+    const HWND owner = GetWindow(candidateHwnd, GW_OWNER);
+    if (owner != context->ownerHwnd)
+    {
+      return TRUE;
+    }
+
+    HFONT font = fontForWindow(candidateHwnd, context->fonts);
+    if (font != nullptr)
+    {
+      WinSizingUtils::applyControlFont(candidateHwnd, font);
+    }
+    EnumChildWindows(candidateHwnd, applyFontToChildProc, reinterpret_cast<LPARAM>(&context->fonts));
+    InvalidateRect(candidateHwnd, nullptr, TRUE);
+    return TRUE;
+  }
+
   struct MainFactionExportContext
   {
     int factionNumber { 0 };
@@ -753,6 +883,7 @@ bool MainWindow::create(HINSTANCE instance, AppData& appData)
   appData_->setMagicSkillTriggersCsv(appConfig_.getMagicSkillTriggersCsv());
   appData_->setOnlyLeaderCanTeach(appConfig_.getOnlyLeaderCanTeach());
   appData_->setLeaderMages(appConfig_.getLeaderMages());
+  uiScaleManager_.setProfileOverride(uiSizeProfileFromConfigMode(appConfig_.getUiSizeMode()));
   Commands::setFullMonthOrderKeywordsCsv(appConfig_.getFullMonthOrdersCsv());
 
   INITCOMMONCONTROLSEX icc {};
@@ -842,6 +973,7 @@ LRESULT MainWindow::handleMessage(UINT msg, WPARAM wp, LPARAM lp)
       createMenu();
       tabView_->create(hwnd_, GUI::ControlIds::kMainTabView);
       initializeTabs();
+      refreshUiScaleFromWindow(true);
 
       // Defer the heavy tab-content creation so the window can be shown
       // immediately; WM_APP_INIT runs as the very first message after the
@@ -919,10 +1051,47 @@ LRESULT MainWindow::handleMessage(UINT msg, WPARAM wp, LPARAM lp)
         });
 
       // Force a layout pass so all newly created child panels are sized correctly.
+      refreshUiScaleFromWindow(true);
       SendMessageW(hwnd_, WM_SIZE, SIZE_RESTORED, 0);
 
       PostMessageW(hwnd_, WM_APP_AUTOLOAD, 0, 0);
 
+      return 0;
+    }
+
+    case WM_DPICHANGED:
+    {
+      const RECT* suggestedRect = reinterpret_cast<const RECT*>(lp);
+      if (suggestedRect != nullptr)
+      {
+        SetWindowPos(hwnd_,
+                    nullptr,
+                    suggestedRect->left,
+                    suggestedRect->top,
+                    suggestedRect->right - suggestedRect->left,
+                    suggestedRect->bottom - suggestedRect->top,
+                    SWP_NOZORDER | SWP_NOACTIVATE);
+      }
+
+      refreshUiScaleFromWindow(true);
+      SendMessageW(hwnd_, WM_SIZE, SIZE_RESTORED, 0);
+      return 0;
+    }
+
+    case WM_DISPLAYCHANGE:
+    {
+      if (refreshUiScaleFromWindow(false))
+      {
+        SendMessageW(hwnd_, WM_SIZE, SIZE_RESTORED, 0);
+      }
+      return 0;
+    }
+
+    case SettingsDialog::kUiSizingChangedMessage:
+    {
+      uiScaleManager_.setProfileOverride(uiSizeProfileFromConfigMode(appConfig_.getUiSizeMode()));
+      refreshUiScaleFromWindow(true);
+      SendMessageW(hwnd_, WM_SIZE, SIZE_RESTORED, 0);
       return 0;
     }
 
@@ -1026,6 +1195,8 @@ LRESULT MainWindow::handleMessage(UINT msg, WPARAM wp, LPARAM lp)
 
     case WM_SIZE:
     {
+      refreshUiScaleFromWindow(false);
+
       if (wp != SIZE_MINIMIZED)
       {
         persistWindowSizeToConfig();
@@ -1034,7 +1205,8 @@ LRESULT MainWindow::handleMessage(UINT msg, WPARAM wp, LPARAM lp)
       RECT rc {};
       GetClientRect(hwnd_, &rc);
 
-      constexpr int kMargin = 8;
+      const int kMargin = WinSizingUtils::scalePx(uiScaleManager_.currentMetrics().margin,
+                      uiScaleManager_.currentMetrics());
       rc.left   += kMargin;
       rc.top    += kMargin;
       rc.right  -= kMargin;
@@ -1375,6 +1547,9 @@ LRESULT MainWindow::handleMessage(UINT msg, WPARAM wp, LPARAM lp)
         {
           SettingsDialog settingsDialog;
           settingsDialog.showDialog(hwnd_, *appData_, appConfig_);
+          uiScaleManager_.setProfileOverride(uiSizeProfileFromConfigMode(appConfig_.getUiSizeMode()));
+          refreshUiScaleFromWindow(true);
+          SendMessageW(hwnd_, WM_SIZE, SIZE_RESTORED, 0);
           return 0;
         }
 
@@ -1652,4 +1827,58 @@ void MainWindow::persistWindowSizeToConfig()
   appConfig_.setMainWindowWidth(width);
   appConfig_.setMainWindowHeight(height);
   appConfig_.save();
+}
+
+bool MainWindow::refreshUiScaleFromWindow(bool forceApply)
+{
+  const UiSizeProfile::Profile previousProfile = uiScaleManager_.currentProfile();
+  const UiSizeProfile::Metrics previousMetrics = uiScaleManager_.currentMetrics();
+
+  uiScaleManager_.refreshFromWindow(hwnd_);
+  const UiSizeProfile::Profile nextProfile = uiScaleManager_.currentProfile();
+  const UiSizeProfile::Metrics nextMetrics = uiScaleManager_.currentMetrics();
+
+  const bool profileOrMetricChanged =
+    (previousProfile != nextProfile)
+    || !areMetricsEqual(previousMetrics, nextMetrics);
+  const bool shouldApply = forceApply || !hasAppliedUiScale_ || profileOrMetricChanged;
+  if (!shouldApply)
+  {
+    return false;
+  }
+
+  uiScaleManager_.createUiFontHandles();
+  applyCurrentUiScale();
+  hasAppliedUiScale_ = true;
+  return true;
+}
+
+void MainWindow::applyCurrentUiScale()
+{
+  if (hwnd_ == nullptr)
+  {
+    return;
+  }
+
+  const FontApplyContext fonts {
+    .normalFont = uiScaleManager_.normalFont(),
+    .smallFont = uiScaleManager_.smallFont(),
+    .metrics = &uiScaleManager_.currentMetrics(),
+  };
+
+  if (fonts.normalFont == nullptr)
+  {
+    return;
+  }
+
+  WinSizingUtils::applyControlFont(hwnd_, fonts.normalFont);
+  EnumChildWindows(hwnd_, applyFontToChildProc, reinterpret_cast<LPARAM>(&fonts));
+
+  const OwnedWindowApplyContext ownedContext {
+    .ownerHwnd = hwnd_,
+    .fonts = fonts,
+  };
+  EnumThreadWindows(GetCurrentThreadId(), applyFontToOwnedWindowProc, reinterpret_cast<LPARAM>(&ownedContext));
+
+  InvalidateRect(hwnd_, nullptr, TRUE);
 }

@@ -112,6 +112,20 @@ public:
     void setMapHexWidth(int mapHexWidth);
 
     /**
+    * @brief Gets the configured UI size mode.
+    *
+    * Returns one of: Auto, Compact, Standard, Large.
+    */
+    const std::wstring& getUiSizeMode() const;
+
+    /**
+    * @brief Sets the configured UI size mode.
+    *
+    * Unsupported values are normalized to Auto.
+    */
+    void setUiSizeMode(const std::wstring& uiSizeMode);
+
+    /**
     * @brief Gets whether only leaders may teach.
     */
     bool getOnlyLeaderCanTeach() const;
@@ -209,6 +223,7 @@ private:
     int mainWindowWidth_ { 900 };
     int mainWindowHeight_ { 600 };
     int mapHexWidth_ { 40 };
+    std::wstring uiSizeMode_ { L"Auto" };
     bool onlyLeaderCanTeach_ { false };
     bool leaderMages_ { true };
   std::wstring flyingShipsCsv_;

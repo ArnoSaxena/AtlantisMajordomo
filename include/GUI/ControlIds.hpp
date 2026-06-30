@@ -82,6 +82,7 @@ constexpr int kSettingsDataFilePathInput = 5020;
 constexpr int kSettingsDataFilePathBrowse = 5021;
 constexpr int kSettingsReportFolderPathInput = 5022;
 constexpr int kSettingsReportFolderBrowse = 5023;
+constexpr int kSettingsUiSizeModeCombo = 5024;
 constexpr int kSettingsFlyingShipsAdd = 5013;
 constexpr int kSettingsFlyingShipsRemove = 5014;
 constexpr int kSettingsFullMonthOrdersAdd = 5015;
@@ -90,7 +91,7 @@ constexpr int kSettingsMagicTriggersAdd = 5017;
 constexpr int kSettingsMagicTriggersRemove = 5018;
 constexpr int kSettingsLeaderMagesCheck = 5019;
 
-constexpr std::array<int, 54> kAll = {
+constexpr std::array<int, 55> kAll = {
   kMainTabView,
   kReportsList,
   kReportsRemoveButton,
@@ -138,6 +139,7 @@ constexpr std::array<int, 54> kAll = {
   kSettingsDataFilePathBrowse,
   kSettingsReportFolderPathInput,
   kSettingsReportFolderBrowse,
+  kSettingsUiSizeModeCombo,
   kSettingsFlyingShipsAdd,
   kSettingsFlyingShipsRemove,
   kSettingsFullMonthOrdersAdd,

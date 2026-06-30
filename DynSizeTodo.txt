@@ -1,0 +1,369 @@
+Dynamic UI Sizing TODO (Windows-first)
+======================================
+
+Objective
+---------
+Make the Win32 UI adapt better on smaller laptop displays by reducing visual density
+(font sizes, button/control sizes, list/table row heights, and default window/panel
+sizes) in a controlled, testable way.
+
+Scope priority
+--------------
+- Primary target: Windows (Win32) UI under src/GUI/*.cpp.
+- Secondary target: Qt/Linux parity only after Windows behavior is stable.
+
+High-level answer
+-----------------
+Yes, this is feasible and should be done mostly in the Windows code path.
+Use display and DPI metrics (monitor work area, effective DPI, window DPI)
+to select stepped profiles (Compact / Standard / Large), then centralize
+all Win32 UI measurements through a shared metrics object.
+
+Constraints and guardrails
+--------------------------
+- Keep sizing policy in GUI layer only; no business/data-layer changes.
+- Prefer stepped profiles over continuous scaling for predictable layouts.
+- Preserve minimum readability and click-target floors.
+- Keep manual user override possible (Auto, Compact, Standard, Large).
+
+
+Suggested implementation steps
+------------------------------
+
+1. Win32 size profile model + detector
+  Status         : DONE
+   Complexity     : Medium
+   Est. cost      : 0.9x
+   Files (new)    : include/GUI/UiSizeProfile.hpp
+                    src/GUI/UiSizeProfile.cpp
+   Description    :
+     - Define profile enum: Auto, Compact, Standard, Large.
+     - Define UiMetrics struct with canonical values:
+       baseFontPx, smallFontPx, buttonHeight, buttonMinWidth,
+       rowHeight, headerHeight, spacing, margin,
+       dialogWidthScale, dialogHeightScale, mapHexWidthScale.
+     - Implement Win32 detector from monitor work area + DPI:
+       use MonitorFromWindow/GetMonitorInfo/GetDpiForWindow (or fallback APIs),
+       map to stepped thresholds.
+
+   Cross-step notes from Step 1
+   ----------------------------
+   - Added namespace UiSizeProfile with:
+     Profile enum (Auto/Compact/Standard/Large),
+     DisplayInfo struct (availableWidth/availableHeight/dpi),
+     Metrics struct (font/control/row/spacing and scaling factors).
+   - Added detector functions:
+     queryDisplayInfoForWindow(HWND), detectAutoProfile(DisplayInfo),
+     resolveProfile(Profile, DisplayInfo), getMetrics(Profile).
+   - Detection source order:
+     monitor work area via MonitorFromWindow/GetMonitorInfo,
+     DPI via GetDpiForWindow with GetDeviceCaps fallback.
+   - Step is foundation-only and non-invasive:
+     no behavior is wired into existing windows yet,
+     preserving current runtime layout until Step 2/3 integration.
+
+2. Central Win32 metrics provider
+  Status         : DONE
+   Complexity     : Medium
+   Est. cost      : 1.0x
+   Files (new)    : include/GUI/UiScaleManagerWin.hpp
+                    src/GUI/UiScaleManagerWin.cpp
+   Description    :
+     - Own current profile + computed UiMetrics.
+     - API:
+       currentProfile(), currentMetrics(), setProfileOverride(),
+       refreshFromWindow(HWND), createUiFontHandles().
+     - Manage HFONT lifecycle for normal/small fonts.
+
+   Cross-step notes from Step 2
+   ----------------------------
+   - Added UiScaleManagerWin class that owns:
+     requested profile override, effective profile, computed metrics,
+     active DPI, and normal/small HFONT handles.
+   - Implemented required API:
+     currentProfile(), currentMetrics(), setProfileOverride(),
+     refreshFromWindow(HWND), createUiFontHandles().
+   - Font creation uses Segoe UI with DPI-aware logical heights from
+     metrics.baseFontPx/smallFontPx and has DEFAULT_GUI_FONT fallback.
+   - HFONT lifecycle is centralized in manager destructor + destroyFonts().
+   - Step remains integration-safe:
+     MainWindow/tabs are not yet wired to consume manager state until Step 3,
+     so existing runtime behavior is preserved.
+
+3. MainWindowWin integration (single source of truth)
+  Status         : DONE
+   Complexity     : Medium
+   Est. cost      : 1.1x
+   Files          : include/GUI/MainWindowWin.hpp
+                    src/GUI/MainWindowWin.cpp
+   Description    :
+     - Instantiate UiScaleManagerWin at top-level window.
+     - Initialize metrics on create/show.
+     - Handle WM_DPICHANGED/WM_DISPLAYCHANGE/WM_SIZE relevant refresh logic.
+     - Broadcast updated metrics to tab contents and dialogs.
+
+   Cross-step notes from Step 3
+   ----------------------------
+   - MainWindow now owns a UiScaleManagerWin instance as the Windows UI sizing
+     single source of truth.
+   - Initial metrics/font application is performed during startup and again once
+     all tab contents are created.
+   - Added Win32 message integration:
+     WM_DPICHANGED applies suggested bounds, refreshes scale state, and relayouts;
+     WM_DISPLAYCHANGE re-detects profile/metrics and relayouts when changed;
+     WM_SIZE performs a lightweight refresh path so monitor/profile transitions
+     remain coherent during resize/move flows.
+   - Added broadcast pass that applies current UI fonts across all child controls
+     and owned dialog windows to keep top-level and tab/dialog surfaces in sync.
+
+4. Win32 control sizing helper utilities
+  Status         : DONE
+   Complexity     : Medium
+   Est. cost      : 0.9x
+   Files (new)    : include/GUI/WinSizingUtils.hpp
+                    src/GUI/WinSizingUtils.cpp
+   Description    :
+     - Utility helpers for common controls:
+       applyControlFont(HWND, HFONT),
+       scalePx(int base, metrics),
+       listViewApplyDensity(HWND, metrics),
+       comboApplyHeight(HWND, metrics),
+       editApplyHeight(HWND, metrics).
+     - Replace ad-hoc literal sizes in SetWindowPos/CreateWindowExW call sites.
+
+   Cross-step notes from Step 4
+   ----------------------------
+   - Added centralized Win32 helper module WinSizingUtils with reusable APIs for
+     control font application, pixel scaling, list density, combo height, and
+     single-line edit height.
+   - Integrated helper usage into MainWindow's global UI-scale apply pass so
+     profile/DPI updates now flow through helper APIs instead of direct WM_SETFONT
+     calls in MainWindow.
+   - Added list-view density application via helper in the broadcast pass,
+     including header font handling.
+   - Replaced a MainWindow hardcoded frame margin with metrics-driven scaling.
+
+5. Windows AppConfig override (Auto vs forced profile)
+  Status         : DONE
+   Complexity     : Medium
+   Est. cost      : 0.8x
+   Files          : include/AppConfig.hpp
+                    src/AppConfig.cpp
+                    src/GUI/SettingsDialog.cpp
+   Description    :
+     - Add persisted config option for UI size mode:
+       Auto / Compact / Standard / Large.
+     - Add SettingsDialog controls to choose mode.
+     - On apply/save: trigger MainWindowWin metrics recompute + re-layout.
+
+   Cross-step notes from Step 5
+   ----------------------------
+   - Added persisted AppConfig key "uiSizeMode" with normalized values:
+     Auto / Compact / Standard / Large.
+   - SettingsDialog now exposes a "UI size mode" combo and persists selection
+     on Save/OK through AppConfig.
+   - Save/OK now notify MainWindow via a dedicated window message so changes are
+     applied live without requiring restart.
+   - MainWindow now maps configured mode to UiSizeProfile::Profile override,
+     applies it during startup, and forces recompute + relayout when settings
+     mode changes.
+
+6. Windows map tab sizing pass (highest impact)
+  Status         : DONE
+   Complexity     : High
+   Est. cost      : 1.6x
+   Files          : src/GUI/MapTabContent.cpp
+                    src/GUI/MapTabContent_Layout.cpp
+                    src/GUI/MapTabContent_MapCanvas.cpp
+                    src/GUI/MapTabContent_UnitDetails.cpp
+   Description    :
+     - Convert hardcoded dimensions in create/resize paths to metrics-driven values.
+     - Scale ListView column widths and line density.
+     - Scale map hex width and dependent geometry for compact profile.
+     - Ensure warning/search/orders rows remain usable on 1366x768.
+
+   Cross-step notes from Step 6
+   ----------------------------
+   - Added MapTabContent-local UI metrics resolution from AppConfig mode +
+     monitor/DPI auto-detection, including profile-to-metrics mapping and
+     scaled map-hex width computation.
+   - Converted key map-tab resize constants (button row, line/label heights,
+     search controls, warning buttons, orders-footer sizing) to metrics-driven
+     values so compact profiles reduce vertical pressure on small displays.
+   - Added centralized map-tab ListView column sizing pass that runs at create
+     and resize, with panel-aware widths for units/items/skills/details lists.
+   - Replaced map-canvas geometry and hit-test hex-width usage with scaled
+     profile metrics so compact profile now reduces map hex geometry and all
+     dependent marker math follows that size.
+
+7. Windows tab-by-tab compactness sweep
+   Status         : NOT STARTED
+   Complexity     : High
+   Est. cost      : 1.8x
+   Files          : src/GUI/ReportsTabContent.cpp
+                    src/GUI/EventsTabContent.cpp
+                    src/GUI/BattlesTabContent.cpp
+                    src/GUI/SkillsTabContent.cpp
+                    src/GUI/ItemsTabContent.cpp
+                    src/GUI/FactionsTabContent.cpp
+                    src/GUI/SettingsDialog.cpp
+   Description    :
+     - Replace hardcoded control sizes and SetWindowPos literals with metrics.
+     - Normalize button/edit/combo heights and spacing.
+     - Apply list/table density to all list-heavy tabs.
+
+8. Win32 dialog and startup window policy normalization
+   Status         : NOT STARTED
+   Complexity     : Medium
+   Est. cost      : 0.9x
+   Files          : src/GUI/MainWindowWin.cpp
+                    src/GUI/SettingsDialog.cpp
+   Description    :
+     - Ensure startup window defaults are profile-aware.
+     - Clamp initial/default dialog sizes to monitor work area.
+     - Preserve user-resized persisted dimensions where applicable.
+
+9. Runtime update/reflow behavior for Windows
+   Status         : NOT STARTED
+   Complexity     : Medium
+   Est. cost      : 0.9x
+   Files          : src/GUI/MainWindowWin.cpp
+                    src/GUI/*TabContent.cpp
+   Description    :
+     - Define which updates are live on profile/DPI change:
+       fonts, row heights, control sizes, map geometry.
+     - Avoid control recreation; update fonts + relayout in place.
+     - Keep expensive map recalculation bounded to necessary transitions.
+
+10. Windows QA matrix + threshold tuning
+    Status         : NOT STARTED
+    Complexity     : Medium
+    Est. cost      : 1.0x
+    Description    :
+      - Manual QA grid:
+        1366x768, 1600x900, 1920x1080, mixed-DPI dual-monitor.
+      - Validate clipping, tab usability, label readability, and map interaction.
+      - Tune profile thresholds and metrics constants from screenshots.
+
+11. Qt/Linux parity pass (secondary)
+    Status         : NOT STARTED
+    Complexity     : Medium
+    Est. cost      : 1.2x
+    Files          : src/GUI/Linux/*.cpp
+    Description    :
+      - Port stabilized Windows profile constants and behavior to Qt where relevant.
+      - Keep Linux implementation aligned in intent, not necessarily pixel-identical.
+      - Reuse same profile names and AppConfig override semantics.
+
+
+Cross-step notes
+----------------
+- Windows is the source-of-truth track for sizing policy in this plan.
+- Keep profile constants centralized; avoid per-file one-off size multipliers.
+- For Win32 lists/tables, explicitly set row/header density; font changes alone are insufficient.
+- Apply WM_DPICHANGED handling early (step 3) to avoid blurry/misaligned controls.
+- Defer Qt parity until Windows QA signs off to avoid duplicate tuning work.
+
+
+Current Windows hot spots (priority inventory)
+----------------------------------------------
+1. Main window and global layout frame
+  Files          : src/GUI/MainWindowWin.cpp, src/GUI/WinTabView.cpp
+  Why hot        : Top-level window/tab panel geometry and resize flow control all tabs.
+  Patterns       : CreateWindowExW + SetWindowPos in WM_SIZE path.
+
+2. Map tab creation density (very high)
+  Files          : src/GUI/MapTabContent.cpp
+  Why hot        : Large number of labels/buttons/lists/edits created with literal sizes.
+  Patterns       : CreateWindowExW for most child controls and list/report surfaces.
+
+3. Map tab runtime layout (very high)
+  Files          : src/GUI/MapTabContent_Layout.cpp
+  Why hot        : Concentrated SetWindowPos coordinates/sizes for every map-tab control.
+  Patterns       : Button rows, search row, list/table extents, right-panel section heights.
+
+4. Map canvas geometry coupling (high)
+  Files          : src/GUI/MapTabContent_MapCanvas.cpp
+  Why hot        : Hex width/marker math affects readability and fit on smaller displays.
+  Patterns       : Derived dimensions and map rendering geometry that assume current density.
+
+5. Reports tab split/details (high)
+  Files          : src/GUI/ReportsTabContent.cpp
+  Why hot        : Fixed detail-pane positioning and list column widths can crowd small screens.
+  Patterns       : SetWindowPos chain and ListView_SetColumnWidth literals.
+
+6. Battles tab date + list + report panes (high)
+  Files          : src/GUI/BattlesTabContent.cpp
+  Why hot        : Mixed fixed heights (label/combo/list/edit) and hardcoded combo/list sizing.
+  Patterns       : SetWindowPos literals and list column width fallback constants.
+
+7. Factions tab form + attitudes table + scrollbar (high)
+  Files          : src/GUI/FactionsTabContent.cpp
+  Why hot        : Dense form with many controls and custom scroll behavior.
+  Patterns       : Repeated SetWindowPos and explicit list widths/heights.
+
+8. Items tab long form + checkboxes + scrollbar (high)
+  Files          : src/GUI/ItemsTabContent.cpp
+  Why hot        : Many controls with fixed placement; compact profile must preserve alignment.
+  Patterns       : CreateWindowExW for many fields + SetWindowPos per-control placement.
+
+9. Skills tab long form + scroll area (medium-high)
+  Files          : src/GUI/SkillsTabContent.cpp
+  Why hot        : Similar dense vertical form with fixed geometry and list area.
+  Patterns       : SetWindowPos sequence and fixed list/field dimensions.
+
+10. Settings dialog (medium-high)
+   Files         : src/GUI/SettingsDialog.cpp
+   Why hot       : Very large dialog with many controls and list/edit rows.
+   Patterns      : CreateWindowExW/SetWindowPos literals across sections.
+
+11. Events tab list density (medium)
+   Files         : src/GUI/EventsTabContent.cpp
+   Why hot       : List readability/crowding strongly affected by row/header/font metrics.
+   Patterns      : List/report sizing and position logic.
+
+12. Shared ListView density behavior (medium)
+   Files         : src/GUI/*TabContent.cpp (all LVS_REPORT users)
+   Why hot       : Consistent row heights and headers are required to avoid mixed density.
+   Patterns      : LVS_REPORT controls without centralized row/header metric application.
+
+
+Step-gate policy (must stay buildable and working between steps)
+----------------------------------------------------------------
+- Gate 1: Scope containment
+  Only modify files declared in the active step unless a dependency requires a small
+  shared helper update.
+
+- Gate 2: Backward-compatible defaults
+  New sizing logic must preserve current behavior when profile=Standard/Auto on
+  normal displays.
+
+- Gate 3: Compile safety
+  No partial API migrations: helper signatures, includes, and call sites must be
+  complete in the same step.
+
+- Gate 4: Runtime safety
+  Application must open, tabs must render, and navigation/editing actions used by
+  existing workflows must still function before proceeding.
+
+- Gate 5: Geometry sanity checks
+  Before moving to next step, verify there is no clipping/regression in:
+  Main window, Map tab, Reports tab, one long-form tab (Items/Factions/Skills),
+  and Settings dialog.
+
+- Gate 6: Step rollback boundary
+  Each step should be structured so it can be reverted independently if a regression
+  is found, without undoing prior completed steps.
+
+- Gate 7: User-run build checkpoint
+  After each major phase (A/B/C/D/E), wait for your local build/runtime verdict
+  before continuing to the next phase.
+
+
+Suggested execution order
+-------------------------
+- Phase A (Windows foundation): steps 1-4
+- Phase B (Windows control/override): step 5
+- Phase C (Windows rollout): steps 6-9
+- Phase D (Windows polish): step 10
+- Phase E (Qt parity): step 11
