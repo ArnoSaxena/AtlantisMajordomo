@@ -6,7 +6,7 @@ Usage:
     python build_multi.py --help                          # Show all options
     python build_multi.py                                 # Build release
     python build_multi.py --build-type debug              # Build debug
-    python build_multi.py --debug                         # Enable #define DEBUG in Main.cpp
+    python build_multi.py --debug                         # Enable #define DEBUG in DebugLog.cpp
     python build_multi.py --clean                         # Clean build directory
     python build_multi.py --clean-all                     # Remove all artifacts (build, venv, cache)
     python build_multi.py --clean --build-type release    # Clean and build release
@@ -123,7 +123,7 @@ parser.add_argument(
     action='store_true',
     required=False,
     default=False,
-    help='Enable #define DEBUG in src/Main.cpp (default: off when not specified)'
+    help='Enable #define DEBUG in src/DebugLog.cpp (default: off when not specified)'
 )
 
 args = parser.parse_args()
@@ -306,16 +306,16 @@ def bump_about_version():
 
 def set_main_debug_define(debug_enabled):
     """
-    Toggle '#define DEBUG' in src/Main.cpp.
+    Toggle '#define DEBUG' in src/DebugLog.cpp.
 
     Args:
         debug_enabled: True to enable DEBUG, False to comment it out
     """
-    main_cpp_path = os.path.join(src_working_dir, "src", "Main.cpp")
-    if not os.path.isfile(main_cpp_path):
-        raise RuntimeError(f"Main.cpp not found: {main_cpp_path}")
+    debuglog_cpp_path = os.path.join(src_working_dir, "src", "DebugLog.cpp")
+    if not os.path.isfile(debuglog_cpp_path):
+        raise RuntimeError(f"DebugLog.cpp not found: {debuglog_cpp_path}")
 
-    with open(main_cpp_path, "r", encoding="utf-8") as file:
+    with open(debuglog_cpp_path, "r", encoding="utf-8") as file:
         lines = file.readlines()
 
     define_pattern = re.compile(r"^\s*(//\s*)?#define\s+DEBUG\s*$")
@@ -330,16 +330,16 @@ def set_main_debug_define(debug_enabled):
             break
 
     if insertion_index is None:
-        raise RuntimeError("Could not locate '#ifdef DEBUG' in src/Main.cpp")
+        raise RuntimeError("Could not locate '#ifdef DEBUG' in src/DebugLog.cpp")
 
     desired_line = "#define DEBUG\n" if debug_enabled else "// #define DEBUG\n"
     cleaned_lines.insert(insertion_index, desired_line)
 
     if cleaned_lines != lines:
-        with open(main_cpp_path, "w", encoding="utf-8", newline="") as file:
+        with open(debuglog_cpp_path, "w", encoding="utf-8", newline="") as file:
             file.writelines(cleaned_lines)
 
-    print(f"[*] DEBUG define in src/Main.cpp set to: {'on' if debug_enabled else 'off'}")
+    print(f"[*] DEBUG define in src/DebugLog.cpp set to: {'on' if debug_enabled else 'off'}")
 
 
 def configure():
