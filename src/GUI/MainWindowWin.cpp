@@ -113,6 +113,98 @@ static RECT getTabDisplayRect(HWND tabControl, const RECT& tabBounds)
 
 namespace
 {
+  constexpr int kDefaultMainWindowWidth = 900;
+  constexpr int kDefaultMainWindowHeight = 600;
+
+  RECT resolveWorkAreaForStartup()
+  {
+    RECT workArea { 0, 0, GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN) };
+
+    POINT cursorPos {};
+    if (GetCursorPos(&cursorPos))
+    {
+      HMONITOR monitor = MonitorFromPoint(cursorPos, MONITOR_DEFAULTTONEAREST);
+      if (monitor != nullptr)
+      {
+        MONITORINFO monitorInfo {};
+        monitorInfo.cbSize = sizeof(monitorInfo);
+        if (GetMonitorInfoW(monitor, &monitorInfo))
+        {
+          return monitorInfo.rcWork;
+        }
+      }
+    }
+
+    RECT systemWorkArea {};
+    if (SystemParametersInfoW(SPI_GETWORKAREA, 0, &systemWorkArea, 0))
+    {
+      return systemWorkArea;
+    }
+
+    return workArea;
+  }
+
+  struct StartupWindowPlacement
+  {
+    int x { CW_USEDEFAULT };
+    int y { CW_USEDEFAULT };
+    int width { kDefaultMainWindowWidth };
+    int height { kDefaultMainWindowHeight };
+  };
+
+  StartupWindowPlacement resolveStartupWindowPlacement(const AppConfig& appConfig,
+                                                       const UiSizeProfile::Metrics& metrics)
+  {
+    const RECT workArea = resolveWorkAreaForStartup();
+    const int rawWorkWidth = static_cast<int>(workArea.right - workArea.left);
+    const int rawWorkHeight = static_cast<int>(workArea.bottom - workArea.top);
+    const int workWidth = rawWorkWidth > 480 ? rawWorkWidth : 480;
+    const int workHeight = rawWorkHeight > 360 ? rawWorkHeight : 360;
+
+    int desiredWidth = appConfig.getMainWindowWidth();
+    int desiredHeight = appConfig.getMainWindowHeight();
+
+    const bool usingDefaultConfigSize =
+      desiredWidth == kDefaultMainWindowWidth
+      && desiredHeight == kDefaultMainWindowHeight;
+    if (usingDefaultConfigSize)
+    {
+      desiredWidth = static_cast<int>(
+        static_cast<double>(desiredWidth) * (metrics.dialogWidthScale > 0.0 ? metrics.dialogWidthScale : 1.0));
+      desiredHeight = static_cast<int>(
+        static_cast<double>(desiredHeight) * (metrics.dialogHeightScale > 0.0 ? metrics.dialogHeightScale : 1.0));
+    }
+
+    const int minWidth = WinSizingUtils::scalePx(720, metrics);
+    const int minHeight = WinSizingUtils::scalePx(500, metrics);
+    int clampedWidth = desiredWidth;
+    if (clampedWidth < minWidth)
+    {
+      clampedWidth = minWidth;
+    }
+    if (clampedWidth > workWidth)
+    {
+      clampedWidth = workWidth;
+    }
+
+    int clampedHeight = desiredHeight;
+    if (clampedHeight < minHeight)
+    {
+      clampedHeight = minHeight;
+    }
+    if (clampedHeight > workHeight)
+    {
+      clampedHeight = workHeight;
+    }
+
+    StartupWindowPlacement placement {};
+    placement.width = clampedWidth;
+    placement.height = clampedHeight;
+    placement.x = workArea.left + (workWidth - clampedWidth) / 2;
+    placement.y = workArea.top + (workHeight - clampedHeight) / 2;
+    return placement;
+  }
+
   UiSizeProfile::Profile uiSizeProfileFromConfigMode(const std::wstring& configuredMode)
   {
     std::wstring normalized = configuredMode;
@@ -155,8 +247,7 @@ namespace
       && lhs.spacing == rhs.spacing
       && lhs.margin == rhs.margin
       && lhs.dialogWidthScale == rhs.dialogWidthScale
-      && lhs.dialogHeightScale == rhs.dialogHeightScale
-      && lhs.mapHexWidthScale == rhs.mapHexWidthScale;
+      && lhs.dialogHeightScale == rhs.dialogHeightScale;
   }
 
   HFONT fontForWindow(HWND hwnd, const FontApplyContext& context)
@@ -884,6 +975,12 @@ bool MainWindow::create(HINSTANCE instance, AppData& appData)
   appData_->setOnlyLeaderCanTeach(appConfig_.getOnlyLeaderCanTeach());
   appData_->setLeaderMages(appConfig_.getLeaderMages());
   uiScaleManager_.setProfileOverride(uiSizeProfileFromConfigMode(appConfig_.getUiSizeMode()));
+  const UiSizeProfile::DisplayInfo startupDisplay = UiSizeProfile::queryDisplayInfoForWindow(GetDesktopWindow());
+  const UiSizeProfile::Profile startupProfile = UiSizeProfile::resolveProfile(
+    uiSizeProfileFromConfigMode(appConfig_.getUiSizeMode()),
+    startupDisplay);
+  const UiSizeProfile::Metrics startupMetrics = UiSizeProfile::getMetrics(startupProfile);
+  const StartupWindowPlacement startupPlacement = resolveStartupWindowPlacement(appConfig_, startupMetrics);
   Commands::setFullMonthOrderKeywordsCsv(appConfig_.getFullMonthOrdersCsv());
 
   INITCOMMONCONTROLSEX icc {};
@@ -917,9 +1014,10 @@ bool MainWindow::create(HINSTANCE instance, AppData& appData)
     kClassName,
     L"Atlantis Majordomo",
     WS_OVERLAPPEDWINDOW,
-    CW_USEDEFAULT, CW_USEDEFAULT,
-    appConfig_.getMainWindowWidth(),
-    appConfig_.getMainWindowHeight(),
+    startupPlacement.x,
+    startupPlacement.y,
+    startupPlacement.width,
+    startupPlacement.height,
     nullptr, nullptr, instance, this
   );
 
@@ -1213,45 +1311,11 @@ LRESULT MainWindow::handleMessage(UINT msg, WPARAM wp, LPARAM lp)
       rc.bottom -= kMargin;
       tabView_->resize(rc);
 
-      HWND tabCtrl = tabView_->getTabControl();
-      if (tabCtrl)
+      RECT displayRc {};
+      if (tryGetCurrentTabDisplayRect(displayRc))
       {
-        RECT tabWndRc {};
-        GetWindowRect(tabCtrl, &tabWndRc);
-        MapWindowPoints(HWND_DESKTOP, hwnd_, reinterpret_cast<LPPOINT>(&tabWndRc), 2);
-        RECT displayRc = getTabDisplayRect(tabCtrl, tabWndRc);
-
-        if (reportsTabContent_)
-        {
-          reportsTabContent_->resize(displayRc);
-        }
-        if (mapTabContent_)
-        {
-          mapTabContent_->resize(displayRc);
-        }
-        if (eventsTabContent_)
-        {
-          eventsTabContent_->resize(displayRc);
-        }
-        if (itemsTabContent_)
-        {
-          itemsTabContent_->resize(displayRc);
-        }
-        if (skillsTabContent_)
-        {
-          skillsTabContent_->resize(displayRc);
-        }
-        if (factionsTabContent_)
-        {
-          factionsTabContent_->resize(displayRc);
-        }
-        if (battlesTabContent_)
-        {
-          battlesTabContent_->resize(displayRc);
-        }
+        resizeSelectedTabContent(displayRc);
       }
-
-      updateReportsTabVisibility();
       return 0;
     }
 
@@ -1770,6 +1834,80 @@ void MainWindow::updateReportsTabVisibility()
   skillsTabContent_->setVisible(selected == skillsTabIndex_);
   factionsTabContent_->setVisible(selected == factionsTabIndex_);
   battlesTabContent_->setVisible(selected == battlesTabIndex_);
+
+  RECT displayRect {};
+  if (tryGetCurrentTabDisplayRect(displayRect))
+  {
+    resizeSelectedTabContent(displayRect);
+  }
+}
+
+bool MainWindow::tryGetCurrentTabDisplayRect(RECT& displayRect) const
+{
+  if (!tabView_ || hwnd_ == nullptr)
+  {
+    return false;
+  }
+
+  HWND tabCtrl = tabView_->getTabControl();
+  if (tabCtrl == nullptr)
+  {
+    return false;
+  }
+
+  RECT tabWndRect {};
+  if (!GetWindowRect(tabCtrl, &tabWndRect))
+  {
+    return false;
+  }
+
+  MapWindowPoints(HWND_DESKTOP, hwnd_, reinterpret_cast<LPPOINT>(&tabWndRect), 2);
+  displayRect = getTabDisplayRect(tabCtrl, tabWndRect);
+  return true;
+}
+
+void MainWindow::resizeSelectedTabContent(const RECT& displayRect)
+{
+  if (!tabView_)
+  {
+    return;
+  }
+
+  HWND tabCtrl = tabView_->getTabControl();
+  if (tabCtrl == nullptr)
+  {
+    return;
+  }
+
+  const int selected = TabCtrl_GetCurSel(tabCtrl);
+  if (selected == reportsTabIndex_ && reportsTabContent_)
+  {
+    reportsTabContent_->resize(displayRect);
+  }
+  else if (selected == mapTabIndex_ && mapTabContent_)
+  {
+    mapTabContent_->resize(displayRect);
+  }
+  else if (selected == eventsTabIndex_ && eventsTabContent_)
+  {
+    eventsTabContent_->resize(displayRect);
+  }
+  else if (selected == itemsTabIndex_ && itemsTabContent_)
+  {
+    itemsTabContent_->resize(displayRect);
+  }
+  else if (selected == skillsTabIndex_ && skillsTabContent_)
+  {
+    skillsTabContent_->resize(displayRect);
+  }
+  else if (selected == factionsTabIndex_ && factionsTabContent_)
+  {
+    factionsTabContent_->resize(displayRect);
+  }
+  else if (selected == battlesTabIndex_ && battlesTabContent_)
+  {
+    battlesTabContent_->resize(displayRect);
+  }
 }
 
 void MainWindow::showLoadedReportsTabContextMenu(POINT screenPoint)

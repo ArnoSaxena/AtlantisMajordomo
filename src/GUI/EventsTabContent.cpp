@@ -22,6 +22,8 @@
 // 304c89c8-6d3c-4586-b0c4-fad2e67b2f65
 #include "GUI/EventsTabContent.hpp"
 #include "GUI/ControlIds.hpp"
+#include "GUI/UiSizeProfile.hpp"
+#include "GUI/WinSizingUtils.hpp"
 
 #include "Data/AppData.hpp"
 #include "Function/MonthUtils.hpp"
@@ -36,11 +38,20 @@ namespace
 constexpr int kMargin = 8;
 constexpr int kDateComboHeight = 280;
 constexpr int kDateToListGap = 4;
+
+UiSizeProfile::Metrics resolveUiMetrics(HWND referenceWindow)
+{
+  const UiSizeProfile::DisplayInfo displayInfo = UiSizeProfile::queryDisplayInfoForWindow(
+    referenceWindow != nullptr ? referenceWindow : GetDesktopWindow());
+  const UiSizeProfile::Profile effectiveProfile = UiSizeProfile::resolveProfile(UiSizeProfile::Profile::Auto, displayInfo);
+  return UiSizeProfile::getMetrics(effectiveProfile);
+}
 }
 
 bool EventsTabContent::create(HWND parentWindow, HINSTANCE instance, AppData& appData)
 {
   appData_ = &appData;
+  const UiSizeProfile::Metrics metrics = resolveUiMetrics(parentWindow);
 
   dateCombo_ = CreateWindowExW(
     0,
@@ -50,7 +61,7 @@ bool EventsTabContent::create(HWND parentWindow, HINSTANCE instance, AppData& ap
     0,
     0,
     240,
-    kDateComboHeight,
+    WinSizingUtils::scalePx(kDateComboHeight, metrics),
     parentWindow,
     reinterpret_cast<HMENU>(static_cast<INT_PTR>(GUI::ControlIds::kEventsDateCombo)),
     instance,
@@ -83,6 +94,7 @@ bool EventsTabContent::create(HWND parentWindow, HINSTANCE instance, AppData& ap
     eventsList_,
     LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES | LVS_EX_DOUBLEBUFFER
   );
+  WinSizingUtils::listViewApplyDensity(eventsList_, metrics, nullptr, nullptr);
 
   struct Column
   {
@@ -91,8 +103,8 @@ bool EventsTabContent::create(HWND parentWindow, HINSTANCE instance, AppData& ap
   };
 
   const Column columns[] = {
-    { L"Unit Id", 90 },
-    { L"Message", 720 }
+    { L"Unit Id", WinSizingUtils::scalePx(90, metrics) },
+    { L"Message", WinSizingUtils::scalePx(720, metrics) }
   };
 
   for (int index = 0; index < static_cast<int>(std::size(columns)); ++index)
@@ -116,13 +128,17 @@ void EventsTabContent::resize(const RECT& displayRect)
     return;
   }
 
-  const int x = displayRect.left + kMargin;
-  const int y = displayRect.top + kMargin;
-  const int width = (displayRect.right - displayRect.left) - 2 * kMargin;
-  const int dateWidth = (std::min)(320, (std::max)(120, width));
-  const int dateHeight = 220;
-  const int listY = y + 24 + kDateToListGap;
-  const int listHeight = (displayRect.bottom - displayRect.top) - 2 * kMargin - 24 - kDateToListGap;
+  const UiSizeProfile::Metrics metrics = resolveUiMetrics(dateCombo_);
+  const int margin = WinSizingUtils::scalePx(kMargin, metrics);
+  const int dateToListGap = WinSizingUtils::scalePx(kDateToListGap, metrics);
+  const int x = displayRect.left + margin;
+  const int y = displayRect.top + margin;
+  const int width = (displayRect.right - displayRect.left) - 2 * margin;
+  const int dateWidth = (std::min)(WinSizingUtils::scalePx(320, metrics), (std::max)(WinSizingUtils::scalePx(120, metrics), width));
+  const int dateCollapsedHeight = (std::max)(metrics.buttonHeight, WinSizingUtils::scalePx(24, metrics));
+  const int dateDropHeight = WinSizingUtils::scalePx(220, metrics);
+  const int listY = y + dateCollapsedHeight + dateToListGap;
+  const int listHeight = (displayRect.bottom - displayRect.top) - 2 * margin - dateCollapsedHeight - dateToListGap;
 
   SetWindowPos(
     dateCombo_,
@@ -130,7 +146,7 @@ void EventsTabContent::resize(const RECT& displayRect)
     x,
     y,
     dateWidth,
-    dateHeight,
+    dateDropHeight,
     SWP_NOACTIVATE
   );
 
@@ -143,6 +159,11 @@ void EventsTabContent::resize(const RECT& displayRect)
     (std::max)(0, listHeight),
     SWP_NOACTIVATE
   );
+
+  const int listClientWidth = (std::max)(0, width - 6);
+  const int unitIdWidth = (std::max)(WinSizingUtils::scalePx(80, metrics), listClientWidth / 5);
+  ListView_SetColumnWidth(eventsList_, 0, unitIdWidth);
+  ListView_SetColumnWidth(eventsList_, 1, (std::max)(WinSizingUtils::scalePx(120, metrics), listClientWidth - unitIdWidth));
 }
 
 void EventsTabContent::setVisible(bool visible)

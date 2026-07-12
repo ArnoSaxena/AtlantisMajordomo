@@ -75,12 +75,24 @@ Profile detectAutoProfile(const DisplayInfo& displayInfo)
   const int height = displayInfo.availableHeight;
   const UINT dpi = displayInfo.dpi;
 
-  if (width <= 1280 || height <= 720)
+  // Compact targets laptop-class work areas and constrained mixed-DPI placements.
+  if (width <= 1366 || height <= 768)
   {
     return Profile::Compact;
   }
 
-  if (width >= 2400 || height >= 1400 || dpi >= 150)
+  // Large targets roomy desktop canvases and high-DPI displays with ample pixels.
+  if (width >= 2560 || height >= 1440)
+  {
+    return Profile::Large;
+  }
+
+  if (dpi >= 168)
+  {
+    return Profile::Large;
+  }
+
+  if (dpi >= 144 && (width >= 1920 || height >= 1200))
   {
     return Profile::Large;
   }
@@ -104,50 +116,63 @@ Metrics getMetrics(Profile profile)
   {
     case Profile::Compact:
       return Metrics {
-        .baseFontPx = 12,
-        .smallFontPx = 10,
-        .buttonHeight = 20,
-        .buttonMinWidth = 62,
+        .baseFontPx = 11,
+        .smallFontPx = 9,
+        .buttonHeight = 18,
+        .buttonMinWidth = 70,
         .rowHeight = 16,
         .headerHeight = 18,
         .spacing = 3,
         .margin = 5,
-        .dialogWidthScale = 0.86,
-        .dialogHeightScale = 0.86,
-        .mapHexWidthScale = 0.85,
+        .dialogWidthScale = 0.82,
+        .dialogHeightScale = 0.82,
       };
 
     case Profile::Large:
       return Metrics {
-        .baseFontPx = 16,
-        .smallFontPx = 14,
-        .buttonHeight = 24,
-        .buttonMinWidth = 76,
-        .rowHeight = 20,
-        .headerHeight = 22,
-        .spacing = 6,
-        .margin = 8,
+        .baseFontPx = 14,
+        .smallFontPx = 12,
+        .buttonHeight = 26,
+        .buttonMinWidth = 104,
+        .rowHeight = 22,
+        .headerHeight = 24,
+        .spacing = 7,
+        .margin = 10,
         .dialogWidthScale = 1.0,
         .dialogHeightScale = 1.0,
-        .mapHexWidthScale = 1.0,
       };
 
     case Profile::Auto:
     case Profile::Standard:
     default:
       return Metrics {
-        .baseFontPx = 14,
-        .smallFontPx = 12,
+        .baseFontPx = 12,
+        .smallFontPx = 10,
         .buttonHeight = 22,
-        .buttonMinWidth = 68,
+        .buttonMinWidth = 88,
         .rowHeight = 18,
         .headerHeight = 20,
         .spacing = 4,
         .margin = 6,
-        .dialogWidthScale = 0.92,
+        .dialogWidthScale = 0.90,
         .dialogHeightScale = 0.90,
-        .mapHexWidthScale = 0.90,
       };
+  }
+}
+
+MapHexMetrics getMapHexMetrics(MapHexProfile profile)
+{
+  switch (profile)
+  {
+    case MapHexProfile::Small:
+      return MapHexMetrics { .mapHexWidthScale = 0.95 };
+
+    case MapHexProfile::Large:
+      return MapHexMetrics { .mapHexWidthScale = 1.4 };
+
+    case MapHexProfile::Medium:
+    default:
+      return MapHexMetrics { .mapHexWidthScale = 1.0 };
   }
 }
 

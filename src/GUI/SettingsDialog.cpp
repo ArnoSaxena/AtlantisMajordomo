@@ -21,12 +21,15 @@
  
 // 304c89c8-6d3c-4586-b0c4-fad2e67b2f65
 #include "GUI/SettingsDialog.hpp"
+#include "GUI/UiSizeProfile.hpp"
+#include "GUI/WinSizingUtils.hpp"
 
 #include "AppConfig.hpp"
 #include "Data/AppData.hpp"
 #include "Data/Commands.hpp"
 #include "Function/StringUtils.hpp"
 
+#include <algorithm>
 #include <commdlg.h>
 #include <shlobj.h>
 #include <cwchar>
@@ -38,6 +41,53 @@
 
 namespace
 {
+RECT resolveWorkAreaForDialog(HWND referenceWindow)
+{
+  HMONITOR monitor = MonitorFromWindow(referenceWindow != nullptr ? referenceWindow : GetDesktopWindow(),
+                                       MONITOR_DEFAULTTONEAREST);
+  if (monitor != nullptr)
+  {
+    MONITORINFO monitorInfo {};
+    monitorInfo.cbSize = sizeof(monitorInfo);
+    if (GetMonitorInfoW(monitor, &monitorInfo))
+    {
+      return monitorInfo.rcWork;
+    }
+  }
+
+  RECT systemWorkArea {};
+  if (SystemParametersInfoW(SPI_GETWORKAREA, 0, &systemWorkArea, 0))
+  {
+    return systemWorkArea;
+  }
+
+  return RECT { 0, 0, GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN) };
+}
+
+UiSizeProfile::Profile profileFromUiSizeMode(const std::wstring& mode)
+{
+  std::wstring normalized = mode;
+  for (wchar_t& ch : normalized)
+  {
+    ch = static_cast<wchar_t>(std::towlower(ch));
+  }
+
+  if (normalized == L"compact")
+  {
+    return UiSizeProfile::Profile::Compact;
+  }
+  if (normalized == L"standard")
+  {
+    return UiSizeProfile::Profile::Standard;
+  }
+  if (normalized == L"large")
+  {
+    return UiSizeProfile::Profile::Large;
+  }
+
+  return UiSizeProfile::Profile::Auto;
+}
+
 int findComboItemByTextInsensitive(HWND comboHandle, const wchar_t* text)
 {
   if (comboHandle == nullptr || text == nullptr)
@@ -304,6 +354,17 @@ bool SettingsDialog::applySettingsFromControls(HWND hwnd, bool closeOnSuccess)
       }
     }
 
+    if (mapHexSizeModeCombo_)
+    {
+      wchar_t selectedMode[32] = {};
+      const int selectedIndex = static_cast<int>(SendMessageW(mapHexSizeModeCombo_, CB_GETCURSEL, 0, 0));
+      if (selectedIndex >= 0)
+      {
+        SendMessageW(mapHexSizeModeCombo_, CB_GETLBTEXT, static_cast<WPARAM>(selectedIndex), reinterpret_cast<LPARAM>(selectedMode));
+        appConfig_->setMapHexSizeMode(selectedMode);
+      }
+    }
+
     appConfig_->save();
 
     const HWND owner = GetWindow(hwnd, GW_OWNER);
@@ -467,6 +528,18 @@ int SettingsDialog::showDialog(HWND parentHwnd, AppData& appData, AppConfig& app
   appData_ = &appData;
   appConfig_ = &appConfig;
 
+  const UiSizeProfile::DisplayInfo displayInfo = UiSizeProfile::queryDisplayInfoForWindow(
+    parentHwnd != nullptr ? parentHwnd : GetDesktopWindow());
+  const UiSizeProfile::Profile effectiveProfile = UiSizeProfile::resolveProfile(
+    profileFromUiSizeMode(appConfig.getUiSizeMode()),
+    displayInfo);
+  const UiSizeProfile::Metrics metrics = UiSizeProfile::getMetrics(effectiveProfile);
+  // Scale design-time pixel values through the active Windows sizing profile.
+  const auto sx = [&](int px)
+  {
+    return WinSizingUtils::scalePx(px, metrics);
+  };
+
   WNDCLASSEXW wc {};
   wc.cbSize = sizeof(wc);
   wc.lpfnWndProc = windowProcedureStatic;
@@ -491,8 +564,8 @@ int SettingsDialog::showDialog(HWND parentHwnd, AppData& appData, AppConfig& app
     WS_DLGFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU,
     CW_USEDEFAULT,
     CW_USEDEFAULT,
-    760,
-    620,
+    sx(760),
+    sx(640),
     parentHwnd,
     nullptr,
     GetModuleHandleW(nullptr),
@@ -506,20 +579,47 @@ int SettingsDialog::showDialog(HWND parentHwnd, AppData& appData, AppConfig& app
 
   if (parentHwnd && IsWindow(parentHwnd))
   {
-    RECT parentRc;
-    RECT dialogRc;
+    RECT parentRc {};
+    RECT dialogRc {};
     GetWindowRect(parentHwnd, &parentRc);
     GetWindowRect(hwnd_, &dialogRc);
 
-    const int dialogWidth = dialogRc.right - dialogRc.left;
-    const int dialogHeight = dialogRc.bottom - dialogRc.top;
+    const RECT workArea = resolveWorkAreaForDialog(parentHwnd);
+    const int workWidth = (std::max)(320, static_cast<int>(workArea.right - workArea.left));
+    const int workHeight = (std::max)(240, static_cast<int>(workArea.bottom - workArea.top));
+
+    int dialogWidth = dialogRc.right - dialogRc.left;
+    int dialogHeight = dialogRc.bottom - dialogRc.top;
+    dialogWidth = (std::min)(workWidth, (std::max)(WinSizingUtils::scalePx(500, metrics), dialogWidth));
+    dialogHeight = (std::min)(workHeight, (std::max)(WinSizingUtils::scalePx(420, metrics), dialogHeight));
+
     const int parentWidth = parentRc.right - parentRc.left;
     const int parentHeight = parentRc.bottom - parentRc.top;
 
-    const int x = parentRc.left + (parentWidth - dialogWidth) / 2;
-    const int y = parentRc.top + (parentHeight - dialogHeight) / 2;
+    int x = parentRc.left + (parentWidth - dialogWidth) / 2;
+    int y = parentRc.top + (parentHeight - dialogHeight) / 2;
 
-    SetWindowPos(hwnd_, nullptr, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
+    x = (std::max)(static_cast<int>(workArea.left), (std::min)(x, static_cast<int>(workArea.right) - dialogWidth));
+    y = (std::max)(static_cast<int>(workArea.top), (std::min)(y, static_cast<int>(workArea.bottom) - dialogHeight));
+
+    SetWindowPos(hwnd_, nullptr, x, y, dialogWidth, dialogHeight, SWP_NOZORDER);
+  }
+  else
+  {
+    RECT dialogRc {};
+    GetWindowRect(hwnd_, &dialogRc);
+    const RECT workArea = resolveWorkAreaForDialog(hwnd_);
+    const int workWidth = (std::max)(320, static_cast<int>(workArea.right - workArea.left));
+    const int workHeight = (std::max)(240, static_cast<int>(workArea.bottom - workArea.top));
+
+    int dialogWidth = dialogRc.right - dialogRc.left;
+    int dialogHeight = dialogRc.bottom - dialogRc.top;
+    dialogWidth = (std::min)(workWidth, (std::max)(WinSizingUtils::scalePx(500, metrics), dialogWidth));
+    dialogHeight = (std::min)(workHeight, (std::max)(WinSizingUtils::scalePx(420, metrics), dialogHeight));
+
+    const int x = workArea.left + (workWidth - dialogWidth) / 2;
+    const int y = workArea.top + (workHeight - dialogHeight) / 2;
+    SetWindowPos(hwnd_, nullptr, x, y, dialogWidth, dialogHeight, SWP_NOZORDER);
   }
 
   CreateWindowExW(
@@ -527,10 +627,10 @@ int SettingsDialog::showDialog(HWND parentHwnd, AppData& appData, AppConfig& app
     L"STATIC",
     L"Ship ID threshold:",
     WS_CHILD | WS_VISIBLE,
-    20,
-    20,
-    140,
-    20,
+    sx(20),
+    sx(20),
+    sx(140),
+    (std::max)(metrics.rowHeight, sx(20)),
     hwnd_,
     nullptr,
     GetModuleHandleW(nullptr),
@@ -542,10 +642,10 @@ int SettingsDialog::showDialog(HWND parentHwnd, AppData& appData, AppConfig& app
     L"EDIT",
     L"",
     WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
-    170,
-    16,
-    100,
-    24,
+    sx(170),
+    sx(16),
+    sx(100),
+    (std::max)(metrics.buttonHeight, sx(24)),
     hwnd_,
     reinterpret_cast<HMENU>(static_cast<intptr_t>(IDC_SHIP_THRESHOLD_EDIT)),
     GetModuleHandleW(nullptr),
@@ -557,10 +657,10 @@ int SettingsDialog::showDialog(HWND parentHwnd, AppData& appData, AppConfig& app
     L"BUTTON",
     L"Only leader can teach",
     WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
-    300,
-    18,
-    220,
-    22,
+    sx(300),
+    sx(18),
+    sx(220),
+    (std::max)(metrics.rowHeight, sx(22)),
     hwnd_,
     reinterpret_cast<HMENU>(static_cast<intptr_t>(IDC_ONLY_LEADER_CAN_TEACH_CHECK)),
     GetModuleHandleW(nullptr),
@@ -572,10 +672,10 @@ int SettingsDialog::showDialog(HWND parentHwnd, AppData& appData, AppConfig& app
     L"BUTTON",
     L"Only leader Mages",
     WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
-    530,
-    18,
-    180,
-    22,
+    sx(530),
+    sx(18),
+    sx(180),
+    (std::max)(metrics.rowHeight, sx(22)),
     hwnd_,
     reinterpret_cast<HMENU>(static_cast<intptr_t>(IDC_LEADER_MAGES_CHECK)),
     GetModuleHandleW(nullptr),
@@ -587,10 +687,10 @@ int SettingsDialog::showDialog(HWND parentHwnd, AppData& appData, AppConfig& app
     L"STATIC",
     L"Data file path:",
     WS_CHILD | WS_VISIBLE,
-    20,
-    50,
-    100,
-    20,
+    sx(20),
+    sx(50),
+    sx(100),
+    (std::max)(metrics.rowHeight, sx(20)),
     hwnd_,
     nullptr,
     GetModuleHandleW(nullptr),
@@ -602,10 +702,10 @@ int SettingsDialog::showDialog(HWND parentHwnd, AppData& appData, AppConfig& app
     L"EDIT",
     L"",
     WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
-    130,
-    46,
-    520,
-    24,
+    sx(130),
+    sx(46),
+    sx(510),
+    (std::max)(metrics.buttonHeight, sx(24)),
     hwnd_,
     reinterpret_cast<HMENU>(static_cast<intptr_t>(IDC_DATA_FILE_PATH_INPUT)),
     GetModuleHandleW(nullptr),
@@ -617,10 +717,10 @@ int SettingsDialog::showDialog(HWND parentHwnd, AppData& appData, AppConfig& app
     L"BUTTON",
     L"Browse...",
     WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-    660,
-    46,
-    80,
-    24,
+    sx(650),
+    sx(46),
+    sx(80),
+    (std::max)(metrics.buttonHeight, sx(24)),
     hwnd_,
     reinterpret_cast<HMENU>(static_cast<intptr_t>(IDC_DATA_FILE_PATH_BROWSE)),
     GetModuleHandleW(nullptr),
@@ -632,10 +732,10 @@ int SettingsDialog::showDialog(HWND parentHwnd, AppData& appData, AppConfig& app
     L"STATIC",
     L"Report folder:",
     WS_CHILD | WS_VISIBLE,
-    20,
-    84,
-    100,
-    20,
+    sx(20),
+    sx(84),
+    sx(100),
+    (std::max)(metrics.rowHeight, sx(20)),
     hwnd_,
     nullptr,
     GetModuleHandleW(nullptr),
@@ -647,10 +747,10 @@ int SettingsDialog::showDialog(HWND parentHwnd, AppData& appData, AppConfig& app
     L"EDIT",
     L"",
     WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
-    130,
-    80,
-    520,
-    24,
+    sx(130),
+    sx(80),
+    sx(510),
+    (std::max)(metrics.buttonHeight, sx(24)),
     hwnd_,
     reinterpret_cast<HMENU>(static_cast<intptr_t>(IDC_REPORT_FOLDER_PATH_INPUT)),
     GetModuleHandleW(nullptr),
@@ -662,25 +762,31 @@ int SettingsDialog::showDialog(HWND parentHwnd, AppData& appData, AppConfig& app
     L"BUTTON",
     L"Browse...",
     WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-    660,
-    80,
-    80,
-    24,
+    sx(650),
+    sx(80),
+    sx(80),
+    (std::max)(metrics.buttonHeight, sx(24)),
     hwnd_,
     reinterpret_cast<HMENU>(static_cast<intptr_t>(IDC_REPORT_FOLDER_PATH_BROWSE)),
     GetModuleHandleW(nullptr),
     nullptr
   );
 
+  // ===== UI SIZE MODE SECTION =====
+  // Controls overall UI scaling: fonts, buttons, spacing, dialogs
+  // Options: Auto, Compact, Standard, Large
+  // Label positioned at (20, 114), combo at (130, 110)
+  // Closed state: ~24px height; expanded dropdown: +100px
+
   CreateWindowExW(
     0,
     L"STATIC",
     L"UI size mode:",
     WS_CHILD | WS_VISIBLE,
-    20,
-    114,
-    100,
-    20,
+    sx(20),
+    sx(114),
+    sx(100),
+    (std::max)(metrics.rowHeight, sx(20)),
     hwnd_,
     nullptr,
     GetModuleHandleW(nullptr),
@@ -692,10 +798,10 @@ int SettingsDialog::showDialog(HWND parentHwnd, AppData& appData, AppConfig& app
     L"COMBOBOX",
     L"",
     WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL | CBS_DROPDOWNLIST,
-    130,
-    110,
-    160,
-    260,
+    sx(130),
+    sx(110),
+    sx(160),
+    (std::max)(metrics.buttonHeight, sx(24)) + sx(100),
     hwnd_,
     reinterpret_cast<HMENU>(static_cast<intptr_t>(IDC_UI_SIZE_MODE_COMBO)),
     GetModuleHandleW(nullptr),
@@ -708,6 +814,50 @@ int SettingsDialog::showDialog(HWND parentHwnd, AppData& appData, AppConfig& app
     SendMessageW(uiSizeModeCombo_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Compact"));
     SendMessageW(uiSizeModeCombo_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Standard"));
     SendMessageW(uiSizeModeCombo_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Large"));
+  }
+
+  // ===== MAP HEX SIZE SECTION =====
+  // Controls hexagon tile scaling independently from overall UI size
+  // Allows combinations like "Compact UI with Large hex tiles"
+  // Options: Small (0.95x), Medium (1.0x), Large (1.4x)
+  // Label positioned at (20, 148), combo at (130, 144)
+  // 5px padding between this combo and UI size combo above
+
+  CreateWindowExW(
+    0,
+    L"STATIC",
+    L"Map hex size:",
+    WS_CHILD | WS_VISIBLE,
+    sx(20),
+    sx(148),
+    sx(100),
+    (std::max)(metrics.rowHeight, sx(20)),
+    hwnd_,
+    nullptr,
+    GetModuleHandleW(nullptr),
+    nullptr
+  );
+
+  mapHexSizeModeCombo_ = CreateWindowExW(
+    0,
+    L"COMBOBOX",
+    L"",
+    WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL | CBS_DROPDOWNLIST,
+    sx(130),
+    sx(144),
+    sx(160),
+    (std::max)(metrics.buttonHeight, sx(24)) + sx(100),
+    hwnd_,
+    reinterpret_cast<HMENU>(static_cast<intptr_t>(IDC_MAP_HEX_SIZE_MODE_COMBO)),
+    GetModuleHandleW(nullptr),
+    nullptr
+  );
+
+  if (mapHexSizeModeCombo_)
+  {
+    SendMessageW(mapHexSizeModeCombo_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Small"));
+    SendMessageW(mapHexSizeModeCombo_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Medium"));
+    SendMessageW(mapHexSizeModeCombo_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Large"));
   }
 
   /*
@@ -767,7 +917,7 @@ int SettingsDialog::showDialog(HWND parentHwnd, AppData& appData, AppConfig& app
     L"BUTTON",
     L"Add",
     WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-    20,
+      sx(650),
     348,
     70,
     24,
@@ -800,10 +950,10 @@ int SettingsDialog::showDialog(HWND parentHwnd, AppData& appData, AppConfig& app
     L"STATIC",
     L"Full-month orders",
     WS_CHILD | WS_VISIBLE,
-    265,
-    148,
-    180,
-    20,
+    sx(265),
+    sx(180),
+    sx(180),
+    (std::max)(metrics.rowHeight, sx(20)),
     hwnd_,
     nullptr,
     GetModuleHandleW(nullptr),
@@ -815,10 +965,10 @@ int SettingsDialog::showDialog(HWND parentHwnd, AppData& appData, AppConfig& app
     L"LISTBOX",
     L"",
     WS_CHILD | WS_VISIBLE | WS_VSCROLL | LBS_NOTIFY,
-    265,
-    172,
-    220,
-    170,
+    sx(265),
+    sx(204),
+    sx(220),
+    sx(170),
     hwnd_,
     reinterpret_cast<HMENU>(static_cast<intptr_t>(IDC_FULL_MONTH_ORDERS_LIST)),
     GetModuleHandleW(nullptr),
@@ -830,10 +980,10 @@ int SettingsDialog::showDialog(HWND parentHwnd, AppData& appData, AppConfig& app
     L"EDIT",
     L"",
     WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
-    265,
-    352,
-    220,
-    24,
+    sx(265),
+    sx(384),
+    sx(220),
+    (std::max)(metrics.buttonHeight, sx(24)),
     hwnd_,
     reinterpret_cast<HMENU>(static_cast<intptr_t>(IDC_FULL_MONTH_ORDERS_INPUT)),
     GetModuleHandleW(nullptr),
@@ -845,10 +995,10 @@ int SettingsDialog::showDialog(HWND parentHwnd, AppData& appData, AppConfig& app
     L"BUTTON",
     L"Add",
     WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-    265,
-    382,
-    70,
-    24,
+    sx(265),
+    sx(414),
+    sx(70),
+    (std::max)(metrics.buttonHeight, sx(24)),
     hwnd_,
     reinterpret_cast<HMENU>(static_cast<intptr_t>(IDC_FULL_MONTH_ORDERS_ADD)),
     GetModuleHandleW(nullptr),
@@ -860,10 +1010,10 @@ int SettingsDialog::showDialog(HWND parentHwnd, AppData& appData, AppConfig& app
     L"BUTTON",
     L"Remove",
     WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-    345,
-    382,
-    80,
-    24,
+    sx(345),
+    sx(414),
+    sx(80),
+    (std::max)(metrics.buttonHeight, sx(24)),
     hwnd_,
     reinterpret_cast<HMENU>(static_cast<intptr_t>(IDC_FULL_MONTH_ORDERS_REMOVE)),
     GetModuleHandleW(nullptr),
@@ -875,10 +1025,10 @@ int SettingsDialog::showDialog(HWND parentHwnd, AppData& appData, AppConfig& app
     L"STATIC",
     L"Magic skill triggers",
     WS_CHILD | WS_VISIBLE,
-    20,
-    148,
-    180,
-    20,
+    sx(20),
+    sx(180),
+    sx(180),
+    (std::max)(metrics.rowHeight, sx(20)),
     hwnd_,
     nullptr,
     GetModuleHandleW(nullptr),
@@ -890,10 +1040,10 @@ int SettingsDialog::showDialog(HWND parentHwnd, AppData& appData, AppConfig& app
     L"LISTBOX",
     L"",
     WS_CHILD | WS_VISIBLE | WS_VSCROLL | LBS_NOTIFY,
-    20,
-    172,
-    220,
-    170,
+    sx(20),
+    sx(204),
+    sx(220),
+    sx(170),
     hwnd_,
     reinterpret_cast<HMENU>(static_cast<intptr_t>(IDC_MAGIC_TRIGGERS_LIST)),
     GetModuleHandleW(nullptr),
@@ -905,10 +1055,10 @@ int SettingsDialog::showDialog(HWND parentHwnd, AppData& appData, AppConfig& app
     L"EDIT",
     L"",
     WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
-    20,
-    352,
-    220,
-    24,
+    sx(20),
+    sx(384),
+    sx(220),
+    (std::max)(metrics.buttonHeight, sx(24)),
     hwnd_,
     reinterpret_cast<HMENU>(static_cast<intptr_t>(IDC_MAGIC_TRIGGERS_INPUT)),
     GetModuleHandleW(nullptr),
@@ -920,10 +1070,10 @@ int SettingsDialog::showDialog(HWND parentHwnd, AppData& appData, AppConfig& app
     L"BUTTON",
     L"Add",
     WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-    20,
-    382,
-    70,
-    24,
+    sx(20),
+    sx(414),
+    sx(70),
+    (std::max)(metrics.buttonHeight, sx(24)),
     hwnd_,
     reinterpret_cast<HMENU>(static_cast<intptr_t>(IDC_MAGIC_TRIGGERS_ADD)),
     GetModuleHandleW(nullptr),
@@ -935,55 +1085,66 @@ int SettingsDialog::showDialog(HWND parentHwnd, AppData& appData, AppConfig& app
     L"BUTTON",
     L"Remove",
     WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-    100,
-    382,
-    80,
-    24,
+    sx(100),
+    sx(414),
+    sx(80),
+    (std::max)(metrics.buttonHeight, sx(24)),
     hwnd_,
     reinterpret_cast<HMENU>(static_cast<intptr_t>(IDC_MAGIC_TRIGGERS_REMOVE)),
     GetModuleHandleW(nullptr),
     nullptr
   );
 
+  // ===== ACTION BUTTONS SECTION =====
+  // Three buttons for settings dialog actions
+  // All positioned at y=550, 90px wide, spaced 100px apart
+  // Save: Persist settings without closing dialog
+  // OK: Persist settings and close dialog
+  // Cancel: Discard changes and close dialog without saving
+
   CreateWindowExW(
     0,
     L"BUTTON",
     L"Save",
     WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-    350,
-    540,
-    90,
-    28,
+    sx(350),
+    sx(550),
+    sx(90),
+    (std::max)(metrics.buttonHeight, sx(28)),
     hwnd_,
     reinterpret_cast<HMENU>(static_cast<intptr_t>(IDC_SAVE)),
     GetModuleHandleW(nullptr),
     nullptr
   );
 
+  // OK button: persists settings and closes dialog
+
   CreateWindowExW(
     0,
     L"BUTTON",
     L"OK",
     WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-    450,
-    540,
-    90,
-    28,
+    sx(450),
+    sx(550),
+    sx(90),
+    (std::max)(metrics.buttonHeight, sx(28)),
     hwnd_,
     reinterpret_cast<HMENU>(static_cast<intptr_t>(IDC_OK)),
     GetModuleHandleW(nullptr),
     nullptr
   );
 
+  // Cancel button: discards changes and closes dialog without saving
+
   CreateWindowExW(
     0,
     L"BUTTON",
     L"Cancel",
     WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-    550,
-    540,
-    90,
-    28,
+    sx(550),
+    sx(550),
+    sx(90),
+    (std::max)(metrics.buttonHeight, sx(28)),
     hwnd_,
     reinterpret_cast<HMENU>(static_cast<intptr_t>(IDC_CANCEL)),
     GetModuleHandleW(nullptr),
@@ -1013,6 +1174,11 @@ int SettingsDialog::showDialog(HWND parentHwnd, AppData& appData, AppConfig& app
   {
     const int index = findComboItemByTextInsensitive(uiSizeModeCombo_, appConfig_->getUiSizeMode().c_str());
     SendMessageW(uiSizeModeCombo_, CB_SETCURSEL, static_cast<WPARAM>((index >= 0) ? index : 0), 0);
+  }
+  if (mapHexSizeModeCombo_)
+  {
+    const int index = findComboItemByTextInsensitive(mapHexSizeModeCombo_, appConfig_->getMapHexSizeMode().c_str());
+    SendMessageW(mapHexSizeModeCombo_, CB_SETCURSEL, static_cast<WPARAM>((index >= 0) ? index : 1), 0);
   }
   if (leaderMagesCheck_)
   {
@@ -1044,6 +1210,7 @@ int SettingsDialog::showDialog(HWND parentHwnd, AppData& appData, AppConfig& app
   dataFilePathEdit_ = nullptr;
   reportFolderPathEdit_ = nullptr;
   uiSizeModeCombo_ = nullptr;
+  mapHexSizeModeCombo_ = nullptr;
   //flyingShipsList_ = nullptr;
   fullMonthOrdersList_ = nullptr;
   magicTriggersList_ = nullptr;

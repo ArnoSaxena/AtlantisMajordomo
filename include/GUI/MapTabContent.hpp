@@ -280,6 +280,7 @@ private:
   bool showRideCapacity_ { false };
   bool showFlyCapacity_ { false };
   bool showSwimCapacity_ { false };
+  bool isVisible_ { false };
   bool hasCapacityValues_ { false };
   bool hasShipCapacityValues_ { false };
   bool hasShipOwnerSkillValues_ { false };
@@ -369,8 +370,9 @@ private:
   RECT getDetailsMapSplitterRect() const;
   RECT getTopBottomSplitterRect() const;
   UiSizeProfile::Profile resolveRequestedUiProfile() const;
+  UiSizeProfile::MapHexProfile resolveRequestedMapHexProfile() const;
   UiSizeProfile::Metrics resolveUiMetrics() const;
-  int resolveScaledMapHexWidth(const UiSizeProfile::Metrics& metrics) const;
+  int resolveScaledMapHexWidth() const;
   void applyListColumnWidths(const UiSizeProfile::Metrics& metrics,
                              int leftPanelWidth,
                              int rightPanelWidth,

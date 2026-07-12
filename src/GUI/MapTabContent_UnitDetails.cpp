@@ -31,6 +31,7 @@
 #include "Data/Faction.hpp"
 #include "GUI/WinGuiUtils.hpp"
 #include "Data/Item.hpp"
+#include "Data/Order.hpp"
 #include "Data/Region.hpp"
 #include "Data/RegionRepository.hpp"
 #include "Data/Skill.hpp"
@@ -59,6 +60,174 @@
 #include <string>
 #include <vector>
 #include <windowsx.h>
+
+namespace
+{
+std::wstring normalizeOrderItemToken(std::wstring token)
+{
+  token = StringUtils::trimWhitespace(std::move(token));
+  while (!token.empty() && !iswalnum(token.front()))
+  {
+    token.erase(token.begin());
+  }
+  while (!token.empty() && !iswalnum(token.back()))
+  {
+    token.pop_back();
+  }
+  return StringUtils::toUpper(std::move(token));
+}
+
+bool tryResolveOrderItemToken(const AppData& appData,
+                              const std::wstring& operand,
+                              std::wstring& resolvedToken)
+{
+  const std::wstring normalizedOperand = normalizeOrderItemToken(operand);
+  if (normalizedOperand.empty())
+  {
+    return false;
+  }
+
+  if (const Item* exactItem = appData.itemRepository().findByIdentifierToken(normalizedOperand))
+  {
+    resolvedToken = exactItem->getIdentifierToken();
+    return true;
+  }
+
+  for (std::size_t index = 0; index < appData.itemRepository().size(); ++index)
+  {
+    const Item& item = appData.itemRepository().at(index);
+    const std::wstring normalizedName = normalizeOrderItemToken(item.getItemName());
+    const std::wstring normalizedPluralName = normalizeOrderItemToken(item.getItemNamePlural());
+    if (normalizedOperand == normalizedName || normalizedOperand == normalizedPluralName)
+    {
+      resolvedToken = item.getIdentifierToken();
+      return true;
+    }
+  }
+
+  return false;
+}
+
+bool tryConsumeUnitReference(const std::vector<std::wstring>& tokens, std::size_t& tokenIndex)
+{
+  if (tokenIndex >= tokens.size())
+  {
+    return false;
+  }
+
+  if (StringUtils::toUpper(tokens[tokenIndex]) == L"NEW")
+  {
+    ++tokenIndex;
+    if (tokenIndex >= tokens.size())
+    {
+      return false;
+    }
+  }
+
+  int unitNumber = 0;
+  if (!OrderParsingUtils::tryParseIntStrict(tokens[tokenIndex], unitNumber) || unitNumber <= 0)
+  {
+    return false;
+  }
+
+  ++tokenIndex;
+  return true;
+}
+
+std::set<std::wstring> collectTouchedItemTokensForUnit(const AppData& appData,
+                                                       int unitNumber,
+                                                       bool isNewUnit)
+{
+  std::set<std::wstring> touchedTokens;
+  const std::vector<Order>* orders = appData.orderRepository().getOrdersForUnit(unitNumber, isNewUnit);
+  if (!orders)
+  {
+    return touchedTokens;
+  }
+
+  for (const Order& order : *orders)
+  {
+    std::vector<std::wstring> tokens;
+    std::vector<bool> quoted;
+    if (!OrderParsingUtils::tokenizeOrderLine(order.getFullOrderText(), tokens, quoted) || tokens.empty())
+    {
+      continue;
+    }
+
+    std::size_t tokenIndex = 0;
+    if (!tokens[0].empty() && tokens[0][0] == L'@')
+    {
+      if (tokens[0].size() > 1)
+      {
+        tokens[0] = tokens[0].substr(1);
+      }
+      else
+      {
+        ++tokenIndex;
+      }
+    }
+
+    if (tokenIndex >= tokens.size())
+    {
+      continue;
+    }
+
+    const std::wstring command = StringUtils::toUpper(tokens[tokenIndex]);
+    std::size_t itemTokenIndex = std::wstring::npos;
+
+    if (command == L"PRODUCE")
+    {
+      if ((tokenIndex + 1) < tokens.size())
+      {
+        int amount = 0;
+        const bool hasAmount = OrderParsingUtils::tryParseIntStrict(tokens[tokenIndex + 1], amount) && amount > 0;
+        itemTokenIndex = hasAmount ? (tokenIndex + 2) : (tokenIndex + 1);
+      }
+    }
+    else if (command == L"BUY" || command == L"SELL")
+    {
+      itemTokenIndex = tokenIndex + 2;
+    }
+    else if (command == L"TRANSPORT" || command == L"DISTRIBUTE")
+    {
+      std::size_t cursor = tokenIndex + 1;
+      if (!tryConsumeUnitReference(tokens, cursor) || cursor >= tokens.size())
+      {
+        continue;
+      }
+
+      const std::wstring quantityToken = StringUtils::toUpper(tokens[cursor]);
+      ++cursor;
+      if (quantityToken == L"ALL" || quantityToken == L"EXCEPT")
+      {
+        itemTokenIndex = cursor;
+      }
+      else
+      {
+        int quantity = 0;
+        if (!OrderParsingUtils::tryParseIntStrict(quantityToken, quantity) || quantity <= 0)
+        {
+          continue;
+        }
+        itemTokenIndex = cursor;
+      }
+    }
+
+    if (itemTokenIndex == std::wstring::npos || itemTokenIndex >= tokens.size())
+    {
+      continue;
+    }
+
+    std::wstring resolvedToken;
+    if (tryResolveOrderItemToken(appData, tokens[itemTokenIndex], resolvedToken) && !resolvedToken.empty())
+    {
+      touchedTokens.insert(resolvedToken);
+    }
+  }
+
+  return touchedTokens;
+}
+}
 
 void MapTabContent::populateUnitsForSelectedRegion()
 {
@@ -171,7 +340,8 @@ void MapTabContent::populateUnitsForSelectedRegion()
     ListView_SetItemText(unitsList_, row, 3, const_cast<LPWSTR>(factionName.c_str()));
     ListView_SetItemText(unitsList_, row, 4, const_cast<LPWSTR>(structureDisplay.c_str()));
 
-    const std::map<std::wstring, int>& afterCommandCounts = unit.getItemsAfterOrders();
+    const std::map<std::wstring, int> afterCommandCounts =
+      Commands::calculateAfterCommandItemCountsForUnit(*appData_, unit);
 
     std::vector<std::wstring> menEntries;
     for (const auto& [itemToken, amount] : afterCommandCounts)
@@ -296,7 +466,8 @@ void MapTabContent::populateUnitsForSelectedRegion()
       ListView_SetItemText(unitsList_, row, 3, const_cast<LPWSTR>(newFactionName.c_str()));
       ListView_SetItemText(unitsList_, row, 4, const_cast<LPWSTR>(newStructureDisplay.c_str()));
 
-      const auto& newAfterCommandCounts = unitNew.getItemsAfterOrders();
+      const auto newAfterCommandCounts =
+        Commands::calculateAfterCommandItemCountsForUnitNew(*appData_, unitNew);
 
       std::vector<std::wstring> newMenEntries;
       for (const auto& [itemToken, amount] : newAfterCommandCounts)
@@ -471,16 +642,69 @@ void MapTabContent::populateItemsForSelectedUnit(const Unit* unit)
     return;
   }
 
-  const std::map<std::wstring, int>& afterCommandCounts = unit->getItemsAfterOrders();
+  const std::map<std::wstring, int> afterCommandCounts =
+    Commands::calculateAfterCommandItemCountsForUnit(*appData_, *unit);
+
+  auto normalizeToken = [](std::wstring token)
+  {
+    token = StringUtils::trimWhitespace(std::move(token));
+    while (!token.empty() && !iswalnum(token.front()))
+    {
+      token.erase(token.begin());
+    }
+    while (!token.empty() && !iswalnum(token.back()))
+    {
+      token.pop_back();
+    }
+    return StringUtils::toUpper(std::move(token));
+  };
+
+  std::map<std::wstring, int> normalizedCurrentCounts;
+  for (const auto& [itemToken, amount] : unit->getItems())
+  {
+    if (amount <= 0)
+    {
+      continue;
+    }
+
+    const std::wstring normalized = normalizeToken(itemToken);
+    if (normalized.empty())
+    {
+      continue;
+    }
+
+    normalizedCurrentCounts[normalized] += amount;
+  }
+
+  std::map<std::wstring, int> normalizedAfterCounts;
+  for (const auto& [itemToken, amount] : afterCommandCounts)
+  {
+    if (amount <= 0)
+    {
+      continue;
+    }
+
+    const std::wstring normalized = normalizeToken(itemToken);
+    if (normalized.empty())
+    {
+      continue;
+    }
+
+    normalizedAfterCounts[normalized] += amount;
+  }
 
   std::set<std::wstring> itemTokens;
-  for (const auto& [itemToken, _] : unit->getItems())
+  for (const auto& [itemToken, _] : normalizedCurrentCounts)
   {
     itemTokens.insert(itemToken);
   }
-  for (const auto& [itemToken, _] : afterCommandCounts)
+  for (const auto& [itemToken, _] : normalizedAfterCounts)
   {
     itemTokens.insert(itemToken);
+  }
+  for (const std::wstring& touchedToken : collectTouchedItemTokensForUnit(*appData_, unit->getUnitNumber(), false))
+  {
+    itemTokens.insert(touchedToken);
   }
 
   std::vector<std::wstring> sortedItemTokens(itemTokens.begin(), itemTokens.end());
@@ -503,11 +727,11 @@ void MapTabContent::populateItemsForSelectedUnit(const Unit* unit)
   int row = 0;
   for (const std::wstring& itemToken : sortedItemTokens)
   {
-    const auto currentIt = unit->getItems().find(itemToken);
-    const int amount = currentIt != unit->getItems().end() ? currentIt->second : 0;
+    const auto currentIt = normalizedCurrentCounts.find(itemToken);
+    const int amount = currentIt != normalizedCurrentCounts.end() ? currentIt->second : 0;
 
-    const auto afterIt = afterCommandCounts.find(itemToken);
-    const int amountAfterCommands = afterIt != afterCommandCounts.end() ? afterIt->second : 0;
+    const auto afterIt = normalizedAfterCounts.find(itemToken);
+    const int amountAfterCommands = afterIt != normalizedAfterCounts.end() ? afterIt->second : 0;
 
     std::wstring itemName;
     if (const Item* item = appData_->itemRepository().findByIdentifierToken(itemToken))
@@ -544,16 +768,69 @@ void MapTabContent::populateItemsForSelectedUnit(const UnitNew* unitNew)
     return;
   }
 
-  const std::map<std::wstring, int>& afterCommandCounts = unitNew->getItemsAfterOrders();
+  const std::map<std::wstring, int> afterCommandCounts =
+    Commands::calculateAfterCommandItemCountsForUnitNew(*appData_, *unitNew);
+
+  auto normalizeToken = [](std::wstring token)
+  {
+    token = StringUtils::trimWhitespace(std::move(token));
+    while (!token.empty() && !iswalnum(token.front()))
+    {
+      token.erase(token.begin());
+    }
+    while (!token.empty() && !iswalnum(token.back()))
+    {
+      token.pop_back();
+    }
+    return StringUtils::toUpper(std::move(token));
+  };
+
+  std::map<std::wstring, int> normalizedCurrentCounts;
+  for (const auto& [itemToken, amount] : unitNew->getItems())
+  {
+    if (amount <= 0)
+    {
+      continue;
+    }
+
+    const std::wstring normalized = normalizeToken(itemToken);
+    if (normalized.empty())
+    {
+      continue;
+    }
+
+    normalizedCurrentCounts[normalized] += amount;
+  }
+
+  std::map<std::wstring, int> normalizedAfterCounts;
+  for (const auto& [itemToken, amount] : afterCommandCounts)
+  {
+    if (amount <= 0)
+    {
+      continue;
+    }
+
+    const std::wstring normalized = normalizeToken(itemToken);
+    if (normalized.empty())
+    {
+      continue;
+    }
+
+    normalizedAfterCounts[normalized] += amount;
+  }
 
   std::set<std::wstring> itemTokens;
-  for (const auto& [itemToken, _] : unitNew->getItems())
+  for (const auto& [itemToken, _] : normalizedCurrentCounts)
   {
     itemTokens.insert(itemToken);
   }
-  for (const auto& [itemToken, _] : afterCommandCounts)
+  for (const auto& [itemToken, _] : normalizedAfterCounts)
   {
     itemTokens.insert(itemToken);
+  }
+  for (const std::wstring& touchedToken : collectTouchedItemTokensForUnit(*appData_, unitNew->getUnitNumber(), true))
+  {
+    itemTokens.insert(touchedToken);
   }
 
   std::vector<std::wstring> sortedItemTokens(itemTokens.begin(), itemTokens.end());
@@ -576,11 +853,11 @@ void MapTabContent::populateItemsForSelectedUnit(const UnitNew* unitNew)
   int row = 0;
   for (const std::wstring& itemToken : sortedItemTokens)
   {
-    const auto currentIt = unitNew->getItems().find(itemToken);
-    const int amount = currentIt != unitNew->getItems().end() ? currentIt->second : 0;
+    const auto currentIt = normalizedCurrentCounts.find(itemToken);
+    const int amount = currentIt != normalizedCurrentCounts.end() ? currentIt->second : 0;
 
-    const auto afterIt = afterCommandCounts.find(itemToken);
-    const int amountAfterCommands = afterIt != afterCommandCounts.end() ? afterIt->second : 0;
+    const auto afterIt = normalizedAfterCounts.find(itemToken);
+    const int amountAfterCommands = afterIt != normalizedAfterCounts.end() ? afterIt->second : 0;
 
     std::wstring itemName;
     if (const Item* item = appData_->itemRepository().findByIdentifierToken(itemToken))

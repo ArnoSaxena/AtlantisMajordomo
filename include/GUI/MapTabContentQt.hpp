@@ -41,6 +41,7 @@ class UnitNew;
 class QLabel;
 class QLineEdit;
 class QListWidget;
+class QTreeWidget;
 class QPlainTextEdit;
 class QPushButton;
 class QSplitter;
@@ -183,11 +184,11 @@ private:
     QLabel*         hoverRegionLabel_     { nullptr };   // hovered-region name
     QPlainTextEdit* regionDetailsView_    { nullptr };   // read-only region report text
     QLabel*         regionResourcesLabel_ { nullptr };
-    QListWidget*    regionResourcesList_  { nullptr };
+    QTreeWidget*    regionResourcesList_  { nullptr };
     QLabel*         regionForSaleLabel_   { nullptr };
-    QListWidget*    regionForSaleList_    { nullptr };
+    QTreeWidget*    regionForSaleList_    { nullptr };
     QLabel*         regionWantedLabel_    { nullptr };
-    QListWidget*    regionWantedList_     { nullptr };
+    QTreeWidget*    regionWantedList_     { nullptr };
 
     // -----------------------------------------------------------------------
     // Units list — implemented in MapTabContentQt_UnitDetails.cpp (7.3)
@@ -207,8 +208,9 @@ private:
     QLabel* unitCoordinatesLabel_  { nullptr };
     QLabel* unitFlagsLabel_        { nullptr };
     QLabel* unitWarningLabel_      { nullptr };
-    QLabel* unitWeightLabel_       { nullptr };
-    QLabel* unitCapacitiesLabel_   { nullptr };
+    QLabel* unitWeightLabel_          { nullptr };
+    QLabel* unitCapacitiesLabel_       { nullptr };
+    QLabel* unitShipCapacityLabel_     { nullptr };
 
     // -----------------------------------------------------------------------
     // Orders editor — implemented in MapTabContentQt_Orders.cpp (7.4)

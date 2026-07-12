@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Atlantis Majordomo
+Comment=Atlantis PBM report and orders management tool
+Exec=AtlantisMajordomo
+Icon=AtlantisMajordomo
+Terminal=false
+Categories=Game;Utility;
+StartupNotify=true

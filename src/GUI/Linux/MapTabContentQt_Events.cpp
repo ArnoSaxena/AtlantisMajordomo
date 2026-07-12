@@ -417,7 +417,7 @@ void MapTabContentQt::showSkillDescription(const std::wstring& skillToken)
         return;
     }
 
-    const Skill* skill = appData_->skillRepository().findByIdentifierToken(skillToken);
+    const Skill* skill = appData_->skillRepository().findByIdentifier(skillToken);
     if (!skill)
     {
         showReadOnlyTextPopup(this,

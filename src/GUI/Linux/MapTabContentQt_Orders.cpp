@@ -131,16 +131,16 @@ void MapTabContentQt::appendOrderLineToOrdersEditor(const std::wstring& orderLin
     if (!ordersText.isEmpty())
     {
         const QChar lastChar = ordersText.at(ordersText.length() - 1);
-        if (lastChar != L'\n' && lastChar != L'\r')
+        if (lastChar != QChar(L'\n') && lastChar != QChar(L'\r'))
         {
-            ordersText += L"\n";
+            ordersText += QChar(L'\n');
         }
     }
 
     ordersText += QString::fromStdWString(trimmedOrderLine);
-    if (ordersText.isEmpty() || ordersText.at(ordersText.length() - 1) != L'\n')
+    if (ordersText.isEmpty() || ordersText.at(ordersText.length() - 1) != QChar(L'\n'))
     {
-        ordersText += L"\n";
+        ordersText += QChar(L'\n');
     }
 
     ordersEditor_->setPlainText(ordersText);

@@ -26,6 +26,7 @@
 #include "Data/Commands.hpp"
 #include "Data/Faction.hpp"
 #include "Data/Item.hpp"
+#include "Data/Region.hpp"
 #include "Data/Skill.hpp"
 #include "Data/Structure.hpp"
 #include "Data/Unit.hpp"
@@ -338,6 +339,313 @@ bool tryParseStudyOrder(const std::wstring& orderLine, std::wstring& skillOperan
 
   skillOperand = StringUtils::trimWhitespace(tokens[tokenIndex]);
   return !skillOperand.empty();
+}
+
+bool tryParseProduceOrderForWarning(const std::wstring& orderLine,
+                                    std::wstring& itemOperand,
+                                    bool& hasRequestedAmount,
+                                    int& requestedAmount)
+{
+  itemOperand.clear();
+  hasRequestedAmount = false;
+  requestedAmount = 0;
+
+  std::vector<std::wstring> tokens;
+  std::vector<bool> tokenWasQuoted;
+  if (!tokenizeOrderLine(orderLine, tokens, tokenWasQuoted) || tokens.empty())
+  {
+    return false;
+  }
+
+  std::size_t tokenIndex = 0;
+  if (!tokens.front().empty() && tokens.front().front() == L'@')
+  {
+    if (tokens.front().size() == 1)
+    {
+      tokenIndex = 1;
+    }
+    else
+    {
+      tokens.front().erase(tokens.front().begin());
+    }
+  }
+
+  if (tokenIndex >= tokens.size() || StringUtils::toUpper(tokens[tokenIndex]) != L"PRODUCE")
+  {
+    return false;
+  }
+
+  ++tokenIndex;
+  if (tokenIndex >= tokens.size())
+  {
+    return false;
+  }
+
+  int parsedAmount = 0;
+  if (tryParseIntStrict(tokens[tokenIndex], parsedAmount) && parsedAmount > 0)
+  {
+    hasRequestedAmount = true;
+    requestedAmount = parsedAmount;
+    ++tokenIndex;
+  }
+
+  if (tokenIndex >= tokens.size())
+  {
+    return false;
+  }
+
+  itemOperand = StringUtils::trimWhitespace(tokens[tokenIndex]);
+  return !itemOperand.empty();
+}
+
+int resolveBestQualifiedProductionSkillLevelForWarning(const Unit& unit, const Item& producedItem)
+{
+  int bestLevel = 0;
+
+  for (const auto& [requiredSkillToken, requiredLevel] : producedItem.getProductionSkill())
+  {
+    const int unitSkillLevel = Skill::trainingDaysToLevel(unit.getSkillDays(requiredSkillToken));
+    if (unitSkillLevel >= requiredLevel)
+    {
+      bestLevel = std::max(bestLevel, unitSkillLevel);
+    }
+  }
+
+  return bestLevel;
+}
+
+int getRegionResourceAmountForWarning(const Region* region, const std::wstring& itemToken)
+{
+  if (!region)
+  {
+    return 0;
+  }
+
+  const std::wstring normalizedItemToken = normalizeItemTokenForWarning(itemToken);
+  if (normalizedItemToken.empty())
+  {
+    return 0;
+  }
+
+  int totalAmount = 0;
+  for (const auto& [resourceToken, amount] : region->getResources())
+  {
+    if (amount <= 0)
+    {
+      continue;
+    }
+
+    if (normalizeItemTokenForWarning(resourceToken) == normalizedItemToken)
+    {
+      totalAmount += amount;
+    }
+  }
+
+  return totalAmount;
+}
+
+bool tryResolveRegionalProduceDemandForWarning(const AppData& appData,
+                                               const Unit& unit,
+                                               const std::wstring& orderLine,
+                                               std::wstring& producedItemToken,
+                                               int& demandAmount)
+{
+  producedItemToken.clear();
+  demandAmount = 0;
+
+  std::wstring itemOperand;
+  bool hasRequestedAmount = false;
+  int requestedAmount = 0;
+  if (!tryParseProduceOrderForWarning(orderLine, itemOperand, hasRequestedAmount, requestedAmount))
+  {
+    return false;
+  }
+
+  std::wstring resolvedToken;
+  if (!tryResolveItemTokenForWarning(appData, itemOperand, false, resolvedToken))
+  {
+    return false;
+  }
+
+  const Item* producedItem = findItemByTokenNormalizedForWarning(appData, resolvedToken);
+  if (!producedItem)
+  {
+    return false;
+  }
+
+  const std::wstring producedTokenNormalized = normalizeItemTokenForWarning(producedItem->getIdentifierToken());
+  if (producedTokenNormalized.empty())
+  {
+    return false;
+  }
+
+  const auto& productionRequirements = producedItem->getResources();
+  bool hasOnlySelfRequirement = !productionRequirements.empty();
+  for (const auto& [requirementToken, requirementAmount] : productionRequirements)
+  {
+    if (requirementAmount <= 0)
+    {
+      continue;
+    }
+
+    if (normalizeItemTokenForWarning(requirementToken) != producedTokenNormalized)
+    {
+      hasOnlySelfRequirement = false;
+      break;
+    }
+  }
+
+  const bool usesUnitIngredients = !productionRequirements.empty() && !hasOnlySelfRequirement;
+  if (usesUnitIngredients)
+  {
+    return false;
+  }
+
+  const int manCount = appData.itemRepository().calculateManItemCount(unit.getItems());
+  if (manCount <= 0)
+  {
+    return false;
+  }
+
+  const int productionSkillLevel = resolveBestQualifiedProductionSkillLevelForWarning(unit, *producedItem);
+  if (productionSkillLevel <= 0)
+  {
+    return false;
+  }
+
+  int estimatedDemand = manCount * productionSkillLevel;
+
+  for (const auto& [helperToken, helperCount] : unit.getItems())
+  {
+    if (helperCount <= 0)
+    {
+      continue;
+    }
+
+    const Item* helperItem = findItemByTokenNormalizedForWarning(appData, helperToken);
+    if (!helperItem)
+    {
+      continue;
+    }
+
+    for (const auto& [helpToken, helpAmount] : helperItem->getProductionHelp())
+    {
+      if (normalizeItemTokenForWarning(helpToken) == producedTokenNormalized)
+      {
+        const int cappedHelperCount = std::min(manCount, helperCount);
+        estimatedDemand += cappedHelperCount * helpAmount;
+        break;
+      }
+    }
+  }
+
+  if (hasRequestedAmount)
+  {
+    estimatedDemand = std::min(estimatedDemand, requestedAmount);
+  }
+
+  if (estimatedDemand <= 0)
+  {
+    return false;
+  }
+
+  producedItemToken = producedTokenNormalized;
+  demandAmount = estimatedDemand;
+  return true;
+}
+
+void checkProduceOverproductionWarningsForMainFaction(AppData& appData, int mainFactionNumber)
+{
+  struct OverproductionBucket
+  {
+    int resourceAvailable { 0 };
+    int demandedAmount { 0 };
+    std::set<int> contributingUnitNumbers;
+  };
+
+  std::map<std::tuple<int, int, int, std::wstring>, OverproductionBucket> buckets;
+  auto& unitRepository = appData.unitRepository();
+
+  for (std::size_t index = 0; index < unitRepository.size(); ++index)
+  {
+    const Unit& view = unitRepository.at(index);
+    if (view.getFactionNumber() != mainFactionNumber)
+    {
+      continue;
+    }
+
+    Unit* unit = unitRepository.findByNumber(view.getUnitNumber());
+    if (!unit)
+    {
+      continue;
+    }
+
+    for (const std::wstring& orderLine : unit->getOrders())
+    {
+      std::wstring producedItemToken;
+      int demandAmount = 0;
+      if (!tryResolveRegionalProduceDemandForWarning(appData,
+                                                     *unit,
+                                                     orderLine,
+                                                     producedItemToken,
+                                                     demandAmount))
+      {
+        continue;
+      }
+
+      const auto bucketKey = std::make_tuple(unit->getXCoordinate(),
+                                             unit->getYCoordinate(),
+                                             unit->getZCoordinate(),
+                                             producedItemToken);
+
+      auto bucketIter = buckets.find(bucketKey);
+      if (bucketIter == buckets.end())
+      {
+        OverproductionBucket bucket;
+        const Region* region = appData.regionRepository().findByCoordinates(
+          unit->getXCoordinate(),
+          unit->getYCoordinate(),
+          unit->getZCoordinate());
+        if (!region)
+        {
+          region = appData.regionRepository().findByCoordinates(
+            unit->getXCoordinate(),
+            unit->getYCoordinate());
+        }
+
+        bucket.resourceAvailable = getRegionResourceAmountForWarning(region, producedItemToken);
+        bucketIter = buckets.emplace(bucketKey, std::move(bucket)).first;
+      }
+
+      bucketIter->second.demandedAmount += demandAmount;
+      bucketIter->second.contributingUnitNumbers.insert(unit->getUnitNumber());
+    }
+  }
+
+  for (const auto& [bucketKey, bucket] : buckets)
+  {
+    (void)bucketKey;
+    if (bucket.demandedAmount <= bucket.resourceAvailable)
+    {
+      continue;
+    }
+
+    if (bucket.contributingUnitNumbers.size() <= 1)
+    {
+      continue;
+    }
+
+    for (const int unitNumber : bucket.contributingUnitNumbers)
+    {
+      Unit* unit = unitRepository.findByNumber(unitNumber);
+      if (!unit)
+      {
+        continue;
+      }
+
+      unit->addWarning(L"PRODUCE: contributes to regional overproduction");
+    }
+  }
 }
 
 const Skill* tryResolveStudySkill(const AppData& appData,
@@ -814,13 +1122,21 @@ void checkTeachWarningsForMainFaction(AppData& appData, int mainFactionNumber)
       }
 
       // Count total student man units to check teaching capacity
+      // TODO: swscanf is deprecated in windows. But Linux has no swscnf_s. We need a
+      //       cross-platform solution for this. 
+      //       For now, we will use the preprocessor as a nasty workaround.
+      #ifdef _WIN32
+      #define MY_SSCANF swscanf_s
+      #else
+      #define MY_SSCANF swscanf
+      #endif
       int totalStudentManCount = 0;
       std::vector<int> studentUnitNumbers;
       
       while (tokenIdx < tokens.size())
       {
         int studentNumber = 0;
-        if (swscanf_s(tokens[tokenIdx].c_str(), L"%d", &studentNumber) == 1 && studentNumber > 0)
+        if (MY_SSCANF(tokens[tokenIdx].c_str(), L"%d", &studentNumber) == 1 && studentNumber > 0)
         {
           studentUnitNumbers.push_back(studentNumber);
         }
@@ -1222,6 +1538,7 @@ void OrderWarningService::runForMainFaction(AppData& appData)
   checkMonthLongOrderWarningsForMainFaction(appData, mainFactionNumber);
 
   checkGiveTakeWarningsForMainFaction(appData, mainFactionNumber);
+  checkProduceOverproductionWarningsForMainFaction(appData, mainFactionNumber);
   CommandSimulationService::processMainFactionClaimEffects(appData);
   checkStudyWarningsForMainFaction(appData, mainFactionNumber);
   checkTeachWarningsForMainFaction(appData, mainFactionNumber);

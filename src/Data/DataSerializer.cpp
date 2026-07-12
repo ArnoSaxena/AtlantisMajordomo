@@ -44,6 +44,8 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <sstream>
 #include <iomanip>
@@ -59,7 +61,7 @@ bool DataSerializer::saveToFile(const AppData& appData, const std::wstring& file
 {
   try
   {
-    std::wofstream file(filePath);
+    std::wofstream file{std::filesystem::path(filePath)};
     if (!file.is_open())
     {
       lastError_ = L"Failed to open file for writing: " + filePath;
@@ -980,7 +982,7 @@ bool DataSerializer::loadFromFile(AppData& appData, const std::wstring& filePath
 {
   try
   {
-    std::wifstream file(filePath);
+    std::wifstream file{std::filesystem::path(filePath)};
     if (!file.is_open())
     {
       lastError_ = L"Failed to open file for reading: " + filePath;

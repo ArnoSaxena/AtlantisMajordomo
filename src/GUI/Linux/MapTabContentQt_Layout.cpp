@@ -37,6 +37,7 @@
 #include <QSplitter>
 #include <QTabWidget>
 #include <QTableWidget>
+#include <QTreeWidget>
 #include <QVBoxLayout>
 #include <QWidget>
 
@@ -100,26 +101,46 @@ MapTabContentQt::MapTabContentQt(AppData&   appData,
     regionDetailsView_->setMinimumHeight(60);
     regionDetailsView_->setPlaceholderText("No region selected");
 
-    regionResourcesLabel_ = new QLabel("Resources", detailsPane);
-    regionResourcesList_  = new QListWidget(detailsPane);
+    // Resources tree: Item | Amount | After Cmd
+    regionResourcesList_ = new QTreeWidget(detailsPane);
     regionResourcesList_->setMinimumHeight(40);
+    regionResourcesList_->setColumnCount(3);
+    regionResourcesList_->setHeaderLabels({"Item", "Amount", "After Cmd"});
+    regionResourcesList_->header()->setSectionResizeMode(0, QHeaderView::Stretch);
+    regionResourcesList_->header()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
+    regionResourcesList_->header()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
+    regionResourcesList_->setRootIsDecorated(false);
+    regionResourcesList_->setSelectionMode(QAbstractItemView::NoSelection);
 
-    regionForSaleLabel_ = new QLabel("For Sale", detailsPane);
-    regionForSaleList_  = new QListWidget(detailsPane);
+    // For Sale tree: Token | Amount | Price | After Cmd
+    regionForSaleList_ = new QTreeWidget(detailsPane);
     regionForSaleList_->setMinimumHeight(40);
+    regionForSaleList_->setColumnCount(4);
+    regionForSaleList_->setHeaderLabels({"Token", "Amount", "Price", "After Cmd"});
+    regionForSaleList_->header()->setSectionResizeMode(0, QHeaderView::Stretch);
+    regionForSaleList_->header()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
+    regionForSaleList_->header()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
+    regionForSaleList_->header()->setSectionResizeMode(3, QHeaderView::ResizeToContents);
+    regionForSaleList_->setRootIsDecorated(false);
+    regionForSaleList_->setSelectionMode(QAbstractItemView::NoSelection);
 
-    regionWantedLabel_ = new QLabel("Wanted", detailsPane);
-    regionWantedList_  = new QListWidget(detailsPane);
+    // Wanted tree: Token | Amount | Price | After Cmd
+    regionWantedList_ = new QTreeWidget(detailsPane);
     regionWantedList_->setMinimumHeight(40);
+    regionWantedList_->setColumnCount(4);
+    regionWantedList_->setHeaderLabels({"Token", "Amount", "Price", "After Cmd"});
+    regionWantedList_->header()->setSectionResizeMode(0, QHeaderView::Stretch);
+    regionWantedList_->header()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
+    regionWantedList_->header()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
+    regionWantedList_->header()->setSectionResizeMode(3, QHeaderView::ResizeToContents);
+    regionWantedList_->setRootIsDecorated(false);
+    regionWantedList_->setSelectionMode(QAbstractItemView::NoSelection);
 
     detailsPaneLayout->addWidget(regionDateLabel_);
     detailsPaneLayout->addWidget(hoverRegionLabel_);
     detailsPaneLayout->addWidget(regionDetailsView_, 2);
-    detailsPaneLayout->addWidget(regionResourcesLabel_);
     detailsPaneLayout->addWidget(regionResourcesList_, 1);
-    detailsPaneLayout->addWidget(regionForSaleLabel_);
     detailsPaneLayout->addWidget(regionForSaleList_, 1);
-    detailsPaneLayout->addWidget(regionWantedLabel_);
     detailsPaneLayout->addWidget(regionWantedList_, 1);
 
     // -----------------------------------------------------------------------
@@ -217,6 +238,9 @@ MapTabContentQt::MapTabContentQt(AppData&   appData,
     unitWeightLabel_      = new QLabel(rightPanel);
     unitCapacitiesLabel_  = new QLabel(rightPanel);
     unitCapacitiesLabel_->setWordWrap(true);
+    unitShipCapacityLabel_ = new QLabel(rightPanel);
+    unitShipCapacityLabel_->setWordWrap(true);
+    unitShipCapacityLabel_->hide();
 
     rightLayout->addWidget(selectedUnitLabel_);
     rightLayout->addWidget(unitCoordinatesLabel_);
@@ -224,17 +248,28 @@ MapTabContentQt::MapTabContentQt(AppData&   appData,
     rightLayout->addWidget(unitWarningLabel_);
     rightLayout->addWidget(unitWeightLabel_);
     rightLayout->addWidget(unitCapacitiesLabel_);
+    rightLayout->addWidget(unitShipCapacityLabel_);
 
     // -----------------------------------------------------------------------
-    // Unit-detail tabs
-    // Tabs: Items | Skills | Orders | Events | Errors | Warnings
-    // Data population is implemented in steps 7.3 and 7.4.
+    // Vertical splitter: upper (Items + Skills) | lower (tab widget)
+    // Items and Skills are shown permanently above the tab widget so they
+    // are always visible regardless of the active tab.
     // -----------------------------------------------------------------------
-    unitDetailsTabs_ = new QTabWidget(rightPanel);
-    rightLayout->addWidget(unitDetailsTabs_, 1);
+    auto* detailSplitter = new QSplitter(Qt::Vertical, rightPanel);
+    rightLayout->addWidget(detailSplitter, 1);
 
-    // Items tab — mirrors Win32 unitItemsList_ (LVS_REPORT, 4 columns)
-    unitItemsList_ = new QTableWidget(0, 4, unitDetailsTabs_);
+    // --- Upper part: permanent Items list and Skills list ---
+    auto* upperDetailsWidget = new QWidget(detailSplitter);
+    auto* upperDetailsLayout = new QVBoxLayout(upperDetailsWidget);
+    upperDetailsLayout->setContentsMargins(0, 0, 0, 0);
+    upperDetailsLayout->setSpacing(2);
+    detailSplitter->addWidget(upperDetailsWidget);
+
+    // Items list — mirrors Win32 unitItemsList_ (LVS_REPORT, 4 columns)
+    auto* itemsHeaderLabel = new QLabel("Items:", upperDetailsWidget);
+    upperDetailsLayout->addWidget(itemsHeaderLabel);
+
+    unitItemsList_ = new QTableWidget(0, 4, upperDetailsWidget);
     unitItemsList_->setSelectionBehavior(QAbstractItemView::SelectRows);
     unitItemsList_->setSelectionMode(QAbstractItemView::SingleSelection);
     unitItemsList_->setEditTriggers(QAbstractItemView::NoEditTriggers);
@@ -245,11 +280,20 @@ MapTabContentQt::MapTabContentQt(AppData&   appData,
     unitItemsList_->setColumnWidth(1, 100);
     unitItemsList_->setColumnWidth(2, 60);
     unitItemsList_->setColumnWidth(3, 70);
-    unitDetailsTabs_->addTab(unitItemsList_, "Items");
+    upperDetailsLayout->addWidget(unitItemsList_, 1);
 
-    // Skills tab — mirrors Win32 unitSkillsList_
-    unitSkillsList_ = new QListWidget(unitDetailsTabs_);
-    unitDetailsTabs_->addTab(unitSkillsList_, "Skills");
+    // Skills list — mirrors Win32 unitSkillsList_
+    auto* skillsHeaderLabel = new QLabel("Skills:", upperDetailsWidget);
+    upperDetailsLayout->addWidget(skillsHeaderLabel);
+
+    unitSkillsList_ = new QListWidget(upperDetailsWidget);
+    upperDetailsLayout->addWidget(unitSkillsList_, 1);
+
+    // --- Lower part: Orders / Events / Errors / Warnings tabs ---
+    // Tabs: Orders | Events | Errors | Warnings
+    // Data population is implemented in steps 7.3 and 7.4.
+    unitDetailsTabs_ = new QTabWidget(detailSplitter);
+    detailSplitter->addWidget(unitDetailsTabs_);
 
     // Orders tab — mirrors Win32 ordersEditor_ + saveOrdersButton_
     {
@@ -266,22 +310,26 @@ MapTabContentQt::MapTabContentQt(AppData&   appData,
         saveOrdersButton_->setEnabled(false);
         ordersLayout->addWidget(saveOrdersButton_);
 
-        unitDetailsTabs_->addTab(ordersPage, "Orders");
+        unitDetailsTabs_->addTab(ordersPage, "Orders");  // index 0
     }
 
     // Events tab — mirrors Win32 unitEventsList_
     unitEventsList_ = new QListWidget(unitDetailsTabs_);
-    unitDetailsTabs_->addTab(unitEventsList_, "Events");
+    unitDetailsTabs_->addTab(unitEventsList_, "Events");  // index 1
 
     // Errors tab — mirrors Win32 unitErrorsList_
     unitErrorsList_ = new QListWidget(unitDetailsTabs_);
-    unitDetailsTabs_->addTab(unitErrorsList_, "Errors");
+    unitDetailsTabs_->addTab(unitErrorsList_, "Errors");  // index 2
 
     // Warnings tab — mirrors Win32 unitWarningsList_
     unitWarningsList_ = new QListWidget(unitDetailsTabs_);
-    unitDetailsTabs_->addTab(unitWarningsList_, "Warnings");
+    unitDetailsTabs_->addTab(unitWarningsList_, "Warnings");  // index 3
 
-    unitDetailsTabs_->setCurrentIndex(0); // start on Items tab
+    unitDetailsTabs_->setCurrentIndex(0); // start on Orders tab
+
+    // Give items+skills roughly 55 % and the tab widget 45 % of the available space.
+    detailSplitter->setStretchFactor(0, 11);
+    detailSplitter->setStretchFactor(1, 9);
 
         connect(unitsList_, &QTableWidget::itemSelectionChanged,
             this, &MapTabContentQt::onUnitsSelectionChanged);

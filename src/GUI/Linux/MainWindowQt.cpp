@@ -38,10 +38,14 @@
 
 #include <QCloseEvent>
 #include <QFileDialog>
+#include <QFont>
+#include <QGuiApplication>
+#include <QIcon>
 #include <QMenu>
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QResizeEvent>
+#include <QScreen>
 #include <QTabWidget>
 #include <QTimer>
 #include <QVBoxLayout>
@@ -61,6 +65,114 @@
 // ---------------------------------------------------------------------------
 namespace
 {
+
+enum class QtUiProfile
+{
+    Auto,
+    Compact,
+    Standard,
+    Large,
+};
+
+struct QtUiMetrics
+{
+    int baseFontPt { 10 };
+    int controlHeightPx { 24 };
+    int spacingPx { 6 };
+    int marginPx { 8 };
+    double dialogWidthScale { 1.0 };
+    double dialogHeightScale { 1.0 };
+};
+
+constexpr int kDefaultMainWindowWidth = 900;
+constexpr int kDefaultMainWindowHeight = 600;
+
+QtUiProfile profileFromConfigMode(const std::wstring& configuredMode)
+{
+    std::wstring normalized = configuredMode;
+    std::transform(normalized.begin(), normalized.end(), normalized.begin(), std::towlower);
+
+    if (normalized == L"compact") return QtUiProfile::Compact;
+    if (normalized == L"standard") return QtUiProfile::Standard;
+    if (normalized == L"large") return QtUiProfile::Large;
+    return QtUiProfile::Auto;
+}
+
+QtUiProfile detectAutoProfile(QScreen* screen)
+{
+    if (screen == nullptr)
+    {
+        return QtUiProfile::Standard;
+    }
+
+    const QRect available = screen->availableGeometry();
+    const int width = available.width();
+    const int height = available.height();
+    const qreal dpi = screen->logicalDotsPerInch();
+
+    if (width <= 1366 || height <= 768)
+    {
+        return QtUiProfile::Compact;
+    }
+
+    if (width >= 2560 || height >= 1440)
+    {
+        return QtUiProfile::Large;
+    }
+
+    if (dpi >= 168.0)
+    {
+        return QtUiProfile::Large;
+    }
+
+    if (dpi >= 144.0 && (width >= 1920 || height >= 1200))
+    {
+        return QtUiProfile::Large;
+    }
+
+    return QtUiProfile::Standard;
+}
+
+QtUiProfile resolveProfile(QtUiProfile requested, QScreen* screen)
+{
+    return requested == QtUiProfile::Auto ? detectAutoProfile(screen) : requested;
+}
+
+QtUiMetrics metricsForProfile(QtUiProfile profile)
+{
+    switch (profile)
+    {
+        case QtUiProfile::Compact:
+            return QtUiMetrics { .baseFontPt = 9,
+                                 .controlHeightPx = 22,
+                                 .spacingPx = 4,
+                                 .marginPx = 6,
+                                 .dialogWidthScale = 0.82,
+                                 .dialogHeightScale = 0.82 };
+        case QtUiProfile::Large:
+            return QtUiMetrics { .baseFontPt = 11,
+                                 .controlHeightPx = 30,
+                                 .spacingPx = 8,
+                                 .marginPx = 10,
+                                 .dialogWidthScale = 1.0,
+                                 .dialogHeightScale = 1.0 };
+        case QtUiProfile::Auto:
+        case QtUiProfile::Standard:
+        default:
+            return QtUiMetrics { .baseFontPt = 10,
+                                 .controlHeightPx = 26,
+                                 .spacingPx = 6,
+                                 .marginPx = 8,
+                                 .dialogWidthScale = 0.90,
+                                 .dialogHeightScale = 0.90 };
+    }
+}
+
+QtUiMetrics resolveMetricsForConfig(const AppConfig& appConfig, QScreen* screen)
+{
+    const QtUiProfile requested = profileFromConfigMode(appConfig.getUiSizeMode());
+    return metricsForProfile(resolveProfile(requested, screen));
+}
 
 struct MainFactionExportContext
 {
@@ -187,7 +299,7 @@ std::wstring buildOrdersExportContent(const AppData& appData,
 
 bool saveTextFile(const std::wstring& path, const std::wstring& content)
 {
-    std::wofstream file(path);
+    std::wofstream file{std::filesystem::path(path)};
     if (!file.is_open()) return false;
     file << content;
     return file.good();
@@ -215,9 +327,39 @@ MainWindow::MainWindow(AppData& appData, QWidget* parent)
 {
     appConfig_.load();
     applyConfigToAppData();
+    applyQtUiSizing();
 
     setWindowTitle(kAboutAppName);
-    resize(appConfig_.getMainWindowWidth(), appConfig_.getMainWindowHeight());
+    setWindowIcon(QIcon(QStringLiteral(":/icons/AtlantisMajordomo_256.png")));
+
+    const QtUiMetrics metrics = resolveMetricsForConfig(appConfig_, screen());
+    int startupWidth = appConfig_.getMainWindowWidth();
+    int startupHeight = appConfig_.getMainWindowHeight();
+    const bool usingDefaultConfigSize =
+        startupWidth == kDefaultMainWindowWidth && startupHeight == kDefaultMainWindowHeight;
+    if (usingDefaultConfigSize)
+    {
+        startupWidth = static_cast<int>(static_cast<double>(startupWidth) * metrics.dialogWidthScale);
+        startupHeight = static_cast<int>(static_cast<double>(startupHeight) * metrics.dialogHeightScale);
+    }
+
+    QScreen* startupScreen = screen();
+    if (startupScreen == nullptr)
+    {
+        startupScreen = QGuiApplication::primaryScreen();
+    }
+    const QRect available = startupScreen != nullptr
+        ? startupScreen->availableGeometry()
+        : QRect(0, 0, 1920, 1080);
+
+    const int minStartupWidth = 720;
+    const int minStartupHeight = 500;
+    startupWidth = std::clamp(startupWidth, minStartupWidth, (std::max)(minStartupWidth, available.width()));
+    startupHeight = std::clamp(startupHeight, minStartupHeight, (std::max)(minStartupHeight, available.height()));
+
+    resize(startupWidth, startupHeight);
+    move(available.left() + (available.width() - startupWidth) / 2,
+         available.top() + (available.height() - startupHeight) / 2);
 
     setupMenus();
     setupTabs();
@@ -239,6 +381,33 @@ void MainWindow::applyConfigToAppData()
     appData_.setOnlyLeaderCanTeach(appConfig_.getOnlyLeaderCanTeach());
     appData_.setLeaderMages(appConfig_.getLeaderMages());
     Commands::setFullMonthOrderKeywordsCsv(appConfig_.getFullMonthOrdersCsv());
+}
+
+void MainWindow::applyQtUiSizing()
+{
+    const QtUiMetrics metrics = resolveMetricsForConfig(appConfig_, screen());
+
+    QFont appFont = font();
+    appFont.setPointSize(metrics.baseFontPt);
+    setFont(appFont);
+
+    const QString style = QString(
+        "QWidget { font-size: %1pt; }"
+        "QPushButton, QLineEdit, QComboBox, QAbstractSpinBox { min-height: %2px; }"
+        "QTabBar::tab { min-height: %3px; padding: 4px 10px; }"
+        "QListView::item, QTreeView::item, QTableView::item { min-height: %4px; }"
+    )
+        .arg(metrics.baseFontPt)
+        .arg(metrics.controlHeightPx)
+        .arg((std::max)(20, metrics.controlHeightPx - 2))
+        .arg((std::max)(18, metrics.controlHeightPx - 4));
+
+    setStyleSheet(style);
+
+    if (tabWidget_ != nullptr)
+    {
+        tabWidget_->setDocumentMode(true);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -697,6 +866,7 @@ void MainWindow::onSettingsOptions()
     if (dlg.exec() == QDialog::Accepted)
     {
         applyConfigToAppData();
+        applyQtUiSizing();
         refreshAllTabs();
     }
 }

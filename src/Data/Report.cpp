@@ -24,6 +24,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <filesystem>
 #include <fstream>
 #include <map>
 #include <regex>
@@ -49,7 +50,7 @@ bool Report::loadFromFile(const std::wstring& filePath)
   clear();
   filePath_ = filePath;
 
-  std::wifstream file(filePath);
+  std::wifstream file{std::filesystem::path(filePath)};
   if (!file.is_open())
   {
     lastError_ = L"Failed to open file: " + filePath;
@@ -552,7 +553,6 @@ void Report::parseRegions(RegionRepository& regionRepository,
                           const std::vector<std::wstring>& flyingShipTypeTokens)
 {
   DebugLog(L"Report::parseRegions() - begin");
-  (void)shipStructureIdThreshold;
   (void)flyingShipTypeTokens;
 
   foundRegions_ = 0;
@@ -1400,6 +1400,11 @@ void Report::parseRegions(RegionRepository& regionRepository,
                 const bool isClosed = (nameTerminator == L',') &&
                                       (lowerSuffix.find(L"closed to player units") != std::wstring::npos);
 
+                // Ship structure IDs are globally unique (above the threshold)
+                // so they can be tracked across region boundaries.  Building
+                // IDs are small integers reused per region and must not be
+                // treated as globally unique.
+                const bool isGloballyUniqueStructureId = (structureId > shipStructureIdThreshold);
                 structureRepository.addOrUpdateIfLater(structureId,
                                                       xCoord,
                                                       yCoord,
@@ -1408,7 +1413,8 @@ void Report::parseRegions(RegionRepository& regionRepository,
                                                       structureName,
                                                       isClosed,
                                                       month_,
-                                                      year_);
+                                                      year_,
+                                                      isGloballyUniqueStructureId);
 
                 if (Structure* parsedStructure =
                       structureRepository.findByIdAndCoordinates(structureId, xCoord, yCoord, zCoord))

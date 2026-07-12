@@ -892,7 +892,10 @@ void MapTabContent::setVisible(bool visible)
     return;
   }
 
-  if (visible)
+  const bool wasVisible = isVisible_;
+  isVisible_ = visible;
+
+  if (visible && !wasVisible)
   {
     refresh();
   }
@@ -1011,6 +1014,31 @@ UiSizeProfile::Profile MapTabContent::resolveRequestedUiProfile() const
   return UiSizeProfile::Profile::Auto;
 }
 
+UiSizeProfile::MapHexProfile MapTabContent::resolveRequestedMapHexProfile() const
+{
+  if (appConfig_ == nullptr)
+  {
+    return UiSizeProfile::MapHexProfile::Medium;
+  }
+
+  std::wstring mode = appConfig_->getMapHexSizeMode();
+  for (wchar_t& ch : mode)
+  {
+    ch = static_cast<wchar_t>(std::towlower(ch));
+  }
+
+  if (mode == L"small")
+  {
+    return UiSizeProfile::MapHexProfile::Small;
+  }
+  if (mode == L"large")
+  {
+    return UiSizeProfile::MapHexProfile::Large;
+  }
+
+  return UiSizeProfile::MapHexProfile::Medium;
+}
+
 UiSizeProfile::Metrics MapTabContent::resolveUiMetrics() const
 {
   const HWND referenceWindow = mapCanvas_ != nullptr ? mapCanvas_ : GetDesktopWindow();
@@ -1019,11 +1047,12 @@ UiSizeProfile::Metrics MapTabContent::resolveUiMetrics() const
   return UiSizeProfile::getMetrics(effectiveProfile);
 }
 
-int MapTabContent::resolveScaledMapHexWidth(const UiSizeProfile::Metrics& metrics) const
+int MapTabContent::resolveScaledMapHexWidth() const
 {
   const int baseHexWidth = (appConfig_ != nullptr) ? appConfig_->getMapHexWidth() : 40;
   const int clampedBase = (std::max)(12, baseHexWidth);
-  const int scaled = static_cast<int>(std::lround(static_cast<double>(clampedBase) * metrics.mapHexWidthScale));
+  const UiSizeProfile::MapHexMetrics mapHexMetrics = UiSizeProfile::getMapHexMetrics(resolveRequestedMapHexProfile());
+  const int scaled = static_cast<int>(std::lround(static_cast<double>(clampedBase) * mapHexMetrics.mapHexWidthScale));
   return (std::max)(12, scaled);
 }
 

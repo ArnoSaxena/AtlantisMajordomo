@@ -2132,13 +2132,47 @@ namespace
   /**
   * @brief Finds the best unit skill level that satisfies an item's production requirements.
   */
-  int getBestQualifiedProductionSkillLevel(const Unit& unit, const Item& item)
+  int getBestQualifiedProductionSkillLevel(const AppData& appData,
+                                           const std::map<std::wstring, int>& unitSkills,
+                                           const Item& item)
   {
     int bestQualifiedLevel = 0;
 
     for (const auto& [requiredSkillToken, requiredLevel] : item.getProductionSkill())
     {
-      const int unitSkillLevel = Skill::trainingDaysToLevel(unit.getSkillDays(requiredSkillToken));
+      std::wstring normalizedRequiredSkillToken;
+      std::wstring normalizedRequiredSkillName;
+
+      if (const Skill* requiredSkill = findSkillByTokenOrNameNormalized(appData, requiredSkillToken))
+      {
+        normalizedRequiredSkillToken = normalizeItemToken(requiredSkill->getIdentifierToken());
+        normalizedRequiredSkillName = normalizeItemToken(requiredSkill->getName());
+      }
+
+      if (normalizedRequiredSkillToken.empty())
+      {
+        normalizedRequiredSkillToken = normalizeItemToken(requiredSkillToken);
+      }
+
+      int requiredSkillDays = 0;
+      for (const auto& [unitSkillToken, days] : unitSkills)
+      {
+        const std::wstring normalizedUnitSkillToken = normalizeItemToken(unitSkillToken);
+        const bool exactIdentifierMatch = normalizedUnitSkillToken == normalizedRequiredSkillToken;
+        const bool exactNameMatch = !normalizedRequiredSkillName.empty() &&
+                                    normalizedUnitSkillToken == normalizedRequiredSkillName;
+        const bool containsIdentifierMatch = !normalizedRequiredSkillToken.empty() &&
+                                             normalizedUnitSkillToken.find(normalizedRequiredSkillToken) != std::wstring::npos;
+        const bool containsNameMatch = !normalizedRequiredSkillName.empty() &&
+                                       normalizedUnitSkillToken.find(normalizedRequiredSkillName) != std::wstring::npos;
+
+        if (exactIdentifierMatch || exactNameMatch || containsIdentifierMatch || containsNameMatch)
+        {
+          requiredSkillDays = std::max(requiredSkillDays, days);
+        }
+      }
+
+      const int unitSkillLevel = Skill::trainingDaysToLevel(requiredSkillDays);
       if (unitSkillLevel >= requiredLevel)
       {
         bestQualifiedLevel = std::max(bestQualifiedLevel, unitSkillLevel);
@@ -2146,6 +2180,11 @@ namespace
     }
 
     return bestQualifiedLevel;
+  }
+
+  int getBestQualifiedProductionSkillLevel(const AppData& appData, const Unit& unit, const Item& item)
+  {
+    return getBestQualifiedProductionSkillLevel(appData, unit.getSkills(), item);
   }
 
   /**
@@ -2246,21 +2285,21 @@ namespace
         const UnitNew* destinationNewUnit = nullptr;
         if (transportCommand.targetIsNewUnit)
         {
-          const auto destinationNewIt = simulation.nearbyNewUnits.find(transportCommand.targetUnitId);
-          if (destinationNewIt == simulation.nearbyNewUnits.end() || destinationNewIt->second == nullptr)
+          const auto destinationNewIter = simulation.nearbyNewUnits.find(transportCommand.targetUnitId);
+          if (destinationNewIter == simulation.nearbyNewUnits.end() || destinationNewIter->second == nullptr)
           {
             return;
           }
-          destinationNewUnit = destinationNewIt->second;
+          destinationNewUnit = destinationNewIter->second;
         }
         else
         {
-          const auto destinationUnitIt = simulation.nearbyUnits.find(transportCommand.targetUnitId);
-          if (destinationUnitIt == simulation.nearbyUnits.end() || destinationUnitIt->second == nullptr)
+          const auto destinationUnitIter = simulation.nearbyUnits.find(transportCommand.targetUnitId);
+          if (destinationUnitIter == simulation.nearbyUnits.end() || destinationUnitIter->second == nullptr)
           {
             return;
           }
-          destinationUnit = destinationUnitIt->second;
+          destinationUnit = destinationUnitIter->second;
         }
 
         if (transportCommand.targetIsNewUnit)
@@ -2286,8 +2325,8 @@ namespace
           return;
         }
 
-        auto sourceCountsIt = simulation.itemCountsByUnit.find(originUnitNumber);
-        if (sourceCountsIt == simulation.itemCountsByUnit.end())
+        auto sourceCountsIter = simulation.itemCountsByUnit.find(originUnitNumber);
+        if (sourceCountsIter == simulation.itemCountsByUnit.end())
         {
           return;
         }
@@ -2295,28 +2334,28 @@ namespace
         std::map<std::wstring, int>* destinationCounts = nullptr;
         if (transportCommand.targetIsNewUnit)
         {
-          const auto destinationCountsNewIt = simulation.itemCountsByNewUnit.find(transportCommand.targetUnitId);
-          if (destinationCountsNewIt == simulation.itemCountsByNewUnit.end())
+          const auto destinationCountsNewIter = simulation.itemCountsByNewUnit.find(transportCommand.targetUnitId);
+          if (destinationCountsNewIter == simulation.itemCountsByNewUnit.end())
           {
             return;
           }
-          destinationCounts = &destinationCountsNewIt->second;
+          destinationCounts = &destinationCountsNewIter->second;
         }
         else
         {
-          const auto destinationCountsIt = simulation.itemCountsByUnit.find(transportCommand.targetUnitId);
-          if (destinationCountsIt == simulation.itemCountsByUnit.end())
+          const auto destinationCountsIter = simulation.itemCountsByUnit.find(transportCommand.targetUnitId);
+          if (destinationCountsIter == simulation.itemCountsByUnit.end())
           {
             return;
           }
-          destinationCounts = &destinationCountsIt->second;
+          destinationCounts = &destinationCountsIter->second;
         }
 
-        std::map<std::wstring, int>& sourceCountsRef = sourceCountsIt->second;
+        std::map<std::wstring, int>& sourceCountsRef = sourceCountsIter->second;
         std::map<std::wstring, int>& destinationCountsRef = *destinationCounts;
 
-        const auto availableIt = sourceCountsRef.find(transportCommand.itemToken);
-        const int availableAmount = (availableIt == sourceCountsRef.end()) ? 0 : availableIt->second;
+        const auto availableIter = sourceCountsRef.find(transportCommand.itemToken);
+        const int availableAmount = (availableIter == sourceCountsRef.end()) ? 0 : availableIter->second;
         if (availableAmount <= 0)
         {
           return;
@@ -2376,46 +2415,46 @@ namespace
         std::map<std::wstring, int>* originSkillsPtr = nullptr;
         if (isNewUnit)
         {
-          auto it = simulation.itemCountsByNewUnit.find(originUnitNumber);
-          if (it == simulation.itemCountsByNewUnit.end())
+          auto iter = simulation.itemCountsByNewUnit.find(originUnitNumber);
+          if (iter == simulation.itemCountsByNewUnit.end())
           {
             return;
           }
-          originCountsPtr = &it->second;
+          originCountsPtr = &iter->second;
 
-          auto skillsIt = simulation.skillsByNewUnit.find(originUnitNumber);
-          if (skillsIt != simulation.skillsByNewUnit.end())
+          auto skillsIter = simulation.skillsByNewUnit.find(originUnitNumber);
+          if (skillsIter != simulation.skillsByNewUnit.end())
           {
-            originSkillsPtr = &skillsIt->second;
+            originSkillsPtr = &skillsIter->second;
           }
         }
         else
         {
-          auto originCountsIt = simulation.itemCountsByUnit.find(originUnitNumber);
-          if (originCountsIt == simulation.itemCountsByUnit.end())
+          auto originCountsIter = simulation.itemCountsByUnit.find(originUnitNumber);
+          if (originCountsIter == simulation.itemCountsByUnit.end())
           {
             return;
           }
-          originCountsPtr = &originCountsIt->second;
+          originCountsPtr = &originCountsIter->second;
 
-          auto skillsIt = simulation.skillsByUnit.find(originUnitNumber);
-          if (skillsIt != simulation.skillsByUnit.end())
+          auto skillsIter = simulation.skillsByUnit.find(originUnitNumber);
+          if (skillsIter != simulation.skillsByUnit.end())
           {
-            originSkillsPtr = &skillsIt->second;
+            originSkillsPtr = &skillsIter->second;
           }
         }
         std::map<std::wstring, int>& originCounts = *originCountsPtr;
 
         if (tradeCommand.isBuy)
         {
-          auto forSaleIt = simulation.remainingForSale.find(tradeCommand.itemToken);
-          if (forSaleIt == simulation.remainingForSale.end())
+          auto forSaleIter = simulation.remainingForSale.find(tradeCommand.itemToken);
+          if (forSaleIter == simulation.remainingForSale.end())
           {
             return;
           }
 
-          const int availableAmount = std::max(0, forSaleIt->second.first);
-          const int price = std::max(0, forSaleIt->second.second);
+          const int availableAmount = std::max(0, forSaleIter->second.first);
+          const int price = std::max(0, forSaleIter->second.second);
           if (availableAmount <= 0)
           {
             return;
@@ -2483,20 +2522,20 @@ namespace
             }
           }
 
-          forSaleIt->second.first = availableAmount - boughtAmount;
+          forSaleIter->second.first = availableAmount - boughtAmount;
           return;
         }
 
-        auto wantedIt = simulation.remainingWanted.find(tradeCommand.itemToken);
-        if (wantedIt == simulation.remainingWanted.end())
+        auto wantedIter = simulation.remainingWanted.find(tradeCommand.itemToken);
+        if (wantedIter == simulation.remainingWanted.end())
         {
           return;
         }
 
-        const auto availableItemIt = originCounts.find(tradeCommand.itemToken);
-        const int availableItemAmount = (availableItemIt == originCounts.end()) ? 0 : availableItemIt->second;
-        const int wantedAmount = std::max(0, wantedIt->second.first);
-        const int price = std::max(0, wantedIt->second.second);
+        const auto availableItemIter = originCounts.find(tradeCommand.itemToken);
+        const int availableItemAmount = (availableItemIter == originCounts.end()) ? 0 : availableItemIter->second;
+        const int wantedAmount = std::max(0, wantedIter->second.first);
+        const int price = std::max(0, wantedIter->second.second);
         if (availableItemAmount <= 0 || wantedAmount <= 0)
         {
           return;
@@ -2521,7 +2560,7 @@ namespace
         }
 
         originCounts[L"SILV"] += soldAmount * price;
-        wantedIt->second.first = wantedAmount - soldAmount;
+        wantedIter->second.first = wantedAmount - soldAmount;
         return;
       }
 
@@ -2532,13 +2571,13 @@ namespace
           return;
         }
 
-        auto originCountsIt = simulation.itemCountsByUnit.find(originUnitNumber);
-        if (originCountsIt == simulation.itemCountsByUnit.end())
+        auto originCountsIter = simulation.itemCountsByUnit.find(originUnitNumber);
+        if (originCountsIter == simulation.itemCountsByUnit.end())
         {
           return;
         }
 
-        const int manCount = appData.itemRepository().calculateManItemCount(originCountsIt->second);
+        const int manCount = appData.itemRepository().calculateManItemCount(originCountsIter->second);
         if (manCount <= 0)
         {
           return;
@@ -2551,7 +2590,7 @@ namespace
           return;
         }
 
-        originCountsIt->second[L"SILV"] += silverAmount;
+        originCountsIter->second[L"SILV"] += silverAmount;
         simulation.remainingTaxableIncome -= silverAmount;
         return;
       }
@@ -2565,6 +2604,60 @@ namespace
           return;
         }
 
+        // Resolve the faction number of the unit issuing this GIVE/TAKE command.
+        //
+        // This is needed later to enforce the same-faction rule: a unit may only GIVE to,
+        // or TAKE FROM, units that belong to its own faction.
+        //
+        // There are two distinct cases:
+        //
+        //   Case 1 — The issuer is a NEW unit (originated from a FORM block).
+        //     New units are scheduled with originUnit == nullptr because they do not yet
+        //     exist as real Unit objects in the unit repository. Their faction identity is
+        //     inherited from the parent unit that issued the FORM order. To recover the
+        //     faction number we:
+        //       a) look up the UnitNew snapshot in the nearby-new-units map by unit number,
+        //       b) read the stored origin (parent) unit number from that snapshot,
+        //       c) find the real parent Unit in the unit repository,
+        //       d) read the faction number from the parent.
+        //     If any of these look-ups fail the transfer cannot be validated, so we abort.
+        //
+        //   Case 2 — The issuer is a regular (already-existing) unit.
+        //     originUnit is a valid pointer to the Unit object, so we read the faction
+        //     number directly from it.
+        //     If originUnit is somehow null despite isNewUnit being false, something is
+        //     inconsistent in the caller; we abort rather than proceed with faction 0.
+        int originFactionNumber = 0;
+        if (isNewUnit)
+        {
+          // (a) Look up the new unit's snapshot in the simulation state.
+          //     originNewUnitIter now points to the originating newUnit object.
+          const auto originNewUnitIter = simulation.nearbyNewUnits.find(originUnitNumber);
+          if (originNewUnitIter == simulation.nearbyNewUnits.end() || !originNewUnitIter->second)
+          {
+            return; // New unit not found in simulation — cannot determine faction.
+          }
+          // (b) Get the number of the parent unit that issued the FORM order.
+          const int parentUnitNumber = originNewUnitIter->second->getOriginUnit();
+          // (c) Find the real parent unit in the unit repository.
+          const Unit* parentUnit = appData.unitRepository().findByNumber(parentUnitNumber);
+          if (!parentUnit)
+          {
+            return; // Parent unit missing from repository — cannot determine faction.
+          }
+          // (d) Inherit the faction number from the parent.
+          originFactionNumber = parentUnit->getFactionNumber();
+        }
+        else if (originUnit)
+        {
+          // Regular unit: faction number is read directly from the unit object.
+          originFactionNumber = originUnit->getFactionNumber();
+        }
+        else
+        {
+          return; // Unexpected state: non-new unit with null originUnit pointer.
+        }
+
         int sourceUnitNumber = originUnitNumber;
         int destinationUnitNumber = giveCommand.receiverUnitId;
         bool sourceIsNewUnit = false;
@@ -2574,43 +2667,43 @@ namespace
           sourceUnitNumber = giveCommand.receiverUnitId;
           destinationUnitNumber = originUnitNumber;
           sourceIsNewUnit = giveCommand.receiverIsNewUnit;
-          destinationIsNewUnit = false;
+          destinationIsNewUnit = isNewUnit;
 
           if (giveCommand.receiverIsNewUnit)
           {
-            const auto sourceNewUnitIt = simulation.regionNewUnits.find(sourceUnitNumber);
-            if (sourceNewUnitIt == simulation.regionNewUnits.end() || sourceNewUnitIt->second == nullptr)
+            const auto sourceNewUnitIter = simulation.regionNewUnits.find(sourceUnitNumber);
+            if (sourceNewUnitIter == simulation.regionNewUnits.end() || sourceNewUnitIter->second == nullptr)
             {
               return;
             }
 
-            const UnitNew* sourceNewUnit = sourceNewUnitIt->second;
+            const UnitNew* sourceNewUnit = sourceNewUnitIter->second;
             const int sourceNewOriginUnit = sourceNewUnit->getOriginUnit();
             if (sourceNewOriginUnit <= 0)
             {
               return;
             }
 
-            const auto sourceOriginUnitIt = simulation.regionUnits.find(sourceNewOriginUnit);
-            if (sourceOriginUnitIt == simulation.regionUnits.end() || sourceOriginUnitIt->second == nullptr)
+            const auto sourceOriginUnitIter = simulation.regionUnits.find(sourceNewOriginUnit);
+            if (sourceOriginUnitIter == simulation.regionUnits.end() || sourceOriginUnitIter->second == nullptr)
             {
               return;
             }
 
-            if (sourceOriginUnitIt->second->getFactionNumber() != originUnit->getFactionNumber())
+            if (sourceOriginUnitIter->second->getFactionNumber() != originFactionNumber)
             {
               return;
             }
           }
           else
           {
-            const auto sourceUnitIt = simulation.regionUnits.find(sourceUnitNumber);
-            if (sourceUnitIt == simulation.regionUnits.end() || sourceUnitIt->second == nullptr)
+            const auto sourceUnitIter = simulation.regionUnits.find(sourceUnitNumber);
+            if (sourceUnitIter == simulation.regionUnits.end() || sourceUnitIter->second == nullptr)
             {
               return;
             }
 
-            if (sourceUnitIt->second->getFactionNumber() != originUnit->getFactionNumber())
+            if (sourceUnitIter->second->getFactionNumber() != originFactionNumber)
             {
               return;
             }
@@ -2625,41 +2718,41 @@ namespace
         std::map<std::wstring, int>* sourceCounts = nullptr;
         if (giveCommand.isTake && giveCommand.receiverIsNewUnit)
         {
-          const auto sourceCountsNewIt = simulation.itemCountsByNewUnit.find(sourceUnitNumber);
-          if (sourceCountsNewIt == simulation.itemCountsByNewUnit.end())
+          const auto sourceCountsNewIter = simulation.itemCountsByNewUnit.find(sourceUnitNumber);
+          if (sourceCountsNewIter == simulation.itemCountsByNewUnit.end())
           {
             return;
           }
-          sourceCounts = &sourceCountsNewIt->second;
+          sourceCounts = &sourceCountsNewIter->second;
         }
         else
         {
-          const auto sourceCountsIt = simulation.itemCountsByUnit.find(sourceUnitNumber);
-          if (sourceCountsIt == simulation.itemCountsByUnit.end())
+          const auto sourceCountsIter = simulation.itemCountsByUnit.find(sourceUnitNumber);
+          if (sourceCountsIter == simulation.itemCountsByUnit.end())
           {
             return;
           }
-          sourceCounts = &sourceCountsIt->second;
+          sourceCounts = &sourceCountsIter->second;
         }
 
         std::map<std::wstring, int>* destinationCounts = nullptr;
-        if (!giveCommand.isTake && giveCommand.receiverIsNewUnit)
+        if (destinationIsNewUnit)
         {
-          const auto destinationCountsNewIt = simulation.itemCountsByNewUnit.find(destinationUnitNumber);
-          if (destinationCountsNewIt == simulation.itemCountsByNewUnit.end())
+          const auto destinationCountsNewIter = simulation.itemCountsByNewUnit.find(destinationUnitNumber);
+          if (destinationCountsNewIter == simulation.itemCountsByNewUnit.end())
           {
             return;
           }
-          destinationCounts = &destinationCountsNewIt->second;
+          destinationCounts = &destinationCountsNewIter->second;
         }
         else
         {
-          const auto destinationCountsIt = simulation.itemCountsByUnit.find(destinationUnitNumber);
-          if (destinationCountsIt == simulation.itemCountsByUnit.end())
+          const auto destinationCountsIter = simulation.itemCountsByUnit.find(destinationUnitNumber);
+          if (destinationCountsIter == simulation.itemCountsByUnit.end())
           {
             return;
           }
-          destinationCounts = &destinationCountsIt->second;
+          destinationCounts = &destinationCountsIter->second;
         }
 
         std::map<std::wstring, int>& sourceCountsRef = *sourceCounts;
@@ -2668,45 +2761,45 @@ namespace
         std::map<std::wstring, int>* sourceSkills = nullptr;
         if (sourceIsNewUnit)
         {
-          const auto sourceSkillsIt = simulation.skillsByNewUnit.find(sourceUnitNumber);
-          if (sourceSkillsIt == simulation.skillsByNewUnit.end())
+          const auto sourceSkillsIter = simulation.skillsByNewUnit.find(sourceUnitNumber);
+          if (sourceSkillsIter == simulation.skillsByNewUnit.end())
           {
             return;
           }
-          sourceSkills = &sourceSkillsIt->second;
+          sourceSkills = &sourceSkillsIter->second;
         }
         else
         {
-          const auto sourceSkillsIt = simulation.skillsByUnit.find(sourceUnitNumber);
-          if (sourceSkillsIt == simulation.skillsByUnit.end())
+          const auto sourceSkillsIter = simulation.skillsByUnit.find(sourceUnitNumber);
+          if (sourceSkillsIter == simulation.skillsByUnit.end())
           {
             return;
           }
-          sourceSkills = &sourceSkillsIt->second;
+          sourceSkills = &sourceSkillsIter->second;
         }
 
         std::map<std::wstring, int>* destinationSkills = nullptr;
         if (destinationIsNewUnit)
         {
-          const auto destinationSkillsIt = simulation.skillsByNewUnit.find(destinationUnitNumber);
-          if (destinationSkillsIt == simulation.skillsByNewUnit.end())
+          const auto destinationSkillsIter = simulation.skillsByNewUnit.find(destinationUnitNumber);
+          if (destinationSkillsIter == simulation.skillsByNewUnit.end())
           {
             return;
           }
-          destinationSkills = &destinationSkillsIt->second;
+          destinationSkills = &destinationSkillsIter->second;
         }
         else
         {
-          const auto destinationSkillsIt = simulation.skillsByUnit.find(destinationUnitNumber);
-          if (destinationSkillsIt == simulation.skillsByUnit.end())
+          const auto destinationSkillsIter = simulation.skillsByUnit.find(destinationUnitNumber);
+          if (destinationSkillsIter == simulation.skillsByUnit.end())
           {
             return;
           }
-          destinationSkills = &destinationSkillsIt->second;
+          destinationSkills = &destinationSkillsIter->second;
         }
 
-        const auto availableIt = sourceCountsRef.find(giveCommand.itemToken);
-        const int availableAmount = (availableIt == sourceCountsRef.end()) ? 0 : availableIt->second;
+        const auto availableIter = sourceCountsRef.find(giveCommand.itemToken);
+        const int availableAmount = (availableIter == sourceCountsRef.end()) ? 0 : availableIter->second;
         if (availableAmount <= 0)
         {
           return;
@@ -2772,12 +2865,12 @@ namespace
 
             for (const std::wstring& skillToken : skillTokens)
             {
-              const auto sourceSkillIt = sourceSkills->find(skillToken);
-              const int sourceSkillDays = (sourceSkillIt == sourceSkills->end()) ? 0 : sourceSkillIt->second;
+              const auto sourceSkillIter = sourceSkills->find(skillToken);
+              const int sourceSkillDays = (sourceSkillIter == sourceSkills->end()) ? 0 : sourceSkillIter->second;
 
-              const auto destinationSkillIt = destinationSkills->find(skillToken);
+              const auto destinationSkillIter = destinationSkills->find(skillToken);
               const int destinationSkillDays =
-                (destinationSkillIt == destinationSkills->end()) ? 0 : destinationSkillIt->second;
+                (destinationSkillIter == destinationSkills->end()) ? 0 : destinationSkillIter->second;
 
               const long long weightedSkillDays =
                 static_cast<long long>(destinationSkillDays) * static_cast<long long>(destinationManCountBeforeTransfer) +
@@ -2819,26 +2912,26 @@ namespace
         std::map<int, std::map<std::wstring, int>>& originSkillsMap =
           isNewUnit ? simulation.skillsByNewUnit : simulation.skillsByUnit;
 
-        auto originCountsIt = originItemCountsMap.find(originUnitNumber);
-        if (originCountsIt == originItemCountsMap.end())
+        auto originCountsIter = originItemCountsMap.find(originUnitNumber);
+        if (originCountsIter == originItemCountsMap.end())
         {
           return;
         }
 
-        auto originSkillsIt = originSkillsMap.find(originUnitNumber);
-        if (originSkillsIt == originSkillsMap.end())
+        auto originSkillsIter = originSkillsMap.find(originUnitNumber);
+        if (originSkillsIter == originSkillsMap.end())
         {
           return;
         }
 
-        const int manCount =  appData.itemRepository().calculateManItemCount(originCountsIt->second);
+        const int manCount =  appData.itemRepository().calculateManItemCount(originCountsIter->second);
         if (manCount <= 0)
         {
           return;
         }
 
         int entertainDays = 0;
-        for (const auto& [skillToken, days] : originSkillsIt->second)
+        for (const auto& [skillToken, days] : originSkillsIter->second)
         {
           if (normalizeItemToken(skillToken) == L"ENTE")
           {
@@ -2860,7 +2953,7 @@ namespace
           return;
         }
 
-        originCountsIt->second[L"SILV"] += silverAmount;
+        originCountsIter->second[L"SILV"] += silverAmount;
         simulation.remainingEntertainment -= silverAmount;
         return;
       }
@@ -2875,13 +2968,13 @@ namespace
         std::map<int, std::map<std::wstring, int>>& originItemCountsMap =
           isNewUnit ? simulation.itemCountsByNewUnit : simulation.itemCountsByUnit;
 
-        auto originCountsIt = originItemCountsMap.find(originUnitNumber);
-        if (originCountsIt == originItemCountsMap.end())
+        auto originCountsIter = originItemCountsMap.find(originUnitNumber);
+        if (originCountsIter == originItemCountsMap.end())
         {
           return;
         }
 
-        const int manCount = appData.itemRepository().calculateManItemCount(originCountsIt->second);
+        const int manCount = appData.itemRepository().calculateManItemCount(originCountsIter->second);
         if (manCount <= 0)
         {
           return;
@@ -2900,7 +2993,7 @@ namespace
           return;
         }
 
-        originCountsIt->second[L"SILV"] += silverAmount;
+        originCountsIter->second[L"SILV"] += silverAmount;
         simulation.remainingWorkWages -= silverAmount;
         return;
       }
@@ -2914,27 +3007,54 @@ namespace
           return;
         }
 
-        auto originCountsIt = simulation.itemCountsByUnit.find(originUnitNumber);
-        if (originCountsIt == simulation.itemCountsByUnit.end())
+        std::map<int, std::map<std::wstring, int>>& originItemCountsMap =
+          isNewUnit ? simulation.itemCountsByNewUnit : simulation.itemCountsByUnit;
+        std::map<int, std::map<std::wstring, int>>& originSkillsMap =
+          isNewUnit ? simulation.skillsByNewUnit : simulation.skillsByUnit;
+
+        auto originCountsIter = originItemCountsMap.find(originUnitNumber);
+        if (originCountsIter == originItemCountsMap.end())
         {
           return;
         }
 
-        const Item* producedItem = appData.itemRepository().findByIdentifierToken(produceCommand.itemToken);
+        const Item* producedItem = findItemByTokenNormalized(appData, produceCommand.itemToken);
         if (!producedItem)
         {
           return;
         }
 
-        const int unitProductionSkill = getBestQualifiedProductionSkillLevel(*originUnit, *producedItem);
+        const std::wstring producedToken = normalizeItemToken(producedItem->getIdentifierToken());
+        if (producedToken.empty())
+        {
+          return;
+        }
+
+        const auto originSkillsIter = originSkillsMap.find(originUnitNumber);
+        const std::map<std::wstring, int>* originSkills = nullptr;
+        if (originSkillsIter != originSkillsMap.end())
+        {
+          originSkills = &originSkillsIter->second;
+        }
+        else if (!isNewUnit && originUnit)
+        {
+          originSkills = &originUnit->getSkills();
+        }
+
+        if (!originSkills)
+        {
+          return;
+        }
+
+        const int unitProductionSkill = getBestQualifiedProductionSkillLevel(appData, *originSkills, *producedItem);
         if (unitProductionSkill <= 0)
         {
           return;
         }
 
-        std::map<std::wstring, int>& originCounts = originCountsIt->second;
+        std::map<std::wstring, int>& originCounts = originCountsIter->second;
         const auto& productionRequirements = producedItem->getResources();
-        const std::wstring producedTokenNormalized = normalizeItemToken(produceCommand.itemToken);
+        const std::wstring producedTokenNormalized = producedToken;
         bool hasOnlySelfRequirement = !productionRequirements.empty();
         for (const auto& [requirementToken, requirementAmount] : productionRequirements)
         {
@@ -2952,7 +3072,7 @@ namespace
 
         const bool usesUnitIngredients = !productionRequirements.empty() && !hasOnlySelfRequirement;
 
-        const int manCount = appData.itemRepository().calculateManItemCount(originCountsIt->second);
+        const int manCount = appData.itemRepository().calculateManItemCount(originCountsIter->second);
         if (manCount <= 0)
         {
           return;
@@ -3018,8 +3138,8 @@ namespace
             }
 
             hasValidRequirement = true;
-            const auto availableIt = originCounts.find(normalizedRequirementToken);
-            const int availableAmount = (availableIt == originCounts.end()) ? 0 : availableIt->second;
+            const auto availableIter = originCounts.find(normalizedRequirementToken);
+            const int availableAmount = (availableIter == originCounts.end()) ? 0 : availableIter->second;
             const int capForThisRequirement = availableAmount / requirementAmount;
 
             if (firstRequirement)
@@ -3042,9 +3162,9 @@ namespace
         }
         else
         {
-          const auto availableResourceIt = simulation.remainingResources.find(produceCommand.itemToken);
+          const auto availableResourceIter = simulation.remainingResources.find(producedToken);
           const int availableResourceAmount =
-            (availableResourceIt == simulation.remainingResources.end()) ? 0 : availableResourceIt->second;
+            (availableResourceIter == simulation.remainingResources.end()) ? 0 : availableResourceIter->second;
           producedAmount = std::min(producedAmount, availableResourceAmount);
         }
 
@@ -3053,7 +3173,7 @@ namespace
           return;
         }
 
-        originCounts[produceCommand.itemToken] += producedAmount;
+        originCounts[producedToken] += producedAmount;
 
         if (usesUnitIngredients)
         {
@@ -3071,36 +3191,36 @@ namespace
             }
 
             const int consumedAmount = requirementAmount * producedAmount;
-            auto availableIt = originCounts.find(normalizedRequirementToken);
-            if (availableIt == originCounts.end())
+            auto availableIter = originCounts.find(normalizedRequirementToken);
+            if (availableIter == originCounts.end())
             {
               continue;
             }
 
-            const int remainingAmount = availableIt->second - consumedAmount;
+            const int remainingAmount = availableIter->second - consumedAmount;
             if (remainingAmount > 0)
             {
-              availableIt->second = remainingAmount;
+              availableIter->second = remainingAmount;
             }
             else
             {
-              originCounts.erase(availableIt);
+              originCounts.erase(availableIter);
             }
           }
         }
         else
         {
-          const auto availableResourceIt = simulation.remainingResources.find(produceCommand.itemToken);
+          const auto availableResourceIter = simulation.remainingResources.find(producedToken);
           const int availableResourceAmount =
-            (availableResourceIt == simulation.remainingResources.end()) ? 0 : availableResourceIt->second;
+            (availableResourceIter == simulation.remainingResources.end()) ? 0 : availableResourceIter->second;
           const int remainingResource = availableResourceAmount - producedAmount;
           if (remainingResource > 0)
           {
-            simulation.remainingResources[produceCommand.itemToken] = remainingResource;
+            simulation.remainingResources[producedToken] = remainingResource;
           }
           else
           {
-            simulation.remainingResources.erase(produceCommand.itemToken);
+            simulation.remainingResources.erase(producedToken);
           }
         }
 
@@ -3116,13 +3236,13 @@ namespace
         std::map<int, std::map<std::wstring, int>>& originSkillsMap =
           isNewUnit ? simulation.skillsByNewUnit : simulation.skillsByUnit;
 
-        auto originCountsIt = originItemCountsMap.find(originUnitNumber);
-        if (originCountsIt == originItemCountsMap.end())
+        auto originCountsIter = originItemCountsMap.find(originUnitNumber);
+        if (originCountsIter == originItemCountsMap.end())
         {
           return;
         }
 
-        std::map<std::wstring, int>& originCounts = originCountsIt->second;
+        std::map<std::wstring, int>& originCounts = originCountsIter->second;
         int manCount = appData.itemRepository().calculateManItemCount(originCounts);
         if (manCount <= 0)
         {
@@ -3151,14 +3271,14 @@ namespace
           return;
         }
 
-        auto skillsIt = originSkillsMap.find(originUnitNumber);
+        auto skillsIter = originSkillsMap.find(originUnitNumber);
         const std::map<std::wstring, int>* fallbackSkillsPtr = nullptr;
         if (isNewUnit)
         {
-          const auto nearbyIt = simulation.nearbyNewUnits.find(originUnitNumber);
-          if (nearbyIt != simulation.nearbyNewUnits.end() && nearbyIt->second)
+          const auto nearbyIter = simulation.nearbyNewUnits.find(originUnitNumber);
+          if (nearbyIter != simulation.nearbyNewUnits.end() && nearbyIter->second)
           {
-            fallbackSkillsPtr = &nearbyIt->second->getSkills();
+            fallbackSkillsPtr = &nearbyIter->second->getSkills();
           }
         }
         else if (originUnit)
@@ -3168,7 +3288,7 @@ namespace
 
         const std::map<std::wstring, int> emptySkills;
         const std::map<std::wstring, int>& unitSkillsForPrereq =
-          (skillsIt != originSkillsMap.end()) ? skillsIt->second
+          (skillsIter != originSkillsMap.end()) ? skillsIter->second
           : (fallbackSkillsPtr ? *fallbackSkillsPtr : emptySkills);
         if (!hasStudyPrerequisites(unitSkillsForPrereq, *studiedSkill))
         {
@@ -3180,8 +3300,8 @@ namespace
         {
           const int totalCost = manCount * studyCost;
 
-          auto silvIt = originCounts.find(L"SILV");
-          int silverAvailable = (silvIt == originCounts.end()) ? 0 : silvIt->second;
+          auto silvIter = originCounts.find(L"SILV");
+          int silverAvailable = (silvIter == originCounts.end()) ? 0 : silvIter->second;
           const int silverAfterStudy = silverAvailable - totalCost;
           if (silverAfterStudy > 0)
           {
@@ -3199,15 +3319,15 @@ namespace
 
         // Add skill advancement: 30 points to the studied skill
         // Ensure skills are initialized in the simulation map if not already present
-        if (skillsIt == originSkillsMap.end())
+        if (skillsIter == originSkillsMap.end())
         {
           originSkillsMap[originUnitNumber] = fallbackSkillsPtr ? *fallbackSkillsPtr : emptySkills;
-          skillsIt = originSkillsMap.find(originUnitNumber);
+          skillsIter = originSkillsMap.find(originUnitNumber);
         }
 
-        if (skillsIt != originSkillsMap.end())
+        if (skillsIter != originSkillsMap.end())
         {
-          std::map<std::wstring, int>& unitSkills = skillsIt->second;
+          std::map<std::wstring, int>& unitSkills = skillsIter->second;
           const std::wstring studiedSkillToken = studiedSkill->getIdentifierToken();
           const std::wstring normalizedStudiedSkillToken = normalizeItemToken(studiedSkillToken);
           std::wstring targetSkillToken = studiedSkillToken;
@@ -3251,14 +3371,14 @@ namespace
         // TEACH command: provide bonus to students studying a skill that the teacher knows
         TeachCommand teachCommand = parsedCommand.teach;
         
-        auto originCountsIt = simulation.itemCountsByUnit.find(originUnitNumber);
-        if (originCountsIt == simulation.itemCountsByUnit.end())
+        auto originCountsIter = simulation.itemCountsByUnit.find(originUnitNumber);
+        if (originCountsIter == simulation.itemCountsByUnit.end())
         {
           return;
         }
 
         // Check if teacher can teach: must have isMan items
-        int teacherManCount = appData.itemRepository().calculateManItemCount(originCountsIt->second);
+        int teacherManCount = appData.itemRepository().calculateManItemCount(originCountsIter->second);
         if (teacherManCount <= 0)
         {
           return;
@@ -3268,7 +3388,7 @@ namespace
         if (appData.getOnlyLeaderCanTeach())
         {
           bool hasLeadItem = false;
-          for (const auto& [itemToken, amount] : originCountsIt->second)
+          for (const auto& [itemToken, amount] : originCountsIter->second)
           {
             if (amount > 0 && normalizeItemToken(itemToken) == L"LEAD")
             {
@@ -3287,13 +3407,13 @@ namespace
         }
 
         // Get teacher's skills from simulation
-        auto teacherSkillsIt = simulation.skillsByUnit.find(originUnitNumber);
-        if (teacherSkillsIt == simulation.skillsByUnit.end())
+        auto teacherSkillsIter = simulation.skillsByUnit.find(originUnitNumber);
+        if (teacherSkillsIter == simulation.skillsByUnit.end())
         {
           return;
         }
 
-        const std::map<std::wstring, int>& teacherSkills = teacherSkillsIt->second;
+        const std::map<std::wstring, int>& teacherSkills = teacherSkillsIter->second;
         
         // Collect valid students and their studied skills
         int totalStudentManCount = 0;
@@ -3301,8 +3421,8 @@ namespace
 
         for (int studentUnitNumber : teachCommand.studentUnitNumbers)
         {
-          const auto studentUnitIt = simulation.nearbyUnits.find(studentUnitNumber);
-          if (studentUnitIt == simulation.nearbyUnits.end() || studentUnitIt->second == nullptr)
+          const auto studentUnitIter = simulation.nearbyUnits.find(studentUnitNumber);
+          if (studentUnitIter == simulation.nearbyUnits.end() || studentUnitIter->second == nullptr)
           {
             continue; // Student unit not in region
           }
@@ -3336,21 +3456,21 @@ namespace
           }
 
           // Check if teacher knows this skill at a level higher than student
-          auto teacherSkillIt = teacherSkills.find(studiedSkillToken);
-          if (teacherSkillIt == teacherSkills.end())
+          auto teacherSkillIter = teacherSkills.find(studiedSkillToken);
+          if (teacherSkillIter == teacherSkills.end())
           {
             continue; // Teacher doesn't know this skill
           }
 
-          int teacherSkillLevel = Skill::trainingDaysToLevel(teacherSkillIt->second);
-          auto studentSkillsIt = simulation.skillsByUnit.find(studentUnitNumber);
+          int teacherSkillLevel = Skill::trainingDaysToLevel(teacherSkillIter->second);
+          auto studentSkillsIter = simulation.skillsByUnit.find(studentUnitNumber);
           int studentSkillLevel = 0;
-          if (studentSkillsIt != simulation.skillsByUnit.end())
+          if (studentSkillsIter != simulation.skillsByUnit.end())
           {
-            auto studentSkillIt = studentSkillsIt->second.find(studiedSkillToken);
-            if (studentSkillIt != studentSkillsIt->second.end())
+            auto studentSkillIter = studentSkillsIter->second.find(studiedSkillToken);
+            if (studentSkillIter != studentSkillsIter->second.end())
             {
-              studentSkillLevel = Skill::trainingDaysToLevel(studentSkillIt->second);
+              studentSkillLevel = Skill::trainingDaysToLevel(studentSkillIter->second);
             }
           }
 
@@ -3361,13 +3481,13 @@ namespace
           }
 
           // Get student's man count
-          auto studentCountsIt = simulation.itemCountsByUnit.find(studentUnitNumber);
-          if (studentCountsIt == simulation.itemCountsByUnit.end())
+          auto studentCountsIter = simulation.itemCountsByUnit.find(studentUnitNumber);
+          if (studentCountsIter == simulation.itemCountsByUnit.end())
           {
             continue;
           }
 
-          int studentManCount = appData.itemRepository().calculateManItemCount(studentCountsIt->second);
+          int studentManCount = appData.itemRepository().calculateManItemCount(studentCountsIter->second);
           if (studentManCount <= 0)
           {
             studentManCount = 1; // Fallback
@@ -3400,21 +3520,21 @@ namespace
         {
           const std::wstring& skillToken = skillData.first;
 
-          auto studentSkillsIt = simulation.skillsByUnit.find(studentUnitNumber);
-          if (studentSkillsIt == simulation.skillsByUnit.end())
+          auto studentSkillsIter = simulation.skillsByUnit.find(studentUnitNumber);
+          if (studentSkillsIter == simulation.skillsByUnit.end())
           {
             continue;
           }
 
-          std::map<std::wstring, int>& studentSkills = studentSkillsIt->second;
+          std::map<std::wstring, int>& studentSkills = studentSkillsIter->second;
           const int currentDays = studentSkills.count(skillToken) > 0 ? studentSkills[skillToken] : 0;
           const int proposedDays = currentDays + actualBonusPerStudent; // TEACH bonus only; STUDY already added 30 days
 
           // Apply skill limit
-          auto studentCountsIt = simulation.itemCountsByUnit.find(studentUnitNumber);
-          if (studentCountsIt != simulation.itemCountsByUnit.end())
+          auto studentCountsIter = simulation.itemCountsByUnit.find(studentUnitNumber);
+          if (studentCountsIter != simulation.itemCountsByUnit.end())
           {
-            const std::optional<int> studentLevelLimit = resolveUnitSkillLevelLimit(appData, studentCountsIt->second, skillToken);
+            const std::optional<int> studentLevelLimit = resolveUnitSkillLevelLimit(appData, studentCountsIter->second, skillToken);
             if (studentLevelLimit.has_value())
             {
               const int cappedDays = maxTrainingDaysForLevelLimit(*studentLevelLimit);
@@ -3698,13 +3818,13 @@ std::map<std::wstring, int> Commands::calculateAfterCommandItemCountsForUnit(con
     unit.getYCoordinate(),
     unit.getZCoordinate());
 
-  const auto targetIt = simulation.itemCountsByUnit.find(unit.getUnitNumber());
-  if (targetIt == simulation.itemCountsByUnit.end())
+  const auto targetIter = simulation.itemCountsByUnit.find(unit.getUnitNumber());
+  if (targetIter == simulation.itemCountsByUnit.end())
   {
     return unit.getItems();
   }
 
-  return targetIt->second;
+  return targetIter->second;
 }
 
 /**
@@ -3719,13 +3839,13 @@ std::map<std::wstring, int> Commands::calculateAfterCommandItemCountsForUnitNew(
     unitNew.getYCoordinate(),
     unitNew.getZCoordinate());
 
-  const auto targetIt = simulation.itemCountsByNewUnit.find(unitNew.getUnitNumber());
-  if (targetIt == simulation.itemCountsByNewUnit.end())
+  const auto targetIter = simulation.itemCountsByNewUnit.find(unitNew.getUnitNumber());
+  if (targetIter == simulation.itemCountsByNewUnit.end())
   {
     return unitNew.getItems();
   }
 
-  return targetIt->second;
+  return targetIter->second;
 }
 
 /**
@@ -3740,13 +3860,13 @@ std::map<std::wstring, int> Commands::calculateAfterCommandSkillDaysForUnit(cons
     unit.getYCoordinate(),
     unit.getZCoordinate());
 
-  const auto targetIt = simulation.skillsByUnit.find(unit.getUnitNumber());
-  if (targetIt == simulation.skillsByUnit.end())
+  const auto targetIter = simulation.skillsByUnit.find(unit.getUnitNumber());
+  if (targetIter == simulation.skillsByUnit.end())
   {
     return unit.getSkills();
   }
 
-  return targetIt->second;
+  return targetIter->second;
 }
 
 std::map<std::wstring, int> Commands::calculateAfterCommandSkillDaysForUnitNew(const AppData& appData,
@@ -3758,13 +3878,13 @@ std::map<std::wstring, int> Commands::calculateAfterCommandSkillDaysForUnitNew(c
     unitNew.getYCoordinate(),
     unitNew.getZCoordinate());
 
-  const auto targetIt = simulation.skillsByNewUnit.find(unitNew.getUnitNumber());
-  if (targetIt == simulation.skillsByNewUnit.end())
+  const auto targetIter = simulation.skillsByNewUnit.find(unitNew.getUnitNumber());
+  if (targetIter == simulation.skillsByNewUnit.end())
   {
     return unitNew.getSkills();
   }
 
-  return targetIt->second;
+  return targetIter->second;
 }
 
 std::wstring Commands::calculateAfterCommandUnitNameForUnit(const AppData& appData,
@@ -3776,13 +3896,13 @@ std::wstring Commands::calculateAfterCommandUnitNameForUnit(const AppData& appDa
     unit.getYCoordinate(),
     unit.getZCoordinate());
 
-  const auto targetIt = simulation.unitNamesByUnit.find(unit.getUnitNumber());
-  if (targetIt == simulation.unitNamesByUnit.end())
+  const auto targetIter = simulation.unitNamesByUnit.find(unit.getUnitNumber());
+  if (targetIter == simulation.unitNamesByUnit.end())
   {
     return unit.getUnitName();
   }
 
-  return targetIt->second;
+  return targetIter->second;
 }
 
 std::wstring Commands::calculateAfterCommandUnitNameForUnitNew(const AppData& appData,
@@ -3794,13 +3914,13 @@ std::wstring Commands::calculateAfterCommandUnitNameForUnitNew(const AppData& ap
     unitNew.getYCoordinate(),
     unitNew.getZCoordinate());
 
-  const auto targetIt = simulation.unitNamesByNewUnit.find(unitNew.getUnitNumber());
-  if (targetIt == simulation.unitNamesByNewUnit.end())
+  const auto targetIter = simulation.unitNamesByNewUnit.find(unitNew.getUnitNumber());
+  if (targetIter == simulation.unitNamesByNewUnit.end())
   {
     return unitNew.getUnitName();
   }
 
-  return targetIt->second;
+  return targetIter->second;
 }
 
 /**

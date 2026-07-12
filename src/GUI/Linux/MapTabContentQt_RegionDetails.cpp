@@ -36,28 +36,12 @@
 #include "Function/StringUtils.hpp"
 
 #include <QLabel>
-#include <QListWidget>
-#include <QListWidgetItem>
 #include <QPlainTextEdit>
+#include <QTreeWidget>
+#include <QTreeWidgetItem>
 
 #include <algorithm>
 #include <cwctype>
-
-// Helper to format a row with 2-3 columns for display in QListWidget
-static QString formatResourceRow(const QString& col1, const QString& col2, const QString& col3 = QString())
-{
-    if (col3.isEmpty())
-    {
-        return QString("%1  %2").arg(col1, col2);
-    }
-    return QString("%1  %2  %3").arg(col1, col2, col3);
-}
-
-// Helper for 4-column rows (for-sale, wanted)
-static QString formatForSaleRow(const QString& col1, const QString& col2, const QString& col3, const QString& col4)
-{
-    return QString("%1  %2  %3  %4").arg(col1, col2, col3, col4);
-}
 
 void MapTabContentQt::updateRegionDetailsView(const Region* region)
 {
@@ -178,14 +162,14 @@ void MapTabContentQt::populateResourcesList(const Region* region)
 
     auto insertResourceRow = [this](const std::wstring& itemName, int amount, int amountAfterCommands)
     {
-        const QString name = QString::fromStdWString(itemName);
-        const QString before = QString::number(amount);
-        const QString after = QString::number(amountAfterCommands);
-        const QString row = formatResourceRow(name, before, after);
-
-        auto* item = new QListWidgetItem(row);
-        item->setFlags(item->flags() & ~Qt::ItemIsSelectable);
-        regionResourcesList_->addItem(item);
+        auto* treeItem = new QTreeWidgetItem(regionResourcesList_);
+        treeItem->setText(0, QString::fromStdWString(itemName));
+        treeItem->setText(1, QString::number(amount));
+        treeItem->setText(2, QString::number(amountAfterCommands));
+        treeItem->setFlags(treeItem->flags() & ~Qt::ItemIsSelectable);
+        // Right-align the numeric columns.
+        treeItem->setTextAlignment(1, Qt::AlignRight | Qt::AlignVCenter);
+        treeItem->setTextAlignment(2, Qt::AlignRight | Qt::AlignVCenter);
     };
 
     insertResourceRow(L"Entertainment", region->getEntertainment(), entertainmentAfterCommands);
@@ -194,20 +178,20 @@ void MapTabContentQt::populateResourcesList(const Region* region)
 
     for (const auto& [token, amount] : resources)
     {
-        int amountAfterCommands = amount;
-        auto afterIt = afterCommandResources.find(token);
-        if (afterIt == afterCommandResources.end())
+        int amountAfterCommands = 0;
+        auto afterIter = afterCommandResources.find(token);
+        if (afterIter == afterCommandResources.end())
         {
             std::wstring tokenUpper = token;
             for (wchar_t& ch : tokenUpper)
             {
                 ch = static_cast<wchar_t>(towupper(ch));
             }
-            afterIt = afterCommandResources.find(tokenUpper);
+            afterIter = afterCommandResources.find(tokenUpper);
         }
-        if (afterIt != afterCommandResources.end())
+        if (afterIter != afterCommandResources.end())
         {
-            amountAfterCommands = afterIt->second;
+            amountAfterCommands = afterIter->second;
         }
 
         insertResourceRow(token, amount, amountAfterCommands);
@@ -259,31 +243,32 @@ void MapTabContentQt::populateForSaleList(const Region* region)
     for (const auto& token : sortedTokens)
     {
         const auto& amountPrice = forSale.at(token);
-        const QString tokenStr = QString::fromStdWString(token);
-        const QString amountStr = QString::number(amountPrice.first);
-        const QString priceStr = QString::number(amountPrice.second);
 
         int amountAfterCommands = amountPrice.first;
-        auto afterIt = afterCommandForSale.find(token);
-        if (afterIt == afterCommandForSale.end())
+        auto afterIter = afterCommandForSale.find(token);
+        if (afterIter == afterCommandForSale.end())
         {
             std::wstring tokenUpper = token;
             for (wchar_t& ch : tokenUpper)
             {
                 ch = static_cast<wchar_t>(towupper(ch));
             }
-            afterIt = afterCommandForSale.find(tokenUpper);
+            afterIter = afterCommandForSale.find(tokenUpper);
         }
-        if (afterIt != afterCommandForSale.end())
+        if (afterIter != afterCommandForSale.end())
         {
-            amountAfterCommands = afterIt->second.first;
+            amountAfterCommands = afterIter->second.first;
         }
-        const QString amountAfterStr = QString::number(amountAfterCommands);
 
-        const QString row = formatForSaleRow(tokenStr, amountStr, priceStr, amountAfterStr);
-        auto* item = new QListWidgetItem(row);
-        item->setFlags(item->flags() & ~Qt::ItemIsSelectable);
-        regionForSaleList_->addItem(item);
+        auto* treeItem = new QTreeWidgetItem(regionForSaleList_);
+        treeItem->setText(0, QString::fromStdWString(token));
+        treeItem->setText(1, QString::number(amountPrice.first));
+        treeItem->setText(2, QString::number(amountPrice.second));
+        treeItem->setText(3, QString::number(amountAfterCommands));
+        treeItem->setFlags(treeItem->flags() & ~Qt::ItemIsSelectable);
+        treeItem->setTextAlignment(1, Qt::AlignRight | Qt::AlignVCenter);
+        treeItem->setTextAlignment(2, Qt::AlignRight | Qt::AlignVCenter);
+        treeItem->setTextAlignment(3, Qt::AlignRight | Qt::AlignVCenter);
     }
 }
 
@@ -306,30 +291,30 @@ void MapTabContentQt::populateWantedList(const Region* region)
 
     for (const auto& [token, amountPrice] : wanted)
     {
-        const QString tokenStr = QString::fromStdWString(token);
-        const QString amountStr = QString::number(amountPrice.first);
-        const QString priceStr = QString::number(amountPrice.second);
-
         int amountAfterCommands = amountPrice.first;
-        auto afterIt = afterCommandWanted.find(token);
-        if (afterIt == afterCommandWanted.end())
+        auto afterIter = afterCommandWanted.find(token);
+        if (afterIter == afterCommandWanted.end())
         {
             std::wstring tokenUpper = token;
             for (wchar_t& ch : tokenUpper)
             {
                 ch = static_cast<wchar_t>(towupper(ch));
             }
-            afterIt = afterCommandWanted.find(tokenUpper);
+            afterIter = afterCommandWanted.find(tokenUpper);
         }
-        if (afterIt != afterCommandWanted.end())
+        if (afterIter != afterCommandWanted.end())
         {
-            amountAfterCommands = afterIt->second.first;
+            amountAfterCommands = afterIter->second.first;
         }
-        const QString amountAfterStr = QString::number(amountAfterCommands);
 
-        const QString row = formatForSaleRow(tokenStr, amountStr, priceStr, amountAfterStr);
-        auto* item = new QListWidgetItem(row);
-        item->setFlags(item->flags() & ~Qt::ItemIsSelectable);
-        regionWantedList_->addItem(item);
+        auto* treeItem = new QTreeWidgetItem(regionWantedList_);
+        treeItem->setText(0, QString::fromStdWString(token));
+        treeItem->setText(1, QString::number(amountPrice.first));
+        treeItem->setText(2, QString::number(amountPrice.second));
+        treeItem->setText(3, QString::number(amountAfterCommands));
+        treeItem->setFlags(treeItem->flags() & ~Qt::ItemIsSelectable);
+        treeItem->setTextAlignment(1, Qt::AlignRight | Qt::AlignVCenter);
+        treeItem->setTextAlignment(2, Qt::AlignRight | Qt::AlignVCenter);
+        treeItem->setTextAlignment(3, Qt::AlignRight | Qt::AlignVCenter);
     }
 }

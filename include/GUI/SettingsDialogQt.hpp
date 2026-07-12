@@ -27,6 +27,7 @@
 class AppConfig;
 class AppData;
 class QCheckBox;
+class QComboBox;
 class QLineEdit;
 class QListWidget;
 
@@ -86,6 +87,8 @@ private:
     QLineEdit*   shipThresholdEdit_       { nullptr };
     QLineEdit*   dataFilePathEdit_        { nullptr };
     QLineEdit*   reportFolderPathEdit_    { nullptr };
+    QComboBox*   uiSizeModeCombo_         { nullptr };
+    QComboBox*   mapHexSizeModeCombo_     { nullptr };
     QCheckBox*   onlyLeaderCanTeachCheck_ { nullptr };
     QCheckBox*   leaderMagesCheck_        { nullptr };
     QListWidget* fullMonthOrdersList_     { nullptr };

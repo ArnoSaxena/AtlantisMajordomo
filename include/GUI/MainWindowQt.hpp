@@ -85,6 +85,7 @@ private:
     void autoLoad();
     void refreshAllTabs();
     void applyConfigToAppData();
+    void applyQtUiSizing();
 
     AppData&    appData_;
     AppConfig   appConfig_;

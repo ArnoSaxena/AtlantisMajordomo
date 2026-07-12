@@ -32,6 +32,7 @@
 
 #include <QLineEdit>
 #include <QMessageBox>
+#include <QPlainTextEdit>
 #include <QTableWidget>
 
 #include <string>
@@ -92,11 +93,8 @@ void MapTabContentQt::selectUnitInMap(int unitNumber)
     // Find and select the unit row in the units list
     if (unitsList_)
     {
-        // Clear any existing selection
-        for (int row = 0; row < unitsList_->rowCount(); ++row)
-        {
-            unitsList_->setItemSelected(unitsList_->item(row, 0), false);
-        }
+        // Qt6 removed setItemSelected; clearSelection is the direct replacement.
+        unitsList_->clearSelection();
 
         // Search for the unit by its number (stored in Qt::UserRole of first column)
         for (int row = 0; row < unitsList_->rowCount(); ++row)

@@ -12,6 +12,7 @@ endif()
 # Common sources (shared by all platforms)
 # ---------------------------------------------------------------------------
 set(COMMON_SOURCES
+  src/DebugLog.cpp
   src/AppConfig.cpp
   src/Main.cpp
   src/Data/AppData.cpp
@@ -44,7 +45,10 @@ set(COMMON_SOURCES
   src/Function/AppDataUtils.cpp
   src/Function/BattleFormattingUtils.cpp
   src/Function/CommandSimulationService.cpp
+  src/Function/CoordinateFormattingUtils.cpp
   src/Function/CoordinateUtils.cpp
+  src/Function/FactionAttitudeUtils.cpp
+  src/Function/HexDirectionUtils.cpp
   src/Function/JsonUtils.cpp
   src/Function/MonthUtils.cpp
   src/Function/OrderBusinessLogic.cpp
@@ -115,8 +119,10 @@ elseif(UNIX)
   find_package(Qt6 REQUIRED COMPONENTS Widgets)
 
   set(CMAKE_AUTOMOC ON)
+  set(CMAKE_AUTORCC ON)
 
   set(GUI_SOURCES
+    src/GUI/Linux/AtlantisMajordomo.qrc
     src/GUI/Linux/MainWindowQt.cpp
     src/GUI/Linux/ReportsTabContentQt.cpp
     src/GUI/Linux/EventsTabContentQt.cpp
@@ -133,6 +139,16 @@ elseif(UNIX)
     src/GUI/Linux/MapTabContentQt_Navigation.cpp
     src/GUI/Linux/MapTabContentQt_Events.cpp
     src/GUI/Linux/MapTabContentQt_MapCanvas.cpp
+    include/GUI/MainWindowQt.hpp
+    include/GUI/ReportsTabContentQt.hpp
+    include/GUI/EventsTabContentQt.hpp
+    include/GUI/BattlesTabContentQt.hpp
+    include/GUI/FactionsTabContentQt.hpp
+    include/GUI/ItemsTabContentQt.hpp
+    include/GUI/SkillsTabContentQt.hpp
+    include/GUI/SettingsDialogQt.hpp
+    include/GUI/MapTabContentQt.hpp
+    include/GUI/MapCanvasWidget.hpp
   )
 
   add_executable(AtlantisMajordomo
@@ -145,6 +161,21 @@ elseif(UNIX)
   target_compile_options(AtlantisMajordomo PRIVATE
     -Wall -Wextra -Wpedantic
   )
+
+  install(TARGETS AtlantisMajordomo
+    RUNTIME DESTINATION bin
+  )
+
+  install(FILES packaging/linux/AtlantisMajordomo.desktop
+    DESTINATION share/applications
+  )
+
+  set(ICON_SIZES 16x16 24x24 32x32 48x48 64x64 128x128 256x256 512x512)
+  foreach(ICON_SIZE IN LISTS ICON_SIZES)
+    install(FILES packaging/linux/icons/hicolor/${ICON_SIZE}/apps/AtlantisMajordomo.png
+      DESTINATION share/icons/hicolor/${ICON_SIZE}/apps
+    )
+  endforeach()
 
 endif()
 

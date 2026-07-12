@@ -63,11 +63,34 @@ bool StructureRepository::addOrUpdateIfLater(int structureId,
                                             std::wstring structureName,
                                             bool isClosed,
                                             int month,
-                                            int year)
+                                            int year,
+                                            bool isGloballyUniqueId)
 {
   Structure* existing = findByIdAndCoordinates(structureId, xCoordinate, yCoordinate, zCoordinate);
   if (existing == nullptr)
   {
+    // For globally-unique IDs (ships), remove any stale entry at a different
+    // location before adding the new one.  Building IDs are reused per region
+    // so we must not do this for them.
+    if (isGloballyUniqueId)
+    {
+      for (auto iter = structures_.begin(); iter != structures_.end(); ++iter)
+      {
+        if (iter->getStructureId() != structureId)
+        {
+          continue;
+        }
+        // Same ID but different coordinates — this is the ship's old location.
+        const bool staleIsOlder = (year > iter->getYear()) ||
+                                  (year == iter->getYear() && month > iter->getMonth());
+        if (staleIsOlder)
+        {
+          structures_.erase(iter);
+        }
+        break; // Only one stale entry can exist per globally-unique ID.
+      }
+    }
+
     return add(structureId,
               xCoordinate,
               yCoordinate,

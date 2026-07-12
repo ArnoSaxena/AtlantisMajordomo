@@ -126,6 +126,20 @@ public:
     void setUiSizeMode(const std::wstring& uiSizeMode);
 
     /**
+    * @brief Gets the configured map hex size mode.
+    *
+    * Returns one of: Small, Medium, Large.
+    */
+    const std::wstring& getMapHexSizeMode() const;
+
+    /**
+    * @brief Sets the configured map hex size mode.
+    *
+    * Unsupported values are normalized to Medium.
+    */
+    void setMapHexSizeMode(const std::wstring& mapHexSizeMode);
+
+    /**
     * @brief Gets whether only leaders may teach.
     */
     bool getOnlyLeaderCanTeach() const;
@@ -224,6 +238,7 @@ private:
     int mainWindowHeight_ { 600 };
     int mapHexWidth_ { 40 };
     std::wstring uiSizeMode_ { L"Auto" };
+    std::wstring mapHexSizeMode_ { L"Medium" };
     bool onlyLeaderCanTeach_ { false };
     bool leaderMages_ { true };
   std::wstring flyingShipsCsv_;

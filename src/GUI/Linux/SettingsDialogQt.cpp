@@ -27,6 +27,7 @@
 #include "Data/Commands.hpp"
 
 #include <QCheckBox>
+#include <QComboBox>
 #include <QDialogButtonBox>
 #include <QFileDialog>
 #include <QFormLayout>
@@ -98,6 +99,24 @@ SettingsDialogQt::SettingsDialogQt(AppData&   appData,
         reportFolderRow->addWidget(browseReportFolderButton);
         formLayout->addRow("Report folder:", reportFolderRow);
     }
+
+    // UI size mode — controls overall UI scaling: fonts, buttons, spacing, dialogs
+    // Options: Auto, Compact, Standard, Large
+    uiSizeModeCombo_ = new QComboBox(this);
+    uiSizeModeCombo_->addItem("Auto");
+    uiSizeModeCombo_->addItem("Compact");
+    uiSizeModeCombo_->addItem("Standard");
+    uiSizeModeCombo_->addItem("Large");
+    formLayout->addRow("UI size mode:", uiSizeModeCombo_);
+
+    // Map hex size — controls hexagon tile scaling independently from overall UI size
+    // Allows combinations like "Compact UI with Large hex tiles"
+    // Options: Small (0.95x), Medium (1.0x), Large (1.4x)
+    mapHexSizeModeCombo_ = new QComboBox(this);
+    mapHexSizeModeCombo_->addItem("Small");
+    mapHexSizeModeCombo_->addItem("Medium");
+    mapHexSizeModeCombo_->addItem("Large");
+    formLayout->addRow("Map hex size:", mapHexSizeModeCombo_);
 
     // Checkboxes — placed as a horizontal group in a single form row
     onlyLeaderCanTeachCheck_ = new QCheckBox("Only leader can teach", this);
@@ -202,6 +221,20 @@ SettingsDialogQt::SettingsDialogQt(AppData&   appData,
 
     reportFolderPathEdit_->setText(
         QString::fromStdWString(appConfig_->getReportImportFolder()));
+
+    if (uiSizeModeCombo_)
+    {
+        const QString configuredMode = QString::fromStdWString(appConfig_->getUiSizeMode()).trimmed();
+        const int modeIndex = uiSizeModeCombo_->findText(configuredMode, Qt::MatchFixedString | Qt::MatchCaseSensitive);
+        uiSizeModeCombo_->setCurrentIndex(modeIndex >= 0 ? modeIndex : 0);
+    }
+
+    if (mapHexSizeModeCombo_)
+    {
+        const QString configuredMode = QString::fromStdWString(appConfig_->getMapHexSizeMode()).trimmed();
+        const int modeIndex = mapHexSizeModeCombo_->findText(configuredMode, Qt::MatchFixedString | Qt::MatchCaseSensitive);
+        mapHexSizeModeCombo_->setCurrentIndex(modeIndex >= 0 ? modeIndex : 1); // default: Medium
+    }
 
     onlyLeaderCanTeachCheck_->setChecked(appData_->getOnlyLeaderCanTeach());
     leaderMagesCheck_->setChecked(appData_->getLeaderMages());
@@ -309,6 +342,14 @@ bool SettingsDialogQt::applySettings()
     appConfig_->setMagicSkillTriggersCsv(buildCsvFromList(magicTriggersList_));
     appConfig_->setDataFilePath(dataFilePathEdit_->text().toStdWString());
     appConfig_->setReportImportFolder(reportFolderPathEdit_->text().toStdWString());
+    if (uiSizeModeCombo_)
+    {
+        appConfig_->setUiSizeMode(uiSizeModeCombo_->currentText().toStdWString());
+    }
+    if (mapHexSizeModeCombo_)
+    {
+        appConfig_->setMapHexSizeMode(mapHexSizeModeCombo_->currentText().toStdWString());
+    }
     appConfig_->save();
 
     return true;

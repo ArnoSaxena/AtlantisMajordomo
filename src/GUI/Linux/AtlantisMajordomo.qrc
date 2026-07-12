@@ -1,0 +1,13 @@
+<RCC>
+  <qresource prefix="/icons">
+    <file alias="AtlantisMajordomo.png">icons/AtlantisMajordomo.png</file>
+    <file alias="AtlantisMajordomo_16.png">icons/AtlantisMajordomo_16.png</file>
+    <file alias="AtlantisMajordomo_24.png">icons/AtlantisMajordomo_24.png</file>
+    <file alias="AtlantisMajordomo_32.png">icons/AtlantisMajordomo_32.png</file>
+    <file alias="AtlantisMajordomo_48.png">icons/AtlantisMajordomo_48.png</file>
+    <file alias="AtlantisMajordomo_64.png">icons/AtlantisMajordomo_64.png</file>
+    <file alias="AtlantisMajordomo_128.png">icons/AtlantisMajordomo_128.png</file>
+    <file alias="AtlantisMajordomo_256.png">icons/AtlantisMajordomo_256.png</file>
+    <file alias="AtlantisMajordomo_512.png">icons/AtlantisMajordomo_512.png</file>
+  </qresource>
+</RCC>

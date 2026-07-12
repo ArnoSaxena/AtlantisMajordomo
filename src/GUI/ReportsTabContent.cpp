@@ -25,6 +25,8 @@
 #endif
 
 #include "GUI/ReportsTabContent.hpp"
+#include "GUI/UiSizeProfile.hpp"
+#include "GUI/WinSizingUtils.hpp"
 
 #include "AppConfig.hpp"
 #include "Data/AppData.hpp"
@@ -32,6 +34,7 @@
 #include "Function/MonthUtils.hpp"
 
 #include <algorithm>
+#include <cwctype>
 #include <commdlg.h>
 #include <filesystem>
 #include <windowsx.h>
@@ -41,6 +44,40 @@ namespace
 constexpr int kMargin = 8;
 constexpr int kPaneGap = 12;
 constexpr int kMinPaneWidth = 180;
+
+UiSizeProfile::Profile profileFromUiSizeMode(const std::wstring& mode)
+{
+  std::wstring normalized = mode;
+  for (wchar_t& ch : normalized)
+  {
+    ch = static_cast<wchar_t>(towlower(ch));
+  }
+
+  if (normalized == L"compact")
+  {
+    return UiSizeProfile::Profile::Compact;
+  }
+  if (normalized == L"standard")
+  {
+    return UiSizeProfile::Profile::Standard;
+  }
+  if (normalized == L"large")
+  {
+    return UiSizeProfile::Profile::Large;
+  }
+
+  return UiSizeProfile::Profile::Auto;
+}
+
+UiSizeProfile::Metrics resolveUiMetrics(HWND referenceWindow, const AppConfig* appConfig)
+{
+  const UiSizeProfile::DisplayInfo displayInfo = UiSizeProfile::queryDisplayInfoForWindow(
+    referenceWindow != nullptr ? referenceWindow : GetDesktopWindow());
+  const UiSizeProfile::Profile requestedProfile =
+    appConfig != nullptr ? profileFromUiSizeMode(appConfig->getUiSizeMode()) : UiSizeProfile::Profile::Auto;
+  const UiSizeProfile::Profile effectiveProfile = UiSizeProfile::resolveProfile(requestedProfile, displayInfo);
+  return UiSizeProfile::getMetrics(effectiveProfile);
+}
 
 template <typename T>
 T clampValue(T value, T low, T high)
@@ -74,16 +111,18 @@ bool ReportsTabContent::create(HWND parentWindow, HINSTANCE instance, AppData& a
   }
 
   ListView_SetExtendedListViewStyle(reportsList_, LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES);
+  const UiSizeProfile::Metrics metrics = resolveUiMetrics(parentWindow_, appConfig_);
+  WinSizingUtils::listViewApplyDensity(reportsList_, metrics, nullptr, nullptr);
 
   LVCOLUMNW column {};
   column.mask = LVCF_TEXT | LVCF_WIDTH | LVCF_SUBITEM;
   column.pszText = const_cast<wchar_t*>(L"#");
-  column.cx = 56;
+  column.cx = WinSizingUtils::scalePx(56, metrics);
   column.iSubItem = 0;
   ListView_InsertColumn(reportsList_, 0, &column);
 
   column.pszText = const_cast<wchar_t*>(L"Report File");
-  column.cx = 300;
+  column.cx = WinSizingUtils::scalePx(300, metrics);
   column.iSubItem = 1;
   ListView_InsertColumn(reportsList_, 1, &column);
 
@@ -196,25 +235,28 @@ void ReportsTabContent::resize(const RECT& displayRect)
     return;
   }
 
-  constexpr int kButtonHeight = 30;
-  constexpr int kButtonWidth = 140;
+  const UiSizeProfile::Metrics metrics = resolveUiMetrics(parentWindow_, appConfig_);
+  const int margin = WinSizingUtils::scalePx(kMargin, metrics);
+  const int paneGap = WinSizingUtils::scalePx(kPaneGap, metrics);
+  const int buttonHeight = (std::max)(metrics.buttonHeight, WinSizingUtils::scalePx(26, metrics));
+  const int buttonWidth = (std::max)(metrics.buttonMinWidth, WinSizingUtils::scalePx(120, metrics));
 
-  const int areaLeft = displayRect.left + kMargin;
-  const int areaTop = displayRect.top + kMargin;
-  const int contentWidth = static_cast<int>(displayRect.right - displayRect.left) - 2 * kMargin;
-  const int contentHeight = static_cast<int>(displayRect.bottom - displayRect.top) - 2 * kMargin;
+  const int areaLeft = displayRect.left + margin;
+  const int areaTop = displayRect.top + margin;
+  const int contentWidth = static_cast<int>(displayRect.right - displayRect.left) - 2 * margin;
+  const int contentHeight = static_cast<int>(displayRect.bottom - displayRect.top) - 2 * margin;
 
-  const int paneAreaWidth = (std::max)(0, contentWidth - kPaneGap);
-  const int minPaneWidth = (std::min)(kMinPaneWidth, paneAreaWidth / 2);
+  const int paneAreaWidth = (std::max)(0, contentWidth - paneGap);
+  const int minPaneWidth = (std::min)(WinSizingUtils::scalePx(kMinPaneWidth, metrics), paneAreaWidth / 2);
   const int leftPaneWidth = clampValue(
     static_cast<int>(horizontalSplitRatio_ * static_cast<float>(paneAreaWidth)),
     minPaneWidth,
     (std::max)(minPaneWidth, paneAreaWidth - minPaneWidth));
   const int rightPaneWidth = paneAreaWidth - leftPaneWidth;
   const int leftPaneLeft = areaLeft;
-  const int rightPaneLeft = leftPaneLeft + leftPaneWidth + kPaneGap;
+  const int rightPaneLeft = leftPaneLeft + leftPaneWidth + paneGap;
 
-  const int tableHeight = (std::max)(80, contentHeight - kButtonHeight - kMargin);
+  const int tableHeight = (std::max)(WinSizingUtils::scalePx(80, metrics), contentHeight - buttonHeight - margin);
 
   SetWindowPos(
     reportsList_,
@@ -227,17 +269,17 @@ void ReportsTabContent::resize(const RECT& displayRect)
   );
 
   const int listClientW = (std::max)(0, leftPaneWidth - 6);
-  constexpr int kIndexColumnWidth = 56;
+  const int kIndexColumnWidth = WinSizingUtils::scalePx(56, metrics);
   ListView_SetColumnWidth(reportsList_, 0, kIndexColumnWidth);
   ListView_SetColumnWidth(reportsList_, 1, (std::max)(100, listClientW - kIndexColumnWidth));
 
   SetWindowPos(
     removeReportButton_,
     HWND_TOP,
-    leftPaneLeft + (std::max)(0, leftPaneWidth - kButtonWidth),
-    areaTop + tableHeight + kMargin,
-    kButtonWidth,
-    kButtonHeight,
+    leftPaneLeft + (std::max)(0, leftPaneWidth - buttonWidth),
+    areaTop + tableHeight + margin,
+    buttonWidth,
+    buttonHeight,
     SWP_NOACTIVATE
   );
 
@@ -251,8 +293,8 @@ void ReportsTabContent::resize(const RECT& displayRect)
     SWP_NOACTIVATE
   );
 
-  constexpr int kLabelHeight = 20;
-  constexpr int kLabelMargin = 8;
+  const int kLabelHeight = (std::max)(metrics.rowHeight, WinSizingUtils::scalePx(20, metrics));
+  const int kLabelMargin = (std::max)(metrics.margin, WinSizingUtils::scalePx(8, metrics));
   const int labelLeft  = rightPaneLeft + kLabelMargin;
   const int labelWidth = (std::max)(0, rightPaneWidth - 2 * kLabelMargin);
 
@@ -329,12 +371,15 @@ bool ReportsTabContent::handleMouseMessage(UINT msg, WPARAM wp, LPARAM lp)
     {
       if (draggingHorizontalSplit_)
       {
-        const int contentWidth = (std::max)(0, static_cast<int>(lastDisplayRect_.right - lastDisplayRect_.left) - 2 * kMargin);
-        const int paneAreaWidth = (std::max)(1, contentWidth - kPaneGap);
-        const int areaLeft = lastDisplayRect_.left + kMargin;
-        const int minPaneWidth = (std::min)(kMinPaneWidth, paneAreaWidth / 2);
+        const UiSizeProfile::Metrics metrics = resolveUiMetrics(parentWindow_, appConfig_);
+        const int margin = WinSizingUtils::scalePx(kMargin, metrics);
+        const int paneGap = WinSizingUtils::scalePx(kPaneGap, metrics);
+        const int contentWidth = (std::max)(0, static_cast<int>(lastDisplayRect_.right - lastDisplayRect_.left) - 2 * margin);
+        const int paneAreaWidth = (std::max)(1, contentWidth - paneGap);
+        const int areaLeft = lastDisplayRect_.left + margin;
+        const int minPaneWidth = (std::min)(WinSizingUtils::scalePx(kMinPaneWidth, metrics), paneAreaWidth / 2);
 
-        int proposedLeft = point.x - areaLeft - (kPaneGap / 2);
+        int proposedLeft = point.x - areaLeft - (paneGap / 2);
         proposedLeft = clampValue(proposedLeft, minPaneWidth, (std::max)(minPaneWidth, paneAreaWidth - minPaneWidth));
         horizontalSplitRatio_ = static_cast<float>(proposedLeft) / static_cast<float>(paneAreaWidth);
         resize(lastDisplayRect_);

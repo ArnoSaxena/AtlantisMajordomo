@@ -25,6 +25,8 @@
 #endif
 
 #include "GUI/FactionsTabContent.hpp"
+#include "GUI/UiSizeProfile.hpp"
+#include "GUI/WinSizingUtils.hpp"
 
 #include "GUI/WinGuiUtils.hpp"
 #include "Data/AppData.hpp"
@@ -53,6 +55,14 @@ constexpr UINT kAttitudeMenuUnfriendlyCommand = 6103;
 constexpr UINT kAttitudeMenuNeutralCommand = 6104;
 constexpr UINT kAttitudeMenuFriendlyCommand = 6105;
 constexpr UINT kAttitudeMenuAllyCommand = 6106;
+
+UiSizeProfile::Metrics resolveUiMetrics(HWND referenceWindow)
+{
+  const UiSizeProfile::DisplayInfo displayInfo = UiSizeProfile::queryDisplayInfoForWindow(
+    referenceWindow != nullptr ? referenceWindow : GetDesktopWindow());
+  const UiSizeProfile::Profile effectiveProfile = UiSizeProfile::resolveProfile(UiSizeProfile::Profile::Auto, displayInfo);
+  return UiSizeProfile::getMetrics(effectiveProfile);
+}
 
 HWND createLabel(HWND parent, HINSTANCE instance, const wchar_t* text)
 {
@@ -102,6 +112,7 @@ void populateAttitudeCombo(HWND combo)
 bool FactionsTabContent::create(HWND parentWindow, HINSTANCE instance, AppData& appData)
 {
   appData_ = &appData;
+  const UiSizeProfile::Metrics metrics = resolveUiMetrics(parentWindow);
 
   factionsList_ = CreateWindowExW(
     WS_EX_CLIENTEDGE,
@@ -121,11 +132,12 @@ bool FactionsTabContent::create(HWND parentWindow, HINSTANCE instance, AppData& 
   }
 
   ListView_SetExtendedListViewStyle(factionsList_, LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER);
+  WinSizingUtils::listViewApplyDensity(factionsList_, metrics, nullptr, nullptr);
 
   LVCOLUMNW column {};
   column.mask = LVCF_TEXT | LVCF_WIDTH | LVCF_SUBITEM;
   column.pszText = const_cast<LPWSTR>(L"Faction");
-  column.cx = 190;
+  column.cx = WinSizingUtils::scalePx(190, metrics);
   column.iSubItem = 0;
   ListView_InsertColumn(factionsList_, 0, &column);
 
@@ -216,18 +228,19 @@ bool FactionsTabContent::create(HWND parentWindow, HINSTANCE instance, AppData& 
   if (attitudesList_)
   {
     ListView_SetExtendedListViewStyle(attitudesList_, LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER);
+    WinSizingUtils::listViewApplyDensity(attitudesList_, metrics, nullptr, nullptr);
 
     LVCOLUMNW attitudesFactionColumn {};
     attitudesFactionColumn.mask = LVCF_TEXT | LVCF_WIDTH | LVCF_SUBITEM;
     attitudesFactionColumn.pszText = const_cast<LPWSTR>(L"Faction");
-    attitudesFactionColumn.cx = 220;
+    attitudesFactionColumn.cx = WinSizingUtils::scalePx(220, metrics);
     attitudesFactionColumn.iSubItem = 0;
     ListView_InsertColumn(attitudesList_, 0, &attitudesFactionColumn);
 
     LVCOLUMNW attitudesValueColumn {};
     attitudesValueColumn.mask = LVCF_TEXT | LVCF_WIDTH | LVCF_SUBITEM;
     attitudesValueColumn.pszText = const_cast<LPWSTR>(L"Attitude");
-    attitudesValueColumn.cx = 110;
+    attitudesValueColumn.cx = WinSizingUtils::scalePx(110, metrics);
     attitudesValueColumn.iSubItem = 1;
     ListView_InsertColumn(attitudesList_, 1, &attitudesValueColumn);
   }
@@ -283,16 +296,19 @@ void FactionsTabContent::resize(const RECT& displayRect)
 
   lastDisplayRect_ = displayRect;
 
+  const UiSizeProfile::Metrics metrics = resolveUiMetrics(factionsList_);
+  const int margin = WinSizingUtils::scalePx(kMargin, metrics);
+  const int listWidth = WinSizingUtils::scalePx(kListWidth, metrics);
   const int scrollBarWidth = GetSystemMetrics(SM_CXVSCROLL);
-  const int contentTop = displayRect.top + kMargin;
-  const int contentHeight = (std::max)(0, static_cast<int>(displayRect.bottom - displayRect.top) - 2 * kMargin);
+  const int contentTop = displayRect.top + margin;
+  const int contentHeight = (std::max)(0, static_cast<int>(displayRect.bottom - displayRect.top) - 2 * margin);
 
   if (verticalScrollBar_)
   {
     SetWindowPos(
       verticalScrollBar_,
       HWND_TOP,
-      displayRect.right - kMargin - scrollBarWidth,
+      displayRect.right - margin - scrollBarWidth,
       contentTop,
       scrollBarWidth,
       contentHeight,
@@ -300,11 +316,11 @@ void FactionsTabContent::resize(const RECT& displayRect)
     );
   }
 
-  const int usableWidth = (std::max)(0, static_cast<int>(displayRect.right - displayRect.left) - 2 * kMargin - scrollBarWidth - 4);
-  const int leftX = displayRect.left + kMargin;
-  const int rightX = leftX + kListWidth + kMargin;
-  const int rightWidth = (std::max)(0, usableWidth - kListWidth - kMargin);
-  const int attitudesPanelGap = 10;
+  const int usableWidth = (std::max)(0, static_cast<int>(displayRect.right - displayRect.left) - 2 * margin - scrollBarWidth - WinSizingUtils::scalePx(4, metrics));
+  const int leftX = displayRect.left + margin;
+  const int rightX = leftX + listWidth + margin;
+  const int rightWidth = (std::max)(0, usableWidth - listWidth - margin);
+  const int attitudesPanelGap = WinSizingUtils::scalePx(10, metrics);
   const int editorWidth = (std::max)(220, static_cast<int>(rightWidth * 55 / 100));
   const int attitudesX = rightX + editorWidth + attitudesPanelGap;
   const int attitudesWidth = (std::max)(0, rightWidth - editorWidth - attitudesPanelGap);
@@ -312,12 +328,12 @@ void FactionsTabContent::resize(const RECT& displayRect)
 
   auto layoutControls = [&, this]()
   {
-    SetWindowPos(factionsList_, HWND_TOP, leftX, contentTop, kListWidth, contentHeight, SWP_NOACTIVATE);
+    SetWindowPos(factionsList_, HWND_TOP, leftX, contentTop, listWidth, contentHeight, SWP_NOACTIVATE);
 
     int editorLogicalY = contentTop;
-    const int labelHeight = 18;
-    const int editHeight = 22;
-    const int lineGap = 4;
+    const int labelHeight = (std::max)(metrics.rowHeight, WinSizingUtils::scalePx(18, metrics));
+    const int editHeight = (std::max)(WinSizingUtils::scalePx(22, metrics), metrics.rowHeight);
+    const int lineGap = WinSizingUtils::scalePx(4, metrics);
     const int viewBottom = contentTop + contentHeight;
 
     auto setCtrlPos = [&](HWND ctrl, int x, int y, int w, int h)
@@ -337,8 +353,9 @@ void FactionsTabContent::resize(const RECT& displayRect)
 
     placePair(factionNumberLabel_, factionNumberEdit_);
     placePair(factionNameLabel_, factionNameEdit_);
-    setCtrlPos(mainFactionCheck_, rightX, editorLogicalY - scrollPosition_, 160, 20);
-    editorLogicalY += 24;
+    const int checkHeight = (std::max)(WinSizingUtils::scalePx(20, metrics), metrics.rowHeight);
+    setCtrlPos(mainFactionCheck_, rightX, editorLogicalY - scrollPosition_, WinSizingUtils::scalePx(160, metrics), checkHeight);
+    editorLogicalY += checkHeight + lineGap;
 
     placePair(monthLabel_, monthEdit_);
     placePair(yearLabel_, yearEdit_);
@@ -353,23 +370,24 @@ void FactionsTabContent::resize(const RECT& displayRect)
     placePair(apprenticesMaxLabel_, apprenticesMaxEdit_);
     placePair(unclaimedSilverLabel_, unclaimedSilverEdit_);
 
-    const int saveButtonHeight = 30;
-    setCtrlPos(saveButton_, rightX + editorWidth - 120, editorLogicalY - scrollPosition_, 120, saveButtonHeight);
+    const int saveButtonWidth = (std::max)(metrics.buttonMinWidth, WinSizingUtils::scalePx(120, metrics));
+    const int saveButtonHeight = (std::max)(metrics.buttonHeight, WinSizingUtils::scalePx(28, metrics));
+    setCtrlPos(saveButton_, rightX + editorWidth - saveButtonWidth, editorLogicalY - scrollPosition_, saveButtonWidth, saveButtonHeight);
     editorLogicalY += saveButtonHeight;
 
     // Attitudes panel: fixed position, no scroll offset
     int attitudesLogicalY = contentTop;
     setCtrlPos(defaultAttitudeLabel_, attitudesX, attitudesLogicalY, attitudesWidth, labelHeight);
     attitudesLogicalY += labelHeight + 2;
-    setCtrlPos(defaultAttitudeCombo_, attitudesX, attitudesLogicalY, attitudesWidth, kComboDropHeight);
+    setCtrlPos(defaultAttitudeCombo_, attitudesX, attitudesLogicalY, attitudesWidth, WinSizingUtils::scalePx(kComboDropHeight, metrics));
     attitudesLogicalY += editHeight + lineGap;
 
-    const int attitudesListHeight = 280;
+    const int attitudesListHeight = WinSizingUtils::scalePx(280, metrics);
     setCtrlPos(attitudesList_, attitudesX, attitudesLogicalY, attitudesWidth, attitudesListHeight);
     attitudesLogicalY += attitudesListHeight + lineGap;
 
-    const int commandSaveButtonWidth = 70;
-    const int commandGap = 6;
+    const int commandSaveButtonWidth = WinSizingUtils::scalePx(70, metrics);
+    const int commandGap = WinSizingUtils::scalePx(6, metrics);
     const int commandEditWidth = (std::max)(80, attitudesWidth - commandSaveButtonWidth - commandGap);
     setCtrlPos(commandUnitLabel_, attitudesX, attitudesLogicalY, attitudesWidth, labelHeight);
     attitudesLogicalY += labelHeight + 2;

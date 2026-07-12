@@ -198,7 +198,7 @@ void MapTabContent::populateResourcesList(const Region* region)
 
   for (const auto& [token, amount] : resources)
   {
-    int amountAfterCommands = amount;
+    int amountAfterCommands = 0;
     auto afterIt = afterCommandResources.find(token);
     if (afterIt == afterCommandResources.end())
     {

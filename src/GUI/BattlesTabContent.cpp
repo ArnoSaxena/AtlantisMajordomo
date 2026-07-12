@@ -21,6 +21,8 @@
  
 // 304c89c8-6d3c-4586-b0c4-fad2e67b2f65
 #include "GUI/BattlesTabContent.hpp"
+#include "GUI/UiSizeProfile.hpp"
+#include "GUI/WinSizingUtils.hpp"
 
 #include "Data/AppData.hpp"
 #include "Data/Battle.hpp"
@@ -35,11 +37,20 @@ namespace
 constexpr int kMargin = 8;
 constexpr int kPaneGap = 10;
 constexpr int kDateComboWidth = 180;
+
+UiSizeProfile::Metrics resolveUiMetrics(HWND referenceWindow)
+{
+  const UiSizeProfile::DisplayInfo displayInfo = UiSizeProfile::queryDisplayInfoForWindow(
+    referenceWindow != nullptr ? referenceWindow : GetDesktopWindow());
+  const UiSizeProfile::Profile effectiveProfile = UiSizeProfile::resolveProfile(UiSizeProfile::Profile::Auto, displayInfo);
+  return UiSizeProfile::getMetrics(effectiveProfile);
+}
 } // namespace
 
 bool BattlesTabContent::create(HWND parentWindow, HINSTANCE instance, AppData& appData)
 {
   appData_ = &appData;
+  const UiSizeProfile::Metrics metrics = resolveUiMetrics(parentWindow);
 
   dateLabel_ = CreateWindowExW(
     0,
@@ -96,11 +107,12 @@ bool BattlesTabContent::create(HWND parentWindow, HINSTANCE instance, AppData& a
     battlesList_,
     LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES | LVS_EX_DOUBLEBUFFER
   );
+  WinSizingUtils::listViewApplyDensity(battlesList_, metrics, nullptr, nullptr);
 
   LVCOLUMNW column {};
   column.mask = LVCF_TEXT | LVCF_WIDTH | LVCF_SUBITEM;
   column.pszText = const_cast<LPWSTR>(L"Battle");
-  column.cx = 520;
+  column.cx = WinSizingUtils::scalePx(520, metrics);
   column.iSubItem = 0;
   ListView_InsertColumn(battlesList_, 0, &column);
 
@@ -149,20 +161,28 @@ void BattlesTabContent::resize(const RECT& displayRect)
     return;
   }
 
-  const int contentWidth = static_cast<int>(displayRect.right - displayRect.left) - 2 * kMargin;
-  const int contentHeight = static_cast<int>(displayRect.bottom - displayRect.top) - 2 * kMargin;
+  const UiSizeProfile::Metrics metrics = resolveUiMetrics(dateCombo_);
+  const int margin = WinSizingUtils::scalePx(kMargin, metrics);
+  const int paneGap = WinSizingUtils::scalePx(kPaneGap, metrics);
+  const int labelHeight = (std::max)(metrics.rowHeight, WinSizingUtils::scalePx(20, metrics));
+  const int contentWidth = static_cast<int>(displayRect.right - displayRect.left) - 2 * margin;
+  const int contentHeight = static_cast<int>(displayRect.bottom - displayRect.top) - 2 * margin;
   const int leftPaneWidth = contentWidth > 0 ? contentWidth / 2 : 0;
-  const int rightPaneWidth = contentWidth - leftPaneWidth - kPaneGap;
+  const int rightPaneWidth = contentWidth - leftPaneWidth - paneGap;
 
-  const int leftPaneX = displayRect.left + kMargin;
-  const int topY = displayRect.top + kMargin;
-  const int rightPaneX = leftPaneX + leftPaneWidth + kPaneGap;
+  const int leftPaneX = displayRect.left + margin;
+  const int topY = displayRect.top + margin;
+  const int rightPaneX = leftPaneX + leftPaneWidth + paneGap;
 
-  SetWindowPos(dateLabel_, HWND_TOP, leftPaneX, topY + 3, 50, 20, SWP_NOACTIVATE);
-  SetWindowPos(dateCombo_, HWND_TOP, leftPaneX + 56, topY, kDateComboWidth, 300, SWP_NOACTIVATE);
+  const int dateLabelWidth = WinSizingUtils::scalePx(50, metrics);
+  const int dateLabelGap = WinSizingUtils::scalePx(6, metrics);
+  const int dateComboWidth = WinSizingUtils::scalePx(kDateComboWidth, metrics);
+  const int dateComboDropHeight = WinSizingUtils::scalePx(260, metrics);
+  SetWindowPos(dateLabel_, HWND_TOP, leftPaneX, topY + (labelHeight - WinSizingUtils::scalePx(16, metrics)) / 2, dateLabelWidth, labelHeight, SWP_NOACTIVATE);
+  SetWindowPos(dateCombo_, HWND_TOP, leftPaneX + dateLabelWidth + dateLabelGap, topY, dateComboWidth, dateComboDropHeight, SWP_NOACTIVATE);
 
-  const int listTop = topY + 30;
-  const int listHeight = (contentHeight > 0) ? contentHeight - 30 : 0;
+  const int listTop = topY + labelHeight + WinSizingUtils::scalePx(4, metrics);
+  const int listHeight = (contentHeight > 0) ? contentHeight - (labelHeight + WinSizingUtils::scalePx(4, metrics)) : 0;
   SetWindowPos(
     battlesList_,
     HWND_TOP,
@@ -173,7 +193,7 @@ void BattlesTabContent::resize(const RECT& displayRect)
     SWP_NOACTIVATE
   );
 
-  const int summaryHeight = 82;
+  const int summaryHeight = WinSizingUtils::scalePx(82, metrics);
   SetWindowPos(
     summaryEdit_,
     HWND_TOP,
@@ -188,9 +208,9 @@ void BattlesTabContent::resize(const RECT& displayRect)
     fullReportEdit_,
     HWND_TOP,
     rightPaneX,
-    topY + summaryHeight + kPaneGap,
+    topY + summaryHeight + paneGap,
     rightPaneWidth,
-    contentHeight - summaryHeight - kPaneGap,
+    contentHeight - summaryHeight - paneGap,
     SWP_NOACTIVATE
   );
 

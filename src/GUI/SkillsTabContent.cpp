@@ -26,6 +26,8 @@
 
 #include "GUI/WinGuiUtils.hpp"
 #include "GUI/SkillsTabContent.hpp"
+#include "GUI/UiSizeProfile.hpp"
+#include "GUI/WinSizingUtils.hpp"
 
 #include "Data/AppData.hpp"
 #include "Data/Skill.hpp"
@@ -44,6 +46,14 @@ namespace
 {
 constexpr int kMargin = 8;
 constexpr int kListWidth = 170;
+
+UiSizeProfile::Metrics resolveUiMetrics(HWND referenceWindow)
+{
+  const UiSizeProfile::DisplayInfo displayInfo = UiSizeProfile::queryDisplayInfoForWindow(
+    referenceWindow != nullptr ? referenceWindow : GetDesktopWindow());
+  const UiSizeProfile::Profile effectiveProfile = UiSizeProfile::resolveProfile(UiSizeProfile::Profile::Auto, displayInfo);
+  return UiSizeProfile::getMetrics(effectiveProfile);
+}
 
 void drawDividerLine(HDC hdc, const RECT& bounds)
 {
@@ -113,6 +123,7 @@ HWND createMultilineEdit(HWND parent, HINSTANCE instance)
 bool SkillsTabContent::create(HWND parentWindow, HINSTANCE instance, AppData& appData)
 {
   appData_ = &appData;
+  const UiSizeProfile::Metrics metrics = resolveUiMetrics(parentWindow);
 
   skillsList_ = CreateWindowExW(
     WS_EX_CLIENTEDGE,
@@ -132,11 +143,12 @@ bool SkillsTabContent::create(HWND parentWindow, HINSTANCE instance, AppData& ap
   }
 
   ListView_SetExtendedListViewStyle(skillsList_, LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER);
+  WinSizingUtils::listViewApplyDensity(skillsList_, metrics, nullptr, nullptr);
 
   LVCOLUMNW column {};
   column.mask = LVCF_TEXT | LVCF_WIDTH | LVCF_SUBITEM;
   column.pszText = const_cast<LPWSTR>(L"Skill");
-  column.cx = 140;
+  column.cx = WinSizingUtils::scalePx(140, metrics);
   column.iSubItem = 0;
   ListView_InsertColumn(skillsList_, 0, &column);
 
@@ -224,16 +236,19 @@ void SkillsTabContent::resize(const RECT& displayRect)
 
   lastDisplayRect_ = displayRect;
 
+  const UiSizeProfile::Metrics metrics = resolveUiMetrics(skillsList_);
+  const int margin = WinSizingUtils::scalePx(kMargin, metrics);
+  const int listWidth = WinSizingUtils::scalePx(kListWidth, metrics);
   const int scrollBarWidth = GetSystemMetrics(SM_CXVSCROLL);
-  const int contentTop = displayRect.top + kMargin;
-  const int contentHeight = (std::max)(0, static_cast<int>(displayRect.bottom - displayRect.top) - 2 * kMargin);
+  const int contentTop = displayRect.top + margin;
+  const int contentHeight = (std::max)(0, static_cast<int>(displayRect.bottom - displayRect.top) - 2 * margin);
 
   if (verticalScrollBar_)
   {
     SetWindowPos(
       verticalScrollBar_,
       HWND_TOP,
-      displayRect.right - kMargin - scrollBarWidth,
+      displayRect.right - margin - scrollBarWidth,
       contentTop,
       scrollBarWidth,
       contentHeight,
@@ -241,21 +256,22 @@ void SkillsTabContent::resize(const RECT& displayRect)
     );
   }
 
-  const int usableWidth = (std::max)(0, static_cast<int>(displayRect.right - displayRect.left) - 2 * kMargin - scrollBarWidth - 4);
-  const int leftX = displayRect.left + kMargin;
-  const int rightX = leftX + kListWidth + kMargin;
-  const int rightWidth = (std::max)(0, usableWidth - kListWidth - kMargin);
+  const int usableWidth = (std::max)(0, static_cast<int>(displayRect.right - displayRect.left) - 2 * margin - scrollBarWidth - WinSizingUtils::scalePx(4, metrics));
+  const int leftX = displayRect.left + margin;
+  const int rightX = leftX + listWidth + margin;
+  const int rightWidth = (std::max)(0, usableWidth - listWidth - margin);
   int &scrollPosition = scrollPosition_;
 
   auto layoutControls = [&, this]()
   {
-    SetWindowPos(skillsList_, HWND_TOP, leftX, contentTop, kListWidth, contentHeight, SWP_NOACTIVATE);
+    SetWindowPos(skillsList_, HWND_TOP, leftX, contentTop, listWidth, contentHeight, SWP_NOACTIVATE);
 
     int logicalY = contentTop;
-    const int labelHeight = 18;
-    const int editHeight = 22;
-    const int lineGap = 4;
-    const int blockGap = 10;
+    const int labelHeight = (std::max)(metrics.rowHeight, WinSizingUtils::scalePx(18, metrics));
+    const int editHeight = (std::max)(WinSizingUtils::scalePx(22, metrics), metrics.rowHeight);
+    const int lineGap = WinSizingUtils::scalePx(4, metrics);
+    const int blockGap = WinSizingUtils::scalePx(10, metrics);
+    const int comboDropHeight = WinSizingUtils::scalePx(200, metrics);
     const int viewBottom = contentTop + contentHeight;
 
     auto setCtrlPos = [&](HWND ctrl, int x, int y, int w, int h)
@@ -277,19 +293,22 @@ void SkillsTabContent::resize(const RECT& displayRect)
 
     setCtrlPos(levelLabel_, rightX, logicalY - scrollPosition_, rightWidth, labelHeight);
     logicalY += labelHeight + 2;
-    setCtrlPos(levelDropdown_, rightX, logicalY - scrollPosition_, rightWidth, 200);
+    setCtrlPos(levelDropdown_, rightX, logicalY - scrollPosition_, rightWidth, comboDropHeight);
     logicalY += editHeight + lineGap;
 
     placePair(nameLabel_, nameEdit_);
     placePair(studyCostLabel_, studyCostEdit_);
 
-    setCtrlPos(productionCheck_, rightX, logicalY - scrollPosition_, 130, 20);
-    setCtrlPos(magicCheck_, rightX + 140, logicalY - scrollPosition_, 130, 20);
-    logicalY += 22;
-    setCtrlPos(magicFoundationCheck_, rightX, logicalY - scrollPosition_, 170, 20);
-    logicalY += 24 + blockGap;
+    const int checkHeight = (std::max)(WinSizingUtils::scalePx(20, metrics), metrics.rowHeight);
+    const int checkWidth = WinSizingUtils::scalePx(130, metrics);
+    const int checkGap = WinSizingUtils::scalePx(10, metrics);
+    setCtrlPos(productionCheck_, rightX, logicalY - scrollPosition_, checkWidth, checkHeight);
+    setCtrlPos(magicCheck_, rightX + checkWidth + checkGap, logicalY - scrollPosition_, checkWidth, checkHeight);
+    logicalY += checkHeight + lineGap;
+    setCtrlPos(magicFoundationCheck_, rightX, logicalY - scrollPosition_, WinSizingUtils::scalePx(170, metrics), checkHeight);
+    logicalY += checkHeight + blockGap;
 
-    const int sectionHeight = 120;
+    const int sectionHeight = WinSizingUtils::scalePx(120, metrics);
 
     setCtrlPos(prerequisitesLabel_, rightX, logicalY - scrollPosition_, rightWidth, labelHeight);
     logicalY += labelHeight + 2;
@@ -306,8 +325,9 @@ void SkillsTabContent::resize(const RECT& displayRect)
     setCtrlPos(descriptionEdit_, rightX, logicalY - scrollPosition_, rightWidth, sectionHeight);
     logicalY += sectionHeight + blockGap;
 
-    const int saveButtonHeight = 30;
-    setCtrlPos(saveButton_, rightX + rightWidth - 120, logicalY - scrollPosition_, 120, saveButtonHeight);
+    const int saveButtonWidth = (std::max)(metrics.buttonMinWidth, WinSizingUtils::scalePx(120, metrics));
+    const int saveButtonHeight = (std::max)(metrics.buttonHeight, WinSizingUtils::scalePx(28, metrics));
+    setCtrlPos(saveButton_, rightX + rightWidth - saveButtonWidth, logicalY - scrollPosition_, saveButtonWidth, saveButtonHeight);
     logicalY += saveButtonHeight;
 
     return logicalY;

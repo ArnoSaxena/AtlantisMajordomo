@@ -24,6 +24,10 @@
 
 #include <string>
 
-// Declared in Main.cpp; active only when DEBUG is defined there.
+// Implemented per platform:
+// - Windows + Non-Windows: src/DebugLog.cpp
+// Logging writes only when DEBUG is defined.
+void InitDebug();
 void DebugLog(const std::wstring& text);
 void DebugLog(const wchar_t* text);
+void ShutdownDebug();

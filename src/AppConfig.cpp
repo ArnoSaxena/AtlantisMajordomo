@@ -69,6 +69,26 @@ namespace
 
     return L"Auto";
   }
+
+  std::wstring normalizeMapHexSizeMode(const std::wstring& input)
+  {
+    std::wstring normalized = StringUtils::trimWhitespace(input);
+    for (wchar_t& ch : normalized)
+    {
+      ch = static_cast<wchar_t>(std::towlower(ch));
+    }
+
+    if (normalized == L"small")
+    {
+      return L"Small";
+    }
+    if (normalized == L"large")
+    {
+      return L"Large";
+    }
+
+    return L"Medium";
+  }
 }
 
 AppConfig::AppConfig()
@@ -82,7 +102,7 @@ bool AppConfig::load()
   DebugLog(L"AppConfig::load() - begin, path: " + configFilePath_);
   applyDefaults();
 
-  std::wifstream file(configFilePath_);
+  std::wifstream file{std::filesystem::path(configFilePath_)};
   if (!file.is_open())
   {
     DebugLog(L"AppConfig::load() - config file not found, creating defaults");
@@ -177,6 +197,15 @@ bool AppConfig::load()
     uiSizeMode_ = normalizeUiSizeMode(configuredUiSizeMode);
     hasUiSizeMode = true;
     DebugLog(L"AppConfig::load() - uiSizeMode: " + uiSizeMode_);
+  }
+
+  bool hasMapHexSizeMode = false;
+  std::wstring configuredMapHexSizeMode;
+  if (JsonUtils::extractJsonStringField(content, L"mapHexSizeMode", configuredMapHexSizeMode))
+  {
+    mapHexSizeMode_ = normalizeMapHexSizeMode(configuredMapHexSizeMode);
+    hasMapHexSizeMode = true;
+    DebugLog(L"AppConfig::load() - mapHexSizeMode: " + mapHexSizeMode_);
   }
 
   bool hasOnlyLeaderCanTeach = false;
@@ -341,7 +370,7 @@ bool AppConfig::load()
 
 bool AppConfig::save() const
 {
-  std::wofstream file(configFilePath_);
+  std::wofstream file{std::filesystem::path(configFilePath_)};
   if (!file.is_open())
   {
     return false;
@@ -357,6 +386,7 @@ bool AppConfig::save() const
   file << L"  \"mainWindowHeight\": " << mainWindowHeight_ << L",\n";
   file << L"  \"mapHexWidth\": " << mapHexWidth_ << L",\n";
   file << L"  \"uiSizeMode\": \"" << JsonUtils::escapeJsonString(uiSizeMode_) << L"\",\n";
+  file << L"  \"mapHexSizeMode\": \"" << JsonUtils::escapeJsonString(mapHexSizeMode_) << L"\",\n";
   file << L"  \"onlyLeaderCanTeach\": " << (onlyLeaderCanTeach_ ? L"true" : L"false") << L",\n";
   file << L"  \"leaderMages\": " << (leaderMages_ ? L"true" : L"false") << L",\n";
   file << L"  \"flyingShipsCsv\": \"" << JsonUtils::escapeJsonString(flyingShipsCsv_) << L"\",\n";
@@ -520,6 +550,16 @@ const std::wstring& AppConfig::getUiSizeMode() const
 void AppConfig::setUiSizeMode(const std::wstring& uiSizeMode)
 {
   uiSizeMode_ = normalizeUiSizeMode(uiSizeMode);
+}
+
+const std::wstring& AppConfig::getMapHexSizeMode() const
+{
+  return mapHexSizeMode_;
+}
+
+void AppConfig::setMapHexSizeMode(const std::wstring& mapHexSizeMode)
+{
+  mapHexSizeMode_ = normalizeMapHexSizeMode(mapHexSizeMode);
 }
 
 bool AppConfig::getOnlyLeaderCanTeach() const
@@ -728,6 +768,7 @@ void AppConfig::applyDefaults()
   mainWindowHeight_ = 600;
   mapHexWidth_ = 40;
   uiSizeMode_ = L"Auto";
+  mapHexSizeMode_ = L"Medium";
   onlyLeaderCanTeach_ = false;
   leaderMages_ = true;
   flyingShipsCsv_.clear();

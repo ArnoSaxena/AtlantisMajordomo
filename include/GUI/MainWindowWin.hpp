@@ -62,7 +62,7 @@ public:
   static constexpr wchar_t kAboutDescription[] =
     L"Yet another Atlantis Pbem player client.";
   // TODO: Need to create a more elaborate description.
-  static constexpr wchar_t kAboutVersion[] = L"1.3.31";
+  static constexpr wchar_t kAboutVersion[] = L"1.3.67";
 
   /**
   * @brief Registers the window class and creates the main window.
@@ -114,6 +114,8 @@ private:
   void createMenu();
   void refreshAllTabContents();
   void updateReportsTabVisibility();
+  bool tryGetCurrentTabDisplayRect(RECT& displayRect) const;
+  void resizeSelectedTabContent(const RECT& displayRect);
   void showLoadedReportsTabContextMenu(POINT screenPoint);
   void persistWindowSizeToConfig();
   bool refreshUiScaleFromWindow(bool forceApply);

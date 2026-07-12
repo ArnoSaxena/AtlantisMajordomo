@@ -22,7 +22,10 @@
 // 304c89c8-6d3c-4586-b0c4-fad2e67b2f65
 
 #include "Data/AppData.hpp"
+#include "DebugLog.hpp"
+#include <cstdint>
 #include <exception>
+#include <sstream>
 #include <string>
 
 // ============================================================================
@@ -35,99 +38,7 @@
 #endif
 
 #include "GUI/MainWindowWin.hpp"
-
-#include <chrono>
-#include <fstream>
-#include <iomanip>
-#include <locale>
-#include <mutex>
-#include <sstream>
 #include <windows.h>
-
-
-// #define DEBUG
-#ifdef DEBUG
-static std::wofstream g_debugFile;
-static std::mutex g_logMutex;
-#endif
-
-void InitDebug()
-{
-#ifdef DEBUG
-    using namespace std::chrono;
-
-    auto now = system_clock::now();
-    std::time_t t = system_clock::to_time_t(now);
-
-    struct tm timeinfo;
-    localtime_s(&timeinfo, &t);
-
-    std::wostringstream filename;
-    filename << L"debug_"
-             << std::put_time(&timeinfo, L"%Y%m%d_%H%M%S")
-             << L".txt";
-
-    g_debugFile.open(filename.str().c_str(), std::ios::out | std::ios::app);
-    g_debugFile.imbue(std::locale(""));
-#endif
-}
-
-std::wstring GetTimestamp()
-{
-    using namespace std::chrono;
-
-    auto now = system_clock::now();
-    auto ms = duration_cast<milliseconds>(now.time_since_epoch()) % 1000;
-
-    std::time_t t = system_clock::to_time_t(now);
-
-    struct tm timeinfo;
-    localtime_s(&timeinfo, &t);
-
-    std::wostringstream oss;
-    oss << std::put_time(&timeinfo, L"[%d.%m.%y %H:%M:%S")
-        << L"." << std::setw(3) << std::setfill(L'0') << ms.count() << L"] ";
-
-    return oss.str();
-}
-
-void DebugLog([[maybe_unused]] const std::wstring& text)
-{
-#ifdef DEBUG
-    std::lock_guard<std::mutex> lock(g_logMutex);
-
-    if (g_debugFile.is_open())
-    {
-        g_debugFile << GetTimestamp() << text << std::endl;
-    }
-#endif
-}
-
-void DebugLog([[maybe_unused]] LPCWSTR text)
-{
-#ifdef DEBUG
-    std::lock_guard<std::mutex> lock(g_logMutex);
-
-    if (g_debugFile.is_open())
-    {
-        if (text)
-            g_debugFile << GetTimestamp() << text << std::endl;
-        else
-            g_debugFile << GetTimestamp() << L"(null)" << std::endl;
-    }
-#endif
-}
-
-void ShutdownDebug()
-{
-#ifdef DEBUG
-    if (g_debugFile.is_open())
-    {
-        g_debugFile.flush();
-        g_debugFile.close();
-    }
-#endif
-}
 
 namespace
 {
@@ -292,12 +203,19 @@ int WINAPI wWinMain(
 #include "GUI/MainWindowQt.hpp"
 
 #include <QApplication>
+#include <QIcon>
 #include <QMessageBox>
 #include <QString>
 
 int main(int argc, char* argv[])
 {
+  InitDebug();
+  DebugLog(L"Application started");
+
+  int appResult = 0;
+
   QApplication app(argc, argv);
+  app.setWindowIcon(QIcon(QStringLiteral(":/icons/AtlantisMajordomo_256.png")));
 
   std::set_terminate([]()
   {
@@ -325,23 +243,30 @@ int main(int argc, char* argv[])
     AppData& appData = AppData::getInstance();
     MainWindow window(appData);
     window.show();
-    return app.exec();
+    appResult = app.exec();
+    DebugLog(L"Application finished gracefully");
   }
   catch (const std::exception& ex)
   {
+    const std::string whatText = ex.what();
+    DebugLog(std::wstring(whatText.begin(), whatText.end()));
     QMessageBox::critical(nullptr,
                           "Fatal Error",
                           QString("Unhandled exception:\n\n%1")
                             .arg(QString::fromStdString(ex.what())));
-    return 1;
+    appResult = 1;
   }
   catch (...)
   {
+    DebugLog(L"Unknown unhandled exception.");
     QMessageBox::critical(nullptr,
                           "Fatal Error",
                           "Unknown unhandled exception.");
-    return 1;
+    appResult = 1;
   }
+
+  ShutdownDebug();
+  return appResult;
 }
 
 #endif // _WIN32

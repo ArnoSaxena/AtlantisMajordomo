@@ -60,6 +60,14 @@ public:
           int month,
           int year);
 
+  /**
+  * @brief Add or update a structure, keeping only the most recent data.
+  *
+  * When @p isGloballyUniqueId is true (ships have globally-unique IDs above
+  * the configured threshold) and the new data is from a later turn, any
+  * existing entry for the same ID at a *different* location is removed first.
+  * This prevents ghost ship markers from accumulating when a ship moves.
+  */
   bool addOrUpdateIfLater(int structureId,
                           int xCoordinate,
                           int yCoordinate,
@@ -68,7 +76,8 @@ public:
                           std::wstring structureName,
                           bool isClosed,
                           int month,
-                          int year);
+                          int year,
+                          bool isGloballyUniqueId = false);
 
   /**
   * @brief Remove a structure by its ID and coordinates.
