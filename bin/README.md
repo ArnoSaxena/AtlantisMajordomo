@@ -1,5 +1,5 @@
 #AtlantisMajordomo
-Atlantis Majordomo for Linux
+##Atlantis Majordomo for Linux
 
 #AtlantisMajordomo.exe
-Atlantis Majordomo for Windows
+##Atlantis Majordomo for Windows
