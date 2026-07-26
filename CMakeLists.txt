@@ -47,15 +47,22 @@ set(COMMON_SOURCES
   src/Function/CommandSimulationService.cpp
   src/Function/CoordinateFormattingUtils.cpp
   src/Function/CoordinateUtils.cpp
+  src/Function/MapRegionDetailsUtils.cpp
   src/Function/FactionAttitudeUtils.cpp
   src/Function/HexDirectionUtils.cpp
   src/Function/JsonUtils.cpp
   src/Function/MonthUtils.cpp
+  src/Function/MapNavigationUtils.cpp
+  src/Function/ItemOrderingUtils.cpp
   src/Function/OrderBusinessLogic.cpp
+  src/Function/OrderChecksUtils.cpp
   src/Function/OrderParsingUtils.cpp
   src/Function/OrderWarningService.cpp
+  src/Function/ReadOnlyPopupService.cpp
   src/Function/SkillFormattingUtils.cpp
+  src/Function/StartupAutoLoadUtils.cpp
   src/Function/StringUtils.cpp
+  src/Function/TabRefreshUtils.cpp
   src/Function/MapUtils.cpp
   src/Function/UnitCapacityUtils.cpp
 )

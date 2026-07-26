@@ -22,6 +22,7 @@
 // 304c89c8-6d3c-4586-b0c4-fad2e67b2f65
 #include "Function/SkillFormattingUtils.hpp"
 
+#include "Data/AppData.hpp"
 #include "Data/Skill.hpp"
 #include "Function/StringUtils.hpp"
 
@@ -102,6 +103,32 @@ std::vector<SkillPrerequisite> parsePrerequisites(const std::wstring& text)
   }
 
   return prerequisites;
+}
+
+SkillDescriptionContent buildSkillDescriptionContent(const AppData& appData, const std::wstring& skillToken)
+{
+  SkillDescriptionContent content {};
+  if (skillToken.empty())
+  {
+    return content;
+  }
+
+  const Skill* skill = appData.skillRepository().findByIdentifier(skillToken);
+  if (!skill)
+  {
+    content.notFoundMessage = L"No description found for skill '" + skillToken + L"'.";
+    return content;
+  }
+
+  content.found = true;
+  content.title = L"Skill Description " + skill->getName() + L" [" + skill->getIdentifierToken() + L"]";
+  content.description = skill->getAllLevelDescriptions();
+  if (content.description.empty())
+  {
+    content.description = L"No description available.";
+  }
+
+  return content;
 }
 
 } // namespace SkillFormattingUtils

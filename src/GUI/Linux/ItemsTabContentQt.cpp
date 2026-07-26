@@ -25,6 +25,7 @@
 #include "Data/AppData.hpp"
 #include "Data/Item.hpp"
 #include "Data/ItemRepository.hpp"
+#include "Function/ItemOrderingUtils.hpp"
 #include "Function/StringUtils.hpp"
 
 #include <QApplication>
@@ -208,6 +209,17 @@ void ItemsTabContentQt::refresh()
     updateItemsList();
 }
 
+void ItemsTabContentQt::focusItemByToken(const std::wstring& itemToken)
+{
+    if (!appData_ || itemToken.empty())
+    {
+        return;
+    }
+
+    selectedItemToken_ = itemToken;
+    updateItemsList();
+}
+
 // ---------------------------------------------------------------------------
 // Private slots
 // ---------------------------------------------------------------------------
@@ -241,30 +253,8 @@ void ItemsTabContentQt::updateItemsList()
 
     const auto& repository = appData_->itemRepository();
 
-    // Partition: LEAD first, then other man-items alphabetically,
-    // then non-man items alphabetically. A visual separator is drawn
-    // between the man group and the non-man group.
-    std::vector<const Item*> leadItems;
-    std::vector<const Item*> otherManItems;
-    std::vector<const Item*> otherItems;
-
-    for (std::size_t i = 0; i < repository.size(); ++i)
-    {
-        const Item& it = repository.at(i);
-        if (it.getIdentifierToken() == L"LEAD")
-            leadItems.push_back(&it);
-        else if (it.isMan())
-            otherManItems.push_back(&it);
-        else
-            otherItems.push_back(&it);
-    }
-
-    auto sortByToken = [](const Item* a, const Item* b)
-    {
-        return a->getIdentifierToken() < b->getIdentifierToken();
-    };
-    std::sort(otherManItems.begin(), otherManItems.end(), sortByToken);
-    std::sort(otherItems.begin(),    otherItems.end(),    sortByToken);
+    const ItemOrderingUtils::OrderedItemGroups orderedGroups =
+        ItemOrderingUtils::buildOrderedItemGroups(repository);
 
     int selectedRow = -1;
     int rowIndex    = 0;
@@ -281,13 +271,11 @@ void ItemsTabContentQt::updateItemsList()
         ++rowIndex;
     };
 
-    for (const Item* it : leadItems)
-        addItemRow(it);
-    for (const Item* it : otherManItems)
+    for (const Item* it : orderedGroups.manItems)
         addItemRow(it);
 
     // Visual separator between man-type and non-man items
-    if ((!leadItems.empty() || !otherManItems.empty()) && !otherItems.empty())
+    if (!orderedGroups.manItems.empty() && !orderedGroups.otherItems.empty())
     {
         QListWidgetItem* sep = new QListWidgetItem(QString(32, QChar(0x2500)));
         sep->setFlags(Qt::NoItemFlags);
@@ -296,7 +284,7 @@ void ItemsTabContentQt::updateItemsList()
         ++rowIndex;
     }
 
-    for (const Item* it : otherItems)
+    for (const Item* it : orderedGroups.otherItems)
         addItemRow(it);
 
     if (selectedRow >= 0)

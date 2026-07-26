@@ -125,7 +125,7 @@ bool MapTabContent::create(HWND parentWindow, HINSTANCE instance, AppData& appDa
   lastWarningButton_ = CreateWindowExW(
     0,
     L"BUTTON",
-    L"Last Warning",
+    L"Last",
     WS_CHILD | BS_PUSHBUTTON,
     0,
     0,
@@ -140,7 +140,7 @@ bool MapTabContent::create(HWND parentWindow, HINSTANCE instance, AppData& appDa
   clearWarningButton_ = CreateWindowExW(
     0,
     L"BUTTON",
-    L"Clear Warning",
+    L"Clear",
     WS_CHILD | BS_PUSHBUTTON,
     0,
     0,
@@ -155,7 +155,7 @@ bool MapTabContent::create(HWND parentWindow, HINSTANCE instance, AppData& appDa
   nextWarningButton_ = CreateWindowExW(
     0,
     L"BUTTON",
-    L"Next Warning",
+    L"Next",
     WS_CHILD | BS_PUSHBUTTON,
     0,
     0,
@@ -817,6 +817,16 @@ bool MapTabContent::create(HWND parentWindow, HINSTANCE instance, AppData& appDa
     column.cx = columns[index].width;
     column.iSubItem = index;
     ListView_InsertColumn(unitsList_, index, &column);
+  }
+
+  if (HWND unitsHeader = ListView_GetHeader(unitsList_))
+  {
+    SetWindowSubclass(
+      unitsHeader,
+      &MapTabContent::unitsListHeaderSubclassProc,
+      kUnitsListHeaderSubclassId,
+      reinterpret_cast<DWORD_PTR>(this)
+    );
   }
 
   const Column itemColumns[] = {

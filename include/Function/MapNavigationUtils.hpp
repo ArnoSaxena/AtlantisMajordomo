@@ -16,31 +16,44 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  *
- * File: SkillFormattingUtils.hpp
+ * File: MapNavigationUtils.hpp
  */
 
 // 304c89c8-6d3c-4586-b0c4-fad2e67b2f65
 #pragma once
 
-#include <map>
 #include <string>
-#include <vector>
 
-struct SkillPrerequisite;
 class AppData;
+class Region;
 
-namespace SkillFormattingUtils
+namespace MapNavigationUtils
 {
-struct SkillDescriptionContent
+enum class UnitSearchStatus
 {
-	bool found { false };
-	std::wstring title;
-	std::wstring description;
-	std::wstring notFoundMessage;
+  EmptyInput,
+  InvalidInput,
+  NotFound,
+  Found,
 };
 
-std::wstring formatSkills(const std::map<std::wstring, int>& skills);
-std::wstring formatPrerequisites(const std::vector<SkillPrerequisite>& prerequisites);
-std::vector<SkillPrerequisite> parsePrerequisites(const std::wstring& text);
-SkillDescriptionContent buildSkillDescriptionContent(const AppData& appData, const std::wstring& skillToken);
+struct UnitSearchResult
+{
+  UnitSearchStatus status { UnitSearchStatus::EmptyInput };
+  int unitNumber { 0 };
+};
+
+struct UnitSelectionContext
+{
+  int unitNumber { 0 };
+  int xCoordinate { 0 };
+  int yCoordinate { 0 };
+  int zCoordinate { 1 };
+  const Region* region { nullptr };
+};
+
+bool tryParsePositiveUnitNumber(const std::wstring& text, int& unitNumber);
+std::wstring buildUnitNotFoundMessage(int unitNumber);
+UnitSearchResult resolveUnitSearch(const AppData& appData, const std::wstring& unitIdText);
+bool tryBuildUnitSelectionContext(const AppData& appData, int unitNumber, UnitSelectionContext& context);
 }

@@ -557,6 +557,11 @@ void MapTabContent::populateUnitsForSelectedRegion()
     ++row;
   }
 
+  if (unitsListSortColumn_ >= 0)
+  {
+    sortUnitsListByColumn(unitsListSortColumn_, unitsListSortAscending_);
+  }
+
   updateSelectedUnitFromList();
 }
 

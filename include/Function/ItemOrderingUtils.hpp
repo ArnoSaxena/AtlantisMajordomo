@@ -16,31 +16,26 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  *
- * File: SkillFormattingUtils.hpp
+ * File: ItemOrderingUtils.hpp
  */
 
 // 304c89c8-6d3c-4586-b0c4-fad2e67b2f65
 #pragma once
 
-#include <map>
-#include <string>
 #include <vector>
 
-struct SkillPrerequisite;
-class AppData;
+class Item;
+class ItemRepository;
 
-namespace SkillFormattingUtils
+namespace ItemOrderingUtils
 {
-struct SkillDescriptionContent
+
+struct OrderedItemGroups
 {
-	bool found { false };
-	std::wstring title;
-	std::wstring description;
-	std::wstring notFoundMessage;
+  std::vector<const Item*> manItems;
+  std::vector<const Item*> otherItems;
 };
 
-std::wstring formatSkills(const std::map<std::wstring, int>& skills);
-std::wstring formatPrerequisites(const std::vector<SkillPrerequisite>& prerequisites);
-std::vector<SkillPrerequisite> parsePrerequisites(const std::wstring& text);
-SkillDescriptionContent buildSkillDescriptionContent(const AppData& appData, const std::wstring& skillToken);
-}
+OrderedItemGroups buildOrderedItemGroups(const ItemRepository& repository);
+
+} // namespace ItemOrderingUtils

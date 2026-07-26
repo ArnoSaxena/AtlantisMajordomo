@@ -31,6 +31,7 @@
 
 #include "Data/AppData.hpp"
 #include "Data/Item.hpp"
+#include "Function/ItemOrderingUtils.hpp"
 #include "Function/StringUtils.hpp"
 
 #include <commctrl.h>
@@ -567,63 +568,38 @@ bool ItemsTabContent::handleVScroll(WPARAM wp, LPARAM lp)
   return true;
 }
 
+void ItemsTabContent::focusItemByToken(const std::wstring& itemToken)
+{
+  if (!appData_ || !itemsList_ || itemToken.empty())
+  {
+    return;
+  }
+
+  selectedItemToken_ = itemToken;
+  updateItemsList();
+}
+
 void ItemsTabContent::updateItemsList()
 {
   ListView_DeleteAllItems(itemsList_);
   dividerAfterRow_ = -1;
 
   const auto& repository = appData_->itemRepository();
-  
-  // Create a sorted list with LEAD at top, then other isMan items, separator, then others
-  std::vector<const Item*> leadItems;
-  std::vector<const Item*> otherManItems;
-  std::vector<const Item*> otherItems;
-  
-  for (std::size_t index = 0; index < repository.size(); ++index)
-  {
-    const Item& itemModel = repository.at(index);
-    const std::wstring token = itemModel.getIdentifierToken();
-    
-    // Check if this is LEAD
-    if (token == L"LEAD")
-    {
-      leadItems.push_back(&itemModel);
-    }
-    else if (itemModel.isMan())
-    {
-      otherManItems.push_back(&itemModel);
-    }
-    else
-    {
-      otherItems.push_back(&itemModel);
-    }
-  }
-  
-  // Sort non-LEAD lists alphabetically by token
-  auto sortByToken = [](const Item* a, const Item* b)
-  {
-    return a->getIdentifierToken() < b->getIdentifierToken();
-  };
-  std::sort(otherManItems.begin(), otherManItems.end(), sortByToken);
-  std::sort(otherItems.begin(), otherItems.end(), sortByToken);
-  
-  // Build final sorted list: LEAD, other man items, then other items.
-  // A custom-drawn divider line separates the two categories.
-  std::vector<const Item*> sortedItems;
-  sortedItems.insert(sortedItems.end(), leadItems.begin(), leadItems.end());
-  sortedItems.insert(sortedItems.end(), otherManItems.begin(), otherManItems.end());
 
-  if (!sortedItems.empty() && !otherItems.empty())
+  const ItemOrderingUtils::OrderedItemGroups orderedGroups =
+    ItemOrderingUtils::buildOrderedItemGroups(repository);
+
+  if (!orderedGroups.manItems.empty() && !orderedGroups.otherItems.empty())
   {
-    dividerAfterRow_ = static_cast<int>(sortedItems.size()) - 1;
+    dividerAfterRow_ = static_cast<int>(orderedGroups.manItems.size()) - 1;
   }
   
   int selectedRow = -1;
   
   // Add LEAD and other man items
-  for (int index = 0; index < static_cast<int>(sortedItems.size()); ++index)
+  for (int index = 0; index < static_cast<int>(orderedGroups.manItems.size()); ++index)
   {
-    const Item* itemModel = sortedItems[index];
+    const Item* itemModel = orderedGroups.manItems[index];
     const std::wstring token = itemModel->getIdentifierToken();
 
     LVITEMW item {};
@@ -640,10 +616,10 @@ void ItemsTabContent::updateItemsList()
   }
   
   // Add other items
-  int startOtherIndex = static_cast<int>(sortedItems.size());
-  for (int index = 0; index < static_cast<int>(otherItems.size()); ++index)
+  int startOtherIndex = static_cast<int>(orderedGroups.manItems.size());
+  for (int index = 0; index < static_cast<int>(orderedGroups.otherItems.size()); ++index)
   {
-    const Item* itemModel = otherItems[index];
+    const Item* itemModel = orderedGroups.otherItems[index];
     const std::wstring token = itemModel->getIdentifierToken();
 
     LVITEMW item {};

@@ -39,6 +39,8 @@
 #include "GUI/SettingsDialog.hpp"
 #include "GUI/WinSizingUtils.hpp"
 #include "GUI/WinTabView.hpp"
+#include "Function/StartupAutoLoadUtils.hpp"
+#include "Function/TabRefreshUtils.hpp"
 
 #include <commctrl.h>
 #include <commdlg.h>
@@ -113,8 +115,18 @@ static RECT getTabDisplayRect(HWND tabControl, const RECT& tabBounds)
 
 namespace
 {
-  constexpr int kDefaultMainWindowWidth = 900;
-  constexpr int kDefaultMainWindowHeight = 600;
+  constexpr int kDefaultMainWindowWidth {1700};
+  constexpr int kDefaultMainWindowHeight {1100};
+  constexpr int kMinMainWindowTrackWidth {1500};
+  constexpr int kMinMainWindowTrackHeight {1000};
+
+  SIZE resolveMinimumMainWindowTrackSize(const UiSizeProfile::Metrics& metrics)
+  {
+    SIZE minTrackSize {};
+    minTrackSize.cx = WinSizingUtils::scalePx(kMinMainWindowTrackWidth, metrics);
+    minTrackSize.cy = WinSizingUtils::scalePx(kMinMainWindowTrackHeight, metrics);
+    return minTrackSize;
+  }
 
   RECT resolveWorkAreaForStartup()
   {
@@ -175,8 +187,9 @@ namespace
         static_cast<double>(desiredHeight) * (metrics.dialogHeightScale > 0.0 ? metrics.dialogHeightScale : 1.0));
     }
 
-    const int minWidth = WinSizingUtils::scalePx(720, metrics);
-    const int minHeight = WinSizingUtils::scalePx(500, metrics);
+    const SIZE minTrackSize = resolveMinimumMainWindowTrackSize(metrics);
+    const int minWidth = minTrackSize.cx;
+    const int minHeight = minTrackSize.cy;
     int clampedWidth = desiredWidth;
     if (clampedWidth < minWidth)
     {
@@ -1145,12 +1158,32 @@ LRESULT MainWindow::handleMessage(UINT msg, WPARAM wp, LPARAM lp)
               }
               break;
             }
+            case MapTabContent::NavigationTarget::Items:
+            {
+              HWND tabCtrl = tabView_->getTabControl();
+              if (tabCtrl && itemsTabIndex_ >= 0)
+              {
+                TabCtrl_SetCurSel(tabCtrl, itemsTabIndex_);
+                tabView_->onSelectionChange();
+                updateReportsTabVisibility();
+              }
+              if (itemsTabContent_)
+              {
+                const auto& p = std::get<MapTabContent::ItemNavigationPayload>(request.payload);
+                itemsTabContent_->focusItemByToken(p.itemToken);
+              }
+              break;
+            }
           }
         });
 
       // Force a layout pass so all newly created child panels are sized correctly.
       refreshUiScaleFromWindow(true);
       SendMessageW(hwnd_, WM_SIZE, SIZE_RESTORED, 0);
+
+      // Ensure non-selected tab controls are hidden before startup autoload
+      // begins, preventing transient control bleed-through.
+      updateReportsTabVisibility();
 
       PostMessageW(hwnd_, WM_APP_AUTOLOAD, 0, 0);
 
@@ -1195,95 +1228,19 @@ LRESULT MainWindow::handleMessage(UINT msg, WPARAM wp, LPARAM lp)
 
     case WM_APP_AUTOLOAD:
     {
-      // Auto-load the configured data file if it exists (parse it like File/Import Data)
-      const std::wstring configuredDataFile = appConfig_.getDataFilePath();
-      if (!configuredDataFile.empty())
+      StartupAutoLoadUtils::AutoLoadResult autoLoadResult =
+        StartupAutoLoadUtils::runAutoLoad(*appData_, appConfig_);
+
+      if (!autoLoadResult.dataFileError.empty())
       {
-        std::filesystem::path dataPath(configuredDataFile);
-        if (std::filesystem::exists(dataPath) && std::filesystem::is_regular_file(dataPath))
-        {
-          auto& reportRepo = appData_->reportRepository();
-          if (!reportRepo.addFromFile(configuredDataFile,
-                                      appData_->factionRepository(),
-                                      appData_->regionRepository(),
-                                      appData_->unitRepository(),
-                                      appData_->battleRepository(),
-                                      appData_->eventRepository(),
-                                      appData_->itemRepository(),
-                                      appData_->skillRepository(),
-                                      appData_->structureRepository(),
-                                      appData_->structInfoRepository(),
-                                      appData_->orderRepository(),
-                                      appData_->getShipStructureIdThreshold(),
-                                      appData_->getFlyingShipTypeTokens(),
-                                      appData_->getMagicSkillTriggerPhrases(),
-                                      false))
-          {
-            const std::wstring message = L"Failed to auto-load the configured data file:\n\n" + reportRepo.getLastError();
-            MessageBoxW(hwnd_, message.c_str(), L"Startup Load Error", MB_OK | MB_ICONWARNING);
-          }
-        }
+        MessageBoxW(hwnd_, autoLoadResult.dataFileError.c_str(), L"Startup Load Error", MB_OK | MB_ICONWARNING);
       }
 
-      const std::wstring configuredReportFolder = appConfig_.getReportImportFolder();
-      if (!configuredReportFolder.empty())
+      const std::wstring reportFolderError =
+        StartupAutoLoadUtils::buildReportFolderErrorMessage(autoLoadResult.reportLoadErrors, 10);
+      if (!reportFolderError.empty())
       {
-        std::filesystem::path reportFolderPath(configuredReportFolder);
-        if (std::filesystem::exists(reportFolderPath) && std::filesystem::is_directory(reportFolderPath))
-        {
-          auto& reportRepo = appData_->reportRepository();
-          std::vector<std::wstring> failedReports;
-
-          const std::array<std::wstring, 4> allowedExtensions = { L".rep", L".txt", L".html", L".htm" };
-          for (const auto& entry : std::filesystem::directory_iterator(reportFolderPath))
-          {
-            if (!entry.is_regular_file())
-            {
-              continue;
-            }
-
-            const std::wstring extension = entry.path().extension().wstring();
-            std::wstring lowerExtension = extension;
-            std::transform(lowerExtension.begin(), lowerExtension.end(), lowerExtension.begin(), std::towlower);
-            if (std::find(allowedExtensions.begin(), allowedExtensions.end(), lowerExtension) == allowedExtensions.end())
-            {
-              continue;
-            }
-
-            if (!reportRepo.addFromFile(entry.path().wstring(),
-                                        appData_->factionRepository(),
-                                        appData_->regionRepository(),
-                                        appData_->unitRepository(),
-                                        appData_->battleRepository(),
-                                        appData_->eventRepository(),
-                                        appData_->itemRepository(),
-                                        appData_->skillRepository(),
-                                        appData_->structureRepository(),
-                                        appData_->structInfoRepository(),
-                                        appData_->orderRepository(),
-                                        appData_->getShipStructureIdThreshold(),
-                                        appData_->getFlyingShipTypeTokens(),
-                                        appData_->getMagicSkillTriggerPhrases(),
-                                        true))
-            {
-              failedReports.push_back(entry.path().filename().wstring() + L": " + reportRepo.getLastError());
-            }
-          }
-
-          if (!failedReports.empty())
-          {
-            std::wstring message = L"Some reports failed to auto-load from the configured report folder:\n\n";
-            for (std::size_t i = 0; i < failedReports.size() && i < 10; ++i)
-            {
-              message += failedReports[i] + L"\n";
-            }
-            if (failedReports.size() > 10)
-            {
-              message += L"...and more\n";
-            }
-            MessageBoxW(hwnd_, message.c_str(), L"Startup Load Error", MB_OK | MB_ICONWARNING);
-          }
-        }
+        MessageBoxW(hwnd_, reportFolderError.c_str(), L"Startup Load Error", MB_OK | MB_ICONWARNING);
       }
 
       refreshAllTabContents();
@@ -1315,6 +1272,18 @@ LRESULT MainWindow::handleMessage(UINT msg, WPARAM wp, LPARAM lp)
       if (tryGetCurrentTabDisplayRect(displayRc))
       {
         resizeSelectedTabContent(displayRc);
+      }
+      return 0;
+    }
+
+    case WM_GETMINMAXINFO:
+    {
+      auto* minMaxInfo = reinterpret_cast<MINMAXINFO*>(lp);
+      if (minMaxInfo)
+      {
+        const SIZE minTrackSize = resolveMinimumMainWindowTrackSize(uiScaleManager_.currentMetrics());
+        minMaxInfo->ptMinTrackSize.x = minTrackSize.cx;
+        minMaxInfo->ptMinTrackSize.y = minTrackSize.cy;
       }
       return 0;
     }
@@ -1772,38 +1741,18 @@ void MainWindow::createMenu()
 
 void MainWindow::refreshAllTabContents()
 {
-  if (reportsTabContent_)
-  {
-    reportsTabContent_->refresh();
-  }
-  if (mapTabContent_)
-  {
-    mapTabContent_->refresh();
-  }
-  if (eventsTabContent_)
-  {
-    eventsTabContent_->refresh();
-  }
-  if (itemsTabContent_)
-  {
-    itemsTabContent_->refresh();
-  }
-  if (skillsTabContent_)
-  {
-    skillsTabContent_->refresh();
-  }
-  if (factionsTabContent_)
-  {
-    factionsTabContent_->refresh();
-  }
-  if (battlesTabContent_)
-  {
-    battlesTabContent_->refresh();
-  }
-
-  // Always re-apply visibility after bulk refresh to prevent controls from
-  // non-selected tabs remaining visible.
-  updateReportsTabVisibility();
+  TabRefreshUtils::runRefreshContract(TabRefreshUtils::RefreshCallbacks{
+    [this]() { if (reportsTabContent_) { reportsTabContent_->refresh(); } },
+    [this]() { if (mapTabContent_) { mapTabContent_->refresh(); } },
+    [this]() { if (eventsTabContent_) { eventsTabContent_->refresh(); } },
+    [this]() { if (itemsTabContent_) { itemsTabContent_->refresh(); } },
+    [this]() { if (skillsTabContent_) { skillsTabContent_->refresh(); } },
+    [this]() { if (factionsTabContent_) { factionsTabContent_->refresh(); } },
+    [this]() { if (battlesTabContent_) { battlesTabContent_->refresh(); } },
+    // Always re-apply visibility after bulk refresh to prevent controls from
+    // non-selected tabs remaining visible.
+    [this]() { updateReportsTabVisibility(); }
+  });
 }
 
 void MainWindow::updateReportsTabVisibility()

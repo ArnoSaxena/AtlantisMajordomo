@@ -16,31 +16,31 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  *
- * File: SkillFormattingUtils.hpp
+ * File: ReadOnlyPopupService.hpp
  */
 
 // 304c89c8-6d3c-4586-b0c4-fad2e67b2f65
 #pragma once
 
-#include <map>
 #include <string>
-#include <vector>
 
-struct SkillPrerequisite;
-class AppData;
+namespace ReadOnlyPopupService
+{
 
-namespace SkillFormattingUtils
+struct PopupRequest
 {
-struct SkillDescriptionContent
-{
-	bool found { false };
-	std::wstring title;
-	std::wstring description;
-	std::wstring notFoundMessage;
+  std::wstring title;
+  std::wstring text;
+  bool softWrap { false };
 };
 
-std::wstring formatSkills(const std::map<std::wstring, int>& skills);
-std::wstring formatPrerequisites(const std::vector<SkillPrerequisite>& prerequisites);
-std::vector<SkillPrerequisite> parsePrerequisites(const std::wstring& text);
-SkillDescriptionContent buildSkillDescriptionContent(const AppData& appData, const std::wstring& skillToken);
-}
+class IBackend
+{
+public:
+  virtual ~IBackend() = default;
+  virtual void show(const PopupRequest& request) = 0;
+};
+
+void show(IBackend& backend, const PopupRequest& request);
+
+} // namespace ReadOnlyPopupService

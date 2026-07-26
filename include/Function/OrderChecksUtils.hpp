@@ -16,31 +16,25 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  *
- * File: SkillFormattingUtils.hpp
+ * File: OrderChecksUtils.hpp
  */
 
 // 304c89c8-6d3c-4586-b0c4-fad2e67b2f65
 #pragma once
 
-#include <map>
-#include <string>
-#include <vector>
+#include <functional>
 
-struct SkillPrerequisite;
 class AppData;
 
-namespace SkillFormattingUtils
+namespace OrderChecksUtils
 {
-struct SkillDescriptionContent
-{
-	bool found { false };
-	std::wstring title;
-	std::wstring description;
-	std::wstring notFoundMessage;
-};
+void runOrderChecksForMainFaction(AppData& appData,
+                                  int selectedUnitNumber,
+                                  const std::function<void()>& saveOrders,
+                                  const std::function<void()>& populateUnits,
+                                  const std::function<void()>& updateWarningsSummary,
+                                  const std::function<void(int)>& updateSelectedUnitDetails);
 
-std::wstring formatSkills(const std::map<std::wstring, int>& skills);
-std::wstring formatPrerequisites(const std::vector<SkillPrerequisite>& prerequisites);
-std::vector<SkillPrerequisite> parsePrerequisites(const std::wstring& text);
-SkillDescriptionContent buildSkillDescriptionContent(const AppData& appData, const std::wstring& skillToken);
+int selectPreviousWarningUnitNumber(const AppData& appData, int selectedUnitNumber);
+int selectNextWarningUnitNumber(const AppData& appData, int selectedUnitNumber);
 }

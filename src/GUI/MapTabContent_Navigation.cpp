@@ -41,6 +41,7 @@
 #include "Function/CommandSimulationService.hpp"
 #include "Function/CoordinateUtils.hpp"
 #include "Function/MonthUtils.hpp"
+#include "Function/MapNavigationUtils.hpp"
 #include "Function/OrderBusinessLogic.hpp"
 #include "Function/OrderParsingUtils.hpp"
 #include "Function/OrderWarningService.hpp"
@@ -101,6 +102,19 @@ void MapTabContent::navigateToSkillList(const std::wstring& skillToken)
   });
 }
 
+void MapTabContent::navigateToItemList(const std::wstring& itemToken)
+{
+  if (itemToken.empty() || !navigationCallback_)
+  {
+    return;
+  }
+
+  navigationCallback_(NavigationRequest{
+    NavigationTarget::Items,
+    ItemNavigationPayload{ itemToken }
+  });
+}
+
 
 void MapTabContent::selectUnitInMap(int unitNumber)
 {
@@ -109,10 +123,10 @@ void MapTabContent::selectUnitInMap(int unitNumber)
     return;
   }
 
-  const Unit* unit = appData_->unitRepository().findByNumber(unitNumber);
-  if (!unit)
+  MapNavigationUtils::UnitSelectionContext context {};
+  if (!MapNavigationUtils::tryBuildUnitSelectionContext(*appData_, unitNumber, context))
   {
-    std::wstring message = L"Unit " + std::to_wstring(unitNumber) + L" was not found in the database.";
+    const std::wstring message = MapNavigationUtils::buildUnitNotFoundMessage(unitNumber);
     MessageBoxW(
       unitSearchEdit_,
       message.c_str(),
@@ -122,19 +136,14 @@ void MapTabContent::selectUnitInMap(int unitNumber)
     return;
   }
 
-  selectedZ_ = unit->getZCoordinate();
+  selectedZ_ = context.zCoordinate;
   hasSelectedRegion_ = true;
-  selectedRegionX_ = unit->getXCoordinate();
-  selectedRegionY_ = unit->getYCoordinate();
+  selectedRegionX_ = context.xCoordinate;
+  selectedRegionY_ = context.yCoordinate;
 
   refresh();
 
-  const Region* region = appData_->regionRepository().findByCoordinates(selectedRegionX_, selectedRegionY_, selectedZ_);
-  if (!region)
-  {
-    region = appData_->regionRepository().findByCoordinates(selectedRegionX_, selectedRegionY_);
-  }
-  updateRegionDetailsView(region);
+  updateRegionDetailsView(context.region);
 
   if (unitsList_)
   {
@@ -229,41 +238,24 @@ void MapTabContent::searchAndSelectUnitById()
     return;
   }
 
-  const std::wstring unitIdText = WinGuiUtils::getWindowText(unitSearchEdit_);
-  if (unitIdText.empty())
+  const MapNavigationUtils::UnitSearchResult searchResult =
+    MapNavigationUtils::resolveUnitSearch(*appData_, WinGuiUtils::getWindowText(unitSearchEdit_));
+  if (searchResult.status == MapNavigationUtils::UnitSearchStatus::Found)
   {
+    selectUnitInMap(searchResult.unitNumber);
     return;
   }
 
-  int unitNumber = 0;
-  try
+  if (searchResult.status == MapNavigationUtils::UnitSearchStatus::NotFound)
   {
-    unitNumber = std::stoi(unitIdText);
-  }
-  catch (...)
-  {
-    return;
-  }
-
-  if (unitNumber <= 0)
-  {
-    return;
-  }
-
-  const Unit* unit = appData_->unitRepository().findByNumber(unitNumber);
-  if (!unit)
-  {
-    const std::wstring message = L"Unit " + std::to_wstring(unitNumber) + L" was not found in the database.";
+    const std::wstring message = MapNavigationUtils::buildUnitNotFoundMessage(searchResult.unitNumber);
     MessageBoxW(
       unitSearchEdit_,
       message.c_str(),
       L"Unit Not Found",
       MB_OK | MB_ICONWARNING
     );
-    return;
   }
-
-  selectUnitInMap(unitNumber);
 }
 
 

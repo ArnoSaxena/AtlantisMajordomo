@@ -27,11 +27,13 @@
 
 #include "Data/AppData.hpp"
 #include "Data/Battle.hpp"
+#include "Data/Item.hpp"
 #include "Data/Region.hpp"
 #include "Data/Report.hpp"
 #include "Data/Skill.hpp"
 #include "Data/Unit.hpp"
 #include "Function/OrderBusinessLogic.hpp"
+#include "Function/ReadOnlyPopupService.hpp"
 #include "Function/StringUtils.hpp"
 
 #include <QDialog>
@@ -41,6 +43,8 @@
 #include <QMessageBox>
 #include <QPlainTextEdit>
 #include <QTextCursor>
+#include <QTreeWidget>
+#include <QTreeWidgetItem>
 #include <QVBoxLayout>
 
 #include <string>
@@ -74,6 +78,26 @@ void showReadOnlyTextPopup(QWidget* owner,
     dialog.exec();
 }
 
+class QtReadOnlyPopupBackend : public ReadOnlyPopupService::IBackend
+{
+public:
+    explicit QtReadOnlyPopupBackend(QWidget* owner)
+        : owner_(owner)
+    {
+    }
+
+    void show(const ReadOnlyPopupService::PopupRequest& request) override
+    {
+        showReadOnlyTextPopup(owner_,
+                              QString::fromStdWString(request.title),
+                              QString::fromStdWString(request.text),
+                              request.softWrap);
+    }
+
+private:
+    QWidget* owner_ { nullptr };
+};
+
 bool getLatestReportPeriod(const AppData* appData, int& month, int& year)
 {
     month = 0;
@@ -102,6 +126,26 @@ bool getLatestReportPeriod(const AppData* appData, int& month, int& year)
     }
 
     return month >= 1 && month <= 12 && year > 0;
+}
+
+const Item* resolveItemFromRegionListRow(const AppData* appData,
+                                         const QTreeWidgetItem* row,
+                                         std::wstring& normalizedToken)
+{
+    normalizedToken.clear();
+    if (!appData || !row)
+    {
+        return nullptr;
+    }
+
+    const std::wstring rawToken = StringUtils::trimWhitespace(row->text(0).toStdWString());
+    if (rawToken.empty())
+    {
+        return nullptr;
+    }
+
+    normalizedToken = StringUtils::toUpper(rawToken);
+    return appData->itemRepository().findByIdentifierToken(normalizedToken);
 }
 
 } // namespace
@@ -187,10 +231,13 @@ void MapTabContentQt::onMapRegionRightClicked(QPoint screenPos, int regionX, int
     QAction* selected = menu.exec(screenPos);
     if (selected == regionReportAction)
     {
-        showReadOnlyTextPopup(this,
-                              "Region Report",
-                              QString::fromStdWString(StringUtils::toCRLF(region->getRegionReport())),
-                              false);
+        QtReadOnlyPopupBackend popupBackend(this);
+        ReadOnlyPopupService::show(popupBackend,
+                                   ReadOnlyPopupService::PopupRequest{
+                                       L"Region Report",
+                                       StringUtils::toCRLF(region->getRegionReport()),
+                                       false
+                                   });
         return;
     }
 
@@ -224,10 +271,13 @@ void MapTabContentQt::onMapRegionRightClicked(QPoint screenPos, int regionX, int
             return;
         }
 
-        showReadOnlyTextPopup(this,
-                              "Battle Report",
-                              QString::fromStdWString(StringUtils::toCRLF(combinedBattleText)),
-                              false);
+        QtReadOnlyPopupBackend popupBackend(this);
+        ReadOnlyPopupService::show(popupBackend,
+                                   ReadOnlyPopupService::PopupRequest{
+                                       L"Battle Report",
+                                       StringUtils::toCRLF(combinedBattleText),
+                                       false
+                                   });
     }
 }
 
@@ -410,6 +460,91 @@ void MapTabContentQt::onUnitSkillsContextMenuRequested(const QPoint& pos)
     }
 }
 
+void MapTabContentQt::onUnitWarningsContextMenuRequested(const QPoint& pos)
+{
+    if (!unitWarningsList_ || !appData_)
+    {
+        return;
+    }
+
+    QListWidgetItem* item = unitWarningsList_->itemAt(pos);
+    if (!item)
+    {
+        return;
+    }
+
+    unitWarningsList_->setCurrentItem(item);
+
+    QMenu menu(unitWarningsList_);
+    QAction* clearAction = menu.addAction("Clear");
+    QAction* selected = menu.exec(unitWarningsList_->mapToGlobal(pos));
+    if (selected == clearAction)
+    {
+        clearWarningsForSelectedUnit();
+    }
+}
+
+void MapTabContentQt::onRegionResourcesContextMenuRequested(const QPoint& pos)
+{
+    handleRegionItemContextMenuRequested(regionResourcesList_, pos);
+}
+
+void MapTabContentQt::onRegionForSaleContextMenuRequested(const QPoint& pos)
+{
+    handleRegionItemContextMenuRequested(regionForSaleList_, pos);
+}
+
+void MapTabContentQt::onRegionWantedContextMenuRequested(const QPoint& pos)
+{
+    handleRegionItemContextMenuRequested(regionWantedList_, pos);
+}
+
+void MapTabContentQt::handleRegionItemContextMenuRequested(QTreeWidget* sourceList, const QPoint& pos)
+{
+    if (!sourceList || !appData_)
+    {
+        return;
+    }
+
+    QTreeWidgetItem* row = sourceList->itemAt(pos);
+    if (!row)
+    {
+        return;
+    }
+
+    std::wstring itemToken;
+    const Item* item = resolveItemFromRegionListRow(appData_, row, itemToken);
+    if (!item)
+    {
+        return;
+    }
+
+    QMenu menu(sourceList);
+    QAction* showDescriptionAction = menu.addAction("Item Description");
+    QAction* openItemsTabAction = menu.addAction("Items Tab");
+    QAction* selected = menu.exec(sourceList->mapToGlobal(pos));
+    if (selected == showDescriptionAction)
+    {
+        std::wstring description = item->getFullText();
+        if (description.empty())
+        {
+            description = L"No description available.";
+        }
+
+        QtReadOnlyPopupBackend popupBackend(this);
+        ReadOnlyPopupService::show(popupBackend,
+                                   ReadOnlyPopupService::PopupRequest{
+                                       L"Item Description " + item->getItemName() + L" [" + item->getIdentifierToken() + L"]",
+                                       StringUtils::toCRLF(description),
+                                       true
+                                   });
+    }
+    else if (selected == openItemsTabAction)
+    {
+        emit navigateToItem(QString::fromStdWString(itemToken));
+    }
+}
+
 void MapTabContentQt::showSkillDescription(const std::wstring& skillToken)
 {
     if (!appData_ || skillToken.empty())
@@ -417,27 +552,25 @@ void MapTabContentQt::showSkillDescription(const std::wstring& skillToken)
         return;
     }
 
-    const Skill* skill = appData_->skillRepository().findByIdentifier(skillToken);
-    if (!skill)
+    const SkillFormattingUtils::SkillDescriptionContent content =
+        SkillFormattingUtils::buildSkillDescriptionContent(*appData_, skillToken);
+    if (!content.found)
     {
-        showReadOnlyTextPopup(this,
-                              "Skill Description",
-                              QString("No description found for skill '%1'.")
-                                  .arg(QString::fromStdWString(skillToken)),
-                              true);
+        QtReadOnlyPopupBackend popupBackend(this);
+        ReadOnlyPopupService::show(popupBackend,
+                                   ReadOnlyPopupService::PopupRequest{
+                                       L"Skill Description",
+                                       content.notFoundMessage,
+                                       true
+                                   });
         return;
     }
 
-    std::wstring description = skill->getAllLevelDescriptions();
-    if (description.empty())
-    {
-        description = L"No description available.";
-    }
-
-    const QString title = QString::fromStdWString(skill->getName()) +
-                          " [" + QString::fromStdWString(skill->getIdentifierToken()) + "]";
-    showReadOnlyTextPopup(this,
-                          "Skill Description " + title,
-                          QString::fromStdWString(StringUtils::toCRLF(description)),
-                          true);
+    QtReadOnlyPopupBackend popupBackend(this);
+    ReadOnlyPopupService::show(popupBackend,
+                               ReadOnlyPopupService::PopupRequest{
+                                   content.title,
+                                   StringUtils::toCRLF(content.description),
+                                   true
+                               });
 }

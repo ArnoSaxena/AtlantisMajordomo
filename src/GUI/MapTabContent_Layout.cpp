@@ -229,7 +229,12 @@ void MapTabContent::resize(const RECT& displayRect)
 
   const int warningButtonWidth = WinSizingUtils::scalePx(100, uiMetrics);
   const int warningButtonsGap = WinSizingUtils::scalePx(6, uiMetrics);
-  const int lastWarningX = checkButtonX + checkButtonWidth + warningButtonsGap;
+  const int warningsLabelX = checkButtonX + checkButtonWidth + warningButtonsGap;
+  const int warningsLabelWidth = WinSizingUtils::scalePx(120, uiMetrics);
+  SetWindowPos(warningsCountLabel_, HWND_TOP, warningsLabelX, buttonRowY + 3,
+               warningsLabelWidth, buttonRowHeight, SWP_NOACTIVATE);
+
+  const int lastWarningX = warningsLabelX + warningsLabelWidth + warningButtonsGap;
   SetWindowPos(lastWarningButton_, HWND_TOP, lastWarningX, buttonRowY,
                warningButtonWidth, buttonRowHeight, SWP_NOACTIVATE);
 
@@ -257,11 +262,6 @@ void MapTabContent::resize(const RECT& displayRect)
                searchEditWidth, buttonRowHeight, SWP_NOACTIVATE);
   SetWindowPos(unitSearchButton_, HWND_TOP, searchButtonX, buttonRowY,
                searchButtonWidth, buttonRowHeight, SWP_NOACTIVATE);
-
-  const int warningsLabelX = nextWarningX + warningButtonWidth + 12;
-  const int warningsLabelWidth = (std::max)(60, searchEditX - warningsLabelX - 8);
-  SetWindowPos(warningsCountLabel_, HWND_TOP, warningsLabelX, buttonRowY + 3,
-               warningsLabelWidth, buttonRowHeight, SWP_NOACTIVATE);
 
   SetWindowPos(unitsList_, HWND_TOP, displayRect.left + kMargin, bottomY,
               listPanelWidth, (std::max)(0, listHeight), SWP_NOACTIVATE);

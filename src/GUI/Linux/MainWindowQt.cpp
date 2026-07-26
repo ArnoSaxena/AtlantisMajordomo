@@ -35,6 +35,8 @@
 #include "Data/DataSerializer.hpp"
 #include "Data/Faction.hpp"
 #include "Data/Unit.hpp"
+#include "Function/StartupAutoLoadUtils.hpp"
+#include "Function/TabRefreshUtils.hpp"
 
 #include <QCloseEvent>
 #include <QFileDialog>
@@ -511,6 +513,8 @@ void MainWindow::deferredInit()
             this, &MainWindow::onNavigateToBattle);
     connect(mapTabContent_, &MapTabContentQt::navigateToSkill,
             this, &MainWindow::onNavigateToSkill);
+        connect(mapTabContent_, &MapTabContentQt::navigateToItem,
+            this, &MainWindow::onNavigateToItem);
 
     // TODO: Create remaining Qt tab content widgets here as they are implemented.
 
@@ -519,92 +523,23 @@ void MainWindow::deferredInit()
 
 void MainWindow::autoLoad()
 {
-    // Auto-load the configured data file (equivalent to WM_APP_AUTOLOAD, data file part)
-    const std::wstring dataFilePath = appConfig_.getDataFilePath();
-    if (!dataFilePath.empty())
+    StartupAutoLoadUtils::AutoLoadResult autoLoadResult =
+        StartupAutoLoadUtils::runAutoLoad(appData_, appConfig_);
+
+    if (!autoLoadResult.dataFileError.empty())
     {
-        std::error_code ec;
-        const std::filesystem::path dataPath(dataFilePath);
-        if (std::filesystem::exists(dataPath, ec) && std::filesystem::is_regular_file(dataPath, ec))
-        {
-            auto& reportRepo = appData_.reportRepository();
-            if (!reportRepo.addFromFile(dataFilePath,
-                                        appData_.factionRepository(),
-                                        appData_.regionRepository(),
-                                        appData_.unitRepository(),
-                                        appData_.battleRepository(),
-                                        appData_.eventRepository(),
-                                        appData_.itemRepository(),
-                                        appData_.skillRepository(),
-                                        appData_.structureRepository(),
-                                        appData_.structInfoRepository(),
-                                        appData_.orderRepository(),
-                                        appData_.getShipStructureIdThreshold(),
-                                        appData_.getFlyingShipTypeTokens(),
-                                        appData_.getMagicSkillTriggerPhrases(),
-                                        false))
-            {
-                QMessageBox::warning(this,
-                    "Startup Load Error",
-                    QString("Failed to auto-load the configured data file:\n\n%1")
-                        .arg(QString::fromStdWString(reportRepo.getLastError())));
-            }
-        }
+        QMessageBox::warning(this,
+                             "Startup Load Error",
+                             QString::fromStdWString(autoLoadResult.dataFileError));
     }
 
-    // Auto-load from the configured report import folder
-    const std::wstring reportFolder = appConfig_.getReportImportFolder();
-    if (!reportFolder.empty())
+    const std::wstring reportFolderError =
+        StartupAutoLoadUtils::buildReportFolderErrorMessage(autoLoadResult.reportLoadErrors, 10);
+    if (!reportFolderError.empty())
     {
-        std::error_code ec;
-        const std::filesystem::path folderPath(reportFolder);
-        if (std::filesystem::exists(folderPath, ec) && std::filesystem::is_directory(folderPath, ec))
-        {
-            auto& reportRepo = appData_.reportRepository();
-            std::vector<std::wstring> failedReports;
-
-            const std::array<std::wstring, 4> allowedExtensions = { L".rep", L".txt", L".html", L".htm" };
-            for (const auto& entry : std::filesystem::directory_iterator(folderPath, ec))
-            {
-                if (!entry.is_regular_file()) continue;
-
-                std::wstring ext = entry.path().extension().wstring();
-                std::transform(ext.begin(), ext.end(), ext.begin(), std::towlower);
-                if (std::find(allowedExtensions.begin(), allowedExtensions.end(), ext)
-                        == allowedExtensions.end())
-                    continue;
-
-                if (!reportRepo.addFromFile(entry.path().wstring(),
-                                            appData_.factionRepository(),
-                                            appData_.regionRepository(),
-                                            appData_.unitRepository(),
-                                            appData_.battleRepository(),
-                                            appData_.eventRepository(),
-                                            appData_.itemRepository(),
-                                            appData_.skillRepository(),
-                                            appData_.structureRepository(),
-                                            appData_.structInfoRepository(),
-                                            appData_.orderRepository(),
-                                            appData_.getShipStructureIdThreshold(),
-                                            appData_.getFlyingShipTypeTokens(),
-                                            appData_.getMagicSkillTriggerPhrases(),
-                                            true))
-                {
-                    failedReports.push_back(
-                        entry.path().filename().wstring() + L": " + reportRepo.getLastError());
-                }
-            }
-
-            if (!failedReports.empty())
-            {
-                std::wstring msg = L"Some reports failed to auto-load from the configured report folder:\n\n";
-                for (std::size_t i = 0; i < failedReports.size() && i < 10; ++i)
-                    msg += failedReports[i] + L"\n";
-                if (failedReports.size() > 10)
-                    msg += L"...and more\n";
-                QMessageBox::warning(this, "Startup Load Error", QString::fromStdWString(msg));
-            }
-        }
+        QMessageBox::warning(this,
+                             "Startup Load Error",
+                             QString::fromStdWString(reportFolderError));
     }
 
     refreshAllTabs();
@@ -612,26 +547,16 @@ void MainWindow::autoLoad()
 
 void MainWindow::refreshAllTabs()
 {
-    if (reportsTabContent_)
-        reportsTabContent_->refresh();
-
-    if (eventsTabContent_)
-        eventsTabContent_->refresh();
-
-    if (battlesTabContent_)
-        battlesTabContent_->refresh();
-
-    if (itemsTabContent_)
-        itemsTabContent_->refresh();
-
-    if (factionsTabContent_)
-        factionsTabContent_->refresh();
-
-    if (skillsTabContent_)
-        skillsTabContent_->refresh();
-
-    if (mapTabContent_)
-        mapTabContent_->refresh();
+    TabRefreshUtils::runRefreshContract(TabRefreshUtils::RefreshCallbacks{
+        [this]() { if (reportsTabContent_) { reportsTabContent_->refresh(); } },
+        [this]() { if (mapTabContent_) { mapTabContent_->refresh(); } },
+        [this]() { if (eventsTabContent_) { eventsTabContent_->refresh(); } },
+        [this]() { if (itemsTabContent_) { itemsTabContent_->refresh(); } },
+        [this]() { if (skillsTabContent_) { skillsTabContent_->refresh(); } },
+        [this]() { if (factionsTabContent_) { factionsTabContent_->refresh(); } },
+        [this]() { if (battlesTabContent_) { battlesTabContent_->refresh(); } },
+        {}
+    });
 
     // TODO: Call refresh() on remaining Qt tab content widgets as they are implemented.
 }
@@ -889,6 +814,14 @@ void MainWindow::onNavigateToSkill(const QString& skillToken)
         tabWidget_->setCurrentWidget(skillsTab_);
     if (skillsTabContent_)
         skillsTabContent_->focusSkillByToken(skillToken.toStdWString());
+}
+
+void MainWindow::onNavigateToItem(const QString& itemToken)
+{
+    if (tabWidget_ && itemsTab_)
+        tabWidget_->setCurrentWidget(itemsTab_);
+    if (itemsTabContent_)
+        itemsTabContent_->focusItemByToken(itemToken.toStdWString());
 }
 
 // ---------------------------------------------------------------------------

@@ -27,13 +27,9 @@
 
 #include "Data/AppData.hpp"
 #include "Data/Unit.hpp"
-#include "Function/AppDataUtils.hpp"
-#include "Function/OrderWarningService.hpp"
+#include "Function/OrderChecksUtils.hpp"
 
 #include <QLabel>
-
-#include <algorithm>
-#include <vector>
 
 void MapTabContentQt::runOrderChecksForMainFaction()
 {
@@ -42,15 +38,13 @@ void MapTabContentQt::runOrderChecksForMainFaction()
         return;
     }
 
-    saveOrdersToSelectedUnit();
-    OrderWarningService::runForMainFaction(*appData_);
-
-    populateUnitsForSelectedRegion();
-    updateWarningsSummaryLabel();
-    if (selectedUnitNumber_ != 0)
-    {
-        updateSelectedUnitDetailsByNumber(selectedUnitNumber_);
-    }
+    OrderChecksUtils::runOrderChecksForMainFaction(
+        *appData_,
+        selectedUnitNumber_,
+        [this]() { saveOrdersToSelectedUnit(); },
+        [this]() { populateUnitsForSelectedRegion(); },
+        [this]() { updateWarningsSummaryLabel(); },
+        [this](int unitNumber) { updateSelectedUnitDetailsByNumber(unitNumber); });
 }
 
 void MapTabContentQt::updateWarningsSummaryLabel()
@@ -87,36 +81,14 @@ void MapTabContentQt::selectPreviousWarningUnit()
         return;
     }
 
-    std::vector<int> warningUnits = AppDataUtils::getWarningUnitNumbersForLatestPeriod(*appData_);
-
-    if (warningUnits.empty())
+    const int previousWarningUnitNumber =
+        OrderChecksUtils::selectPreviousWarningUnitNumber(*appData_, selectedUnitNumber_);
+    if (previousWarningUnitNumber == 0)
     {
         return;
     }
 
-    std::sort(warningUnits.begin(), warningUnits.end());
-
-    int selectedIndex = -1;
-    for (int index = 0; index < static_cast<int>(warningUnits.size()); ++index)
-    {
-        if (warningUnits[static_cast<std::size_t>(index)] == selectedUnitNumber_)
-        {
-            selectedIndex = index;
-            break;
-        }
-    }
-
-    int targetIndex = selectedIndex - 1;
-    if (selectedIndex < 0)
-    {
-        targetIndex = static_cast<int>(warningUnits.size()) - 1;
-    }
-    else if (targetIndex < 0)
-    {
-        targetIndex = static_cast<int>(warningUnits.size()) - 1;
-    }
-
-    selectUnitInMap(warningUnits[static_cast<std::size_t>(targetIndex)]);
+    selectUnitInMap(previousWarningUnitNumber);
 }
 
 void MapTabContentQt::selectNextWarningUnit()
@@ -126,36 +98,14 @@ void MapTabContentQt::selectNextWarningUnit()
         return;
     }
 
-    std::vector<int> warningUnits = AppDataUtils::getWarningUnitNumbersForLatestPeriod(*appData_);
-
-    if (warningUnits.empty())
+    const int nextWarningUnitNumber =
+        OrderChecksUtils::selectNextWarningUnitNumber(*appData_, selectedUnitNumber_);
+    if (nextWarningUnitNumber == 0)
     {
         return;
     }
 
-    std::sort(warningUnits.begin(), warningUnits.end());
-
-    int selectedIndex = -1;
-    for (int index = 0; index < static_cast<int>(warningUnits.size()); ++index)
-    {
-        if (warningUnits[static_cast<std::size_t>(index)] == selectedUnitNumber_)
-        {
-            selectedIndex = index;
-            break;
-        }
-    }
-
-    int targetIndex = selectedIndex + 1;
-    if (selectedIndex < 0)
-    {
-        targetIndex = 0;
-    }
-    else if (targetIndex >= static_cast<int>(warningUnits.size()))
-    {
-        targetIndex = 0;
-    }
-
-    selectUnitInMap(warningUnits[static_cast<std::size_t>(targetIndex)]);
+    selectUnitInMap(nextWarningUnitNumber);
 }
 
 void MapTabContentQt::clearWarningsForSelectedUnit()

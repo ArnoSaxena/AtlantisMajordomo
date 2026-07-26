@@ -40,6 +40,7 @@
 #include <QTreeWidget>
 #include <QVBoxLayout>
 #include <QWidget>
+#include <QStringList>
 
 // ---------------------------------------------------------------------------
 // Constructor
@@ -170,9 +171,9 @@ MapTabContentQt::MapTabContentQt(AppData&   appData,
     buttonRowLayout->setSpacing(4);
 
     checkOrdersButton_  = new QPushButton("Check Orders",  buttonRowWidget);
-    prevWarningButton_  = new QPushButton("\u25C4 Prev",   buttonRowWidget);  // ◄ Prev
+    prevWarningButton_  = new QPushButton("Last",           buttonRowWidget);
     clearWarningButton_ = new QPushButton("Clear",          buttonRowWidget);
-    nextWarningButton_  = new QPushButton("Next \u25BA",   buttonRowWidget);  // Next ►
+    nextWarningButton_  = new QPushButton("Next",           buttonRowWidget);
     warningsCountLabel_ = new QLabel("Warnings: 0",         buttonRowWidget);
     unitSearchEdit_     = new QLineEdit(buttonRowWidget);
     unitSearchEdit_->setPlaceholderText("Unit id\u2026");
@@ -180,10 +181,10 @@ MapTabContentQt::MapTabContentQt(AppData&   appData,
     unitSearchButton_ = new QPushButton("Search", buttonRowWidget);
 
     buttonRowLayout->addWidget(checkOrdersButton_);
+    buttonRowLayout->addWidget(warningsCountLabel_);
     buttonRowLayout->addWidget(prevWarningButton_);
     buttonRowLayout->addWidget(clearWarningButton_);
     buttonRowLayout->addWidget(nextWarningButton_);
-    buttonRowLayout->addWidget(warningsCountLabel_);
     buttonRowLayout->addStretch();
     buttonRowLayout->addWidget(unitSearchEdit_);
     buttonRowLayout->addWidget(unitSearchButton_);
@@ -200,11 +201,14 @@ MapTabContentQt::MapTabContentQt(AppData&   appData,
     unitsList_->setAlternatingRowColors(true);
     unitsList_->verticalHeader()->setVisible(false);
     unitsList_->setHorizontalScrollMode(QAbstractItemView::ScrollPerPixel);
-    unitsList_->setHorizontalHeaderLabels({
+    unitsListBaseHeaderLabels_ = QStringList({
         "#", "Name", "Faction", "Faction Name",
         "Structure", "Men", "Silver", "Flags", "Skills", "!", "D"
     });
+    unitsList_->setHorizontalHeaderLabels(unitsListBaseHeaderLabels_);
     unitsList_->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
+    unitsList_->horizontalHeader()->setSortIndicatorShown(true);
+    unitsList_->horizontalHeader()->setSortIndicator(-1, Qt::AscendingOrder);
     unitsList_->setColumnWidth(0, 50);
     unitsList_->setColumnWidth(1, 180);
     unitsList_->setColumnWidth(2, 50);
@@ -333,6 +337,8 @@ MapTabContentQt::MapTabContentQt(AppData&   appData,
 
         connect(unitsList_, &QTableWidget::itemSelectionChanged,
             this, &MapTabContentQt::onUnitsSelectionChanged);
+        connect(unitsList_->horizontalHeader(), &QHeaderView::sectionDoubleClicked,
+            this, &MapTabContentQt::onUnitsHeaderSectionDoubleClicked);
         connect(unitDetailsTabs_, &QTabWidget::currentChanged,
             this, &MapTabContentQt::onUnitDetailsTabChanged);
         connect(saveOrdersButton_, &QPushButton::clicked,
@@ -357,6 +363,22 @@ MapTabContentQt::MapTabContentQt(AppData&   appData,
         unitSkillsList_->setContextMenuPolicy(Qt::CustomContextMenu);
         connect(unitSkillsList_, &QListWidget::customContextMenuRequested,
             this, &MapTabContentQt::onUnitSkillsContextMenuRequested);
+
+        unitWarningsList_->setContextMenuPolicy(Qt::CustomContextMenu);
+        connect(unitWarningsList_, &QListWidget::customContextMenuRequested,
+            this, &MapTabContentQt::onUnitWarningsContextMenuRequested);
+
+        regionResourcesList_->setContextMenuPolicy(Qt::CustomContextMenu);
+        connect(regionResourcesList_, &QTreeWidget::customContextMenuRequested,
+            this, &MapTabContentQt::onRegionResourcesContextMenuRequested);
+
+        regionForSaleList_->setContextMenuPolicy(Qt::CustomContextMenu);
+        connect(regionForSaleList_, &QTreeWidget::customContextMenuRequested,
+            this, &MapTabContentQt::onRegionForSaleContextMenuRequested);
+
+        regionWantedList_->setContextMenuPolicy(Qt::CustomContextMenu);
+        connect(regionWantedList_, &QTreeWidget::customContextMenuRequested,
+            this, &MapTabContentQt::onRegionWantedContextMenuRequested);
 
             connect(mapCanvas_, &MapCanvasWidget::mapRegionLeftClicked,
                 this, &MapTabContentQt::onMapRegionLeftClicked);

@@ -33,6 +33,7 @@
 #include "Data/Unit.hpp"
 #include "Function/AppDataUtils.hpp"
 #include "Function/CoordinateFormattingUtils.hpp"
+#include "Function/MapRegionDetailsUtils.hpp"
 #include "Function/StringUtils.hpp"
 
 #include <QLabel>
@@ -68,71 +69,12 @@ void MapTabContentQt::updateRegionDetailsView(const Region* region)
         regionDateLabel_->setText(QString::fromStdWString(AppDataUtils::buildDateLabelText(appData_)));
     }
 
-    std::wstring details;
-    details += L"Coordinates: " + CoordinateFormattingUtils::formatCoordinates(
-        region->getXCoordinate(),
-        region->getYCoordinate(),
-        region->getZCoordinate()
-    ) + L"\n";
-    details += L"Region Type: " + region->getRegionType() + L"\n";
-    details += L"Peasants: " + region->getPeasantType() + L"\n";
-    details += L"Province: " + region->getProvinceName() + L"\n";
-
-    if (region->getContainsSettlement())
-    {
-        details += L"Settlement Type: " + region->getSettlementType() + L"\n";
-        details += L"Settlement Name: " + region->getSettlementName();
-    }
-
-    // Display structure of selected unit if it's in this region
-    if (appData_ && selectedUnitNumber_ > 0)
-    {
-        const Unit* selectedUnit = appData_->unitRepository().findByNumber(selectedUnitNumber_);
-        const int selectedDisplayStructureId = selectedUnit
-            ? selectedUnit->getFutureStructureId()
-            : 0;
-
-        if (selectedUnit &&
-            selectedUnit->getXCoordinate() == region->getXCoordinate() &&
-            selectedUnit->getYCoordinate() == region->getYCoordinate() &&
-            selectedUnit->getZCoordinate() == selectedZ_ &&
-            selectedDisplayStructureId > 0)
-        {
-            const Structure* structure = appData_->structureRepository().findByIdAndCoordinates(
-                selectedDisplayStructureId,
-                selectedUnit->getXCoordinate(),
-                selectedUnit->getYCoordinate(),
-                selectedUnit->getZCoordinate());
-
-            if (structure)
-            {
-                details += L"\nStructure: " + structure->getStructureType() + L" [" + std::to_wstring(selectedDisplayStructureId) + L"]";
-                if (!structure->getStructureName().empty())
-                {
-                    details += L" - " + structure->getStructureName();
-                }
-
-                const StructInfo* structInfo = appData_->structInfoRepository().findByType(structure->getStructureType());
-                if (structInfo && structInfo->getNeeds() > 0)
-                {
-                    details += L", needs " + std::to_wstring(structInfo->getNeeds());
-                }
-
-                const auto& fleetItems = structure->getFleetItems();
-                if (!fleetItems.empty())
-                {
-                    for (const auto& itemEntry : fleetItems)
-                    {
-                        const std::wstring& itemToken = itemEntry.first;
-                        const int amount = itemEntry.second;
-                        const StructInfo* itemStructInfo = appData_->structInfoRepository().findByItemIdentifierToken(itemToken);
-                        const std::wstring itemType = itemStructInfo ? itemStructInfo->getStructureType() : itemToken;
-                        details += L"\n  " + std::to_wstring(amount) + L" " + itemType + L" [" + itemToken + L"]";
-                    }
-                }
-            }
-        }
-    }
+    const std::wstring details = MapRegionDetailsUtils::buildRegionSummaryText(
+        *region,
+        appData_,
+        selectedUnitNumber_,
+        selectedZ_,
+        L"\n");
 
     regionDetailsView_->setPlainText(QString::fromStdWString(details));
     populateResourcesList(region);
@@ -154,12 +96,6 @@ void MapTabContentQt::populateResourcesList(const Region* region)
         return;
     }
 
-    const auto& resources = region->getResources();
-    const auto& afterCommandResources = region->getResourcesAfterOrders();
-    const int entertainmentAfterCommands = region->getEntertainmentAfterOrders();
-    const int taxesAfterCommands = region->getTaxableIncomeAfterOrders();
-    const int workWagesAfterCommands = region->getWagesAfterOrders();
-
     auto insertResourceRow = [this](const std::wstring& itemName, int amount, int amountAfterCommands)
     {
         auto* treeItem = new QTreeWidgetItem(regionResourcesList_);
@@ -172,29 +108,11 @@ void MapTabContentQt::populateResourcesList(const Region* region)
         treeItem->setTextAlignment(2, Qt::AlignRight | Qt::AlignVCenter);
     };
 
-    insertResourceRow(L"Entertainment", region->getEntertainment(), entertainmentAfterCommands);
-    insertResourceRow(L"Taxes", region->getTaxableIncome(), taxesAfterCommands);
-    insertResourceRow(L"Work wages", region->getWagesMax(), workWagesAfterCommands);
-
-    for (const auto& [token, amount] : resources)
+    const std::vector<MapRegionDetailsUtils::ResourceRow> rows =
+        MapRegionDetailsUtils::buildResourcesRows(*region);
+    for (const MapRegionDetailsUtils::ResourceRow& row : rows)
     {
-        int amountAfterCommands = 0;
-        auto afterIter = afterCommandResources.find(token);
-        if (afterIter == afterCommandResources.end())
-        {
-            std::wstring tokenUpper = token;
-            for (wchar_t& ch : tokenUpper)
-            {
-                ch = static_cast<wchar_t>(towupper(ch));
-            }
-            afterIter = afterCommandResources.find(tokenUpper);
-        }
-        if (afterIter != afterCommandResources.end())
-        {
-            amountAfterCommands = afterIter->second;
-        }
-
-        insertResourceRow(token, amount, amountAfterCommands);
+        insertResourceRow(row.token, row.amount, row.amountAfterOrders);
     }
 }
 
@@ -212,59 +130,16 @@ void MapTabContentQt::populateForSaleList(const Region* region)
         return;
     }
 
-    const auto& forSale = region->getForSale();
-    const auto& afterCommandForSale = region->getForSaleAfterOrders();
+    const std::vector<MapRegionDetailsUtils::ForSaleRow> rows =
+        MapRegionDetailsUtils::buildForSaleRows(*region, appData_);
 
-    // Build a sorted list: men items first, then the rest, each group in token order.
-    std::vector<std::wstring> sortedTokens;
-    sortedTokens.reserve(forSale.size());
-    for (const auto& [token, amountPrice] : forSale)
+    for (const MapRegionDetailsUtils::ForSaleRow& row : rows)
     {
-        sortedTokens.push_back(token);
-    }
-
-    if (appData_)
-    {
-        std::stable_sort(sortedTokens.begin(), sortedTokens.end(),
-            [this](const std::wstring& a, const std::wstring& b)
-            {
-                const Item* ia = appData_->itemRepository().findByIdentifierToken(a);
-                const Item* ib = appData_->itemRepository().findByIdentifierToken(b);
-                const bool manA = ia && ia->isMan();
-                const bool manB = ib && ib->isMan();
-                if (manA != manB)
-                {
-                    return manA > manB;
-                }
-                return false;
-            });
-    }
-
-    for (const auto& token : sortedTokens)
-    {
-        const auto& amountPrice = forSale.at(token);
-
-        int amountAfterCommands = amountPrice.first;
-        auto afterIter = afterCommandForSale.find(token);
-        if (afterIter == afterCommandForSale.end())
-        {
-            std::wstring tokenUpper = token;
-            for (wchar_t& ch : tokenUpper)
-            {
-                ch = static_cast<wchar_t>(towupper(ch));
-            }
-            afterIter = afterCommandForSale.find(tokenUpper);
-        }
-        if (afterIter != afterCommandForSale.end())
-        {
-            amountAfterCommands = afterIter->second.first;
-        }
-
         auto* treeItem = new QTreeWidgetItem(regionForSaleList_);
-        treeItem->setText(0, QString::fromStdWString(token));
-        treeItem->setText(1, QString::number(amountPrice.first));
-        treeItem->setText(2, QString::number(amountPrice.second));
-        treeItem->setText(3, QString::number(amountAfterCommands));
+        treeItem->setText(0, QString::fromStdWString(row.token));
+        treeItem->setText(1, QString::number(row.amount));
+        treeItem->setText(2, QString::number(row.price));
+        treeItem->setText(3, QString::number(row.amountAfterOrders));
         treeItem->setFlags(treeItem->flags() & ~Qt::ItemIsSelectable);
         treeItem->setTextAlignment(1, Qt::AlignRight | Qt::AlignVCenter);
         treeItem->setTextAlignment(2, Qt::AlignRight | Qt::AlignVCenter);
@@ -286,32 +161,16 @@ void MapTabContentQt::populateWantedList(const Region* region)
         return;
     }
 
-    const auto& wanted = region->getWanted();
-    const auto& afterCommandWanted = region->getWantedAfterOrders();
+    const std::vector<MapRegionDetailsUtils::WantedRow> rows =
+        MapRegionDetailsUtils::buildWantedRows(*region);
 
-    for (const auto& [token, amountPrice] : wanted)
+    for (const MapRegionDetailsUtils::WantedRow& row : rows)
     {
-        int amountAfterCommands = amountPrice.first;
-        auto afterIter = afterCommandWanted.find(token);
-        if (afterIter == afterCommandWanted.end())
-        {
-            std::wstring tokenUpper = token;
-            for (wchar_t& ch : tokenUpper)
-            {
-                ch = static_cast<wchar_t>(towupper(ch));
-            }
-            afterIter = afterCommandWanted.find(tokenUpper);
-        }
-        if (afterIter != afterCommandWanted.end())
-        {
-            amountAfterCommands = afterIter->second.first;
-        }
-
         auto* treeItem = new QTreeWidgetItem(regionWantedList_);
-        treeItem->setText(0, QString::fromStdWString(token));
-        treeItem->setText(1, QString::number(amountPrice.first));
-        treeItem->setText(2, QString::number(amountPrice.second));
-        treeItem->setText(3, QString::number(amountAfterCommands));
+        treeItem->setText(0, QString::fromStdWString(row.token));
+        treeItem->setText(1, QString::number(row.amount));
+        treeItem->setText(2, QString::number(row.price));
+        treeItem->setText(3, QString::number(row.amountAfterOrders));
         treeItem->setFlags(treeItem->flags() & ~Qt::ItemIsSelectable);
         treeItem->setTextAlignment(1, Qt::AlignRight | Qt::AlignVCenter);
         treeItem->setTextAlignment(2, Qt::AlignRight | Qt::AlignVCenter);

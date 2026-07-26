@@ -16,31 +16,29 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  *
- * File: SkillFormattingUtils.hpp
+ * File: StartupAutoLoadUtils.hpp
  */
 
 // 304c89c8-6d3c-4586-b0c4-fad2e67b2f65
 #pragma once
 
-#include <map>
 #include <string>
 #include <vector>
 
-struct SkillPrerequisite;
+class AppConfig;
 class AppData;
 
-namespace SkillFormattingUtils
+namespace StartupAutoLoadUtils
 {
-struct SkillDescriptionContent
+
+struct AutoLoadResult
 {
-	bool found { false };
-	std::wstring title;
-	std::wstring description;
-	std::wstring notFoundMessage;
+  std::wstring dataFileError;
+  std::vector<std::wstring> reportLoadErrors;
 };
 
-std::wstring formatSkills(const std::map<std::wstring, int>& skills);
-std::wstring formatPrerequisites(const std::vector<SkillPrerequisite>& prerequisites);
-std::vector<SkillPrerequisite> parsePrerequisites(const std::wstring& text);
-SkillDescriptionContent buildSkillDescriptionContent(const AppData& appData, const std::wstring& skillToken);
-}
+AutoLoadResult runAutoLoad(AppData& appData, const AppConfig& appConfig);
+std::wstring buildReportFolderErrorMessage(const std::vector<std::wstring>& reportLoadErrors,
+                                           std::size_t maxEntries);
+
+} // namespace StartupAutoLoadUtils

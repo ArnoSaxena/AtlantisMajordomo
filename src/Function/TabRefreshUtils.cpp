@@ -16,31 +16,49 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  *
- * File: SkillFormattingUtils.hpp
+ * File: TabRefreshUtils.cpp
  */
 
 // 304c89c8-6d3c-4586-b0c4-fad2e67b2f65
-#pragma once
+#include "Function/TabRefreshUtils.hpp"
 
-#include <map>
-#include <string>
-#include <vector>
-
-struct SkillPrerequisite;
-class AppData;
-
-namespace SkillFormattingUtils
+namespace TabRefreshUtils
 {
-struct SkillDescriptionContent
-{
-	bool found { false };
-	std::wstring title;
-	std::wstring description;
-	std::wstring notFoundMessage;
-};
 
-std::wstring formatSkills(const std::map<std::wstring, int>& skills);
-std::wstring formatPrerequisites(const std::vector<SkillPrerequisite>& prerequisites);
-std::vector<SkillPrerequisite> parsePrerequisites(const std::wstring& text);
-SkillDescriptionContent buildSkillDescriptionContent(const AppData& appData, const std::wstring& skillToken);
+void runRefreshContract(const RefreshCallbacks& callbacks)
+{
+  if (callbacks.refreshReports)
+  {
+    callbacks.refreshReports();
+  }
+  if (callbacks.refreshMap)
+  {
+    callbacks.refreshMap();
+  }
+  if (callbacks.refreshEvents)
+  {
+    callbacks.refreshEvents();
+  }
+  if (callbacks.refreshItems)
+  {
+    callbacks.refreshItems();
+  }
+  if (callbacks.refreshSkills)
+  {
+    callbacks.refreshSkills();
+  }
+  if (callbacks.refreshFactions)
+  {
+    callbacks.refreshFactions();
+  }
+  if (callbacks.refreshBattles)
+  {
+    callbacks.refreshBattles();
+  }
+  if (callbacks.afterRefresh)
+  {
+    callbacks.afterRefresh();
+  }
 }
+
+} // namespace TabRefreshUtils

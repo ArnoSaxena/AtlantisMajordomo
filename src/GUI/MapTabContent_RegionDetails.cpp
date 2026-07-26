@@ -40,6 +40,7 @@
 #include "Function/AppDataUtils.hpp"
 #include "Function/CommandSimulationService.hpp"
 #include "Function/CoordinateUtils.hpp"
+#include "Function/MapRegionDetailsUtils.hpp"
 #include "Function/MonthUtils.hpp"
 #include "Function/OrderBusinessLogic.hpp"
 #include "Function/OrderParsingUtils.hpp"
@@ -76,69 +77,13 @@ void MapTabContent::updateRegionDetailsView(const Region* region)
     return;
   }
 
-  std::wstring details;
   SetWindowTextW(regionDateLabel_, AppDataUtils::buildDateLabelText(appData_).c_str());
-  details += L"Coordinates: " + CoordinateFormattingUtils::formatCoordinates(
-    region->getXCoordinate(),
-    region->getYCoordinate(),
-    region->getZCoordinate()
-  ) + L"\r\n";
-  details += L"Region Type: " + region->getRegionType() + L"\r\n";
-  details += L"Peasants: " + region->getPeasantType() + L"\r\n";
-  details += L"Province: " + region->getProvinceName() + L"\r\n";
-  if (region->getContainsSettlement())
-  {
-    details += L"Settlement Type: " + region->getSettlementType() + L"\r\n";
-    details += L"Settlement Name: " + region->getSettlementName();
-  }
-
-  // Display structure of selected unit if it's in this region
-  if (appData_ && selectedUnitNumber_ > 0)
-  {
-    const Unit* selectedUnit = appData_->unitRepository().findByNumber(selectedUnitNumber_);
-    const int selectedDisplayStructureId = selectedUnit
-      ? selectedUnit->getFutureStructureId()
-      : 0;
-
-    if (selectedUnit &&
-        selectedUnit->getXCoordinate() == region->getXCoordinate() &&
-        selectedUnit->getYCoordinate() == region->getYCoordinate() &&
-        selectedUnit->getZCoordinate() == selectedZ_ &&
-        selectedDisplayStructureId > 0)
-    {
-      const Structure* structure = appData_->structureRepository().findByIdAndCoordinates(
-        selectedDisplayStructureId,
-        selectedUnit->getXCoordinate(),
-        selectedUnit->getYCoordinate(),
-        selectedUnit->getZCoordinate());
-      if (structure)
-      {
-        details += L"\r\nStructure: " + structure->getStructureType() + L" [" + std::to_wstring(selectedDisplayStructureId) + L"]";
-        if (!structure->getStructureName().empty())
-        {
-          details += L" - " + structure->getStructureName();
-        }
-        const StructInfo* structInfo = appData_->structInfoRepository().findByType(structure->getStructureType());
-        if (structInfo && structInfo->getNeeds() > 0)
-        {
-          details += L", needs " + std::to_wstring(structInfo->getNeeds());
-        }
-
-        const auto& fleetItems = structure->getFleetItems();
-        if (!fleetItems.empty())
-        {
-          for (const auto& itemEntry : fleetItems)
-          {
-            const std::wstring& itemToken = itemEntry.first;
-            const int amount = itemEntry.second;
-            const StructInfo* itemStructInfo = appData_->structInfoRepository().findByItemIdentifierToken(itemToken);
-            const std::wstring itemType = itemStructInfo ? itemStructInfo->getStructureType() : itemToken;
-            details += L"\r\n  " + std::to_wstring(amount) + L" " + itemType + L" [" + itemToken + L"]";
-          }
-        }
-      }
-    }
-  }
+  const std::wstring details = MapRegionDetailsUtils::buildRegionSummaryText(
+    *region,
+    appData_,
+    selectedUnitNumber_,
+    selectedZ_,
+    L"\r\n");
 
   SetWindowTextW(regionDetailsView_, details.c_str());
   populateResourcesList(region);
@@ -160,12 +105,6 @@ void MapTabContent::populateResourcesList(const Region* region)
   {
     return;
   }
-
-  const auto& resources = region->getResources();
-  const auto& afterCommandResources = region->getResourcesAfterOrders();
-  const int entertainmentAfterCommands = region->getEntertainmentAfterOrders();
-  const int taxesAfterCommands = region->getTaxableIncomeAfterOrders();
-  const int workWagesAfterCommands = region->getWagesAfterOrders();
 
   auto insertResourceRow = [this](int rowIndex,
                                   const std::wstring& itemName,
@@ -190,33 +129,12 @@ void MapTabContent::populateResourcesList(const Region* region)
     SendMessageW(regionResourcesList_, LVM_SETITEMW, 0, reinterpret_cast<LPARAM>(&item));
   };
 
+  const std::vector<MapRegionDetailsUtils::ResourceRow> rows =
+    MapRegionDetailsUtils::buildResourcesRows(*region);
   int itemIndex = 0;
-
-  insertResourceRow(itemIndex++, L"Entertainment", region->getEntertainment(), entertainmentAfterCommands);
-  insertResourceRow(itemIndex++, L"Taxes", region->getTaxableIncome(), taxesAfterCommands);
-  insertResourceRow(itemIndex++, L"Work wages", region->getWagesMax(), workWagesAfterCommands);
-
-  for (const auto& [token, amount] : resources)
+  for (const MapRegionDetailsUtils::ResourceRow& row : rows)
   {
-    int amountAfterCommands = 0;
-    auto afterIt = afterCommandResources.find(token);
-    if (afterIt == afterCommandResources.end())
-    {
-      std::wstring tokenUpper = token;
-      for (wchar_t& ch : tokenUpper)
-      {
-        ch = static_cast<wchar_t>(towupper(ch));
-      }
-      afterIt = afterCommandResources.find(tokenUpper);
-    }
-    if (afterIt != afterCommandResources.end())
-    {
-      amountAfterCommands = afterIt->second;
-    }
-
-    insertResourceRow(itemIndex, token, amount, amountAfterCommands);
-
-    ++itemIndex;
+    insertResourceRow(itemIndex++, row.token, row.amount, row.amountAfterOrders);
   }
 }
 
@@ -235,71 +153,31 @@ void MapTabContent::populateForSaleList(const Region* region)
     return;
   }
 
-  const auto& forSale = region->getForSale();
-  const auto& afterCommandForSale = region->getForSaleAfterOrders();
-
-  // Build a sorted list: isMan items first, then the rest, each group in token order.
-  std::vector<std::wstring> sortedTokens;
-  sortedTokens.reserve(forSale.size());
-  for (const auto& [token, amountPrice] : forSale)
-  {
-    sortedTokens.push_back(token);
-  }
-  if (appData_)
-  {
-    std::stable_sort(sortedTokens.begin(), sortedTokens.end(),
-      [this](const std::wstring& a, const std::wstring& b)
-      {
-        const Item* ia = appData_->itemRepository().findByIdentifierToken(a);
-        const Item* ib = appData_->itemRepository().findByIdentifierToken(b);
-        const bool manA = ia && ia->isMan();
-        const bool manB = ib && ib->isMan();
-        if (manA != manB)
-        {
-          return manA > manB;
-        }
-        return false;
-      });
-  }
+  const std::vector<MapRegionDetailsUtils::ForSaleRow> rows =
+    MapRegionDetailsUtils::buildForSaleRows(*region, appData_);
 
   int itemIndex = 0;
-  for (const auto& token : sortedTokens)
+  for (const MapRegionDetailsUtils::ForSaleRow& row : rows)
   {
-    const auto& amountPrice = forSale.at(token);
     LVITEMW item {};
     item.mask = LVIF_TEXT;
     item.iItem = itemIndex;
     item.iSubItem = 0;
-    item.pszText = const_cast<LPWSTR>(token.c_str());
+    item.pszText = const_cast<LPWSTR>(row.token.c_str());
     SendMessageW(regionForSaleList_, LVM_INSERTITEMW, 0, reinterpret_cast<LPARAM>(&item));
 
     item.iSubItem = 1;
-    const std::wstring amountStr = std::to_wstring(amountPrice.first);
+    const std::wstring amountStr = std::to_wstring(row.amount);
     item.pszText = const_cast<LPWSTR>(amountStr.c_str());
     SendMessageW(regionForSaleList_, LVM_SETITEMW, 0, reinterpret_cast<LPARAM>(&item));
 
     item.iSubItem = 2;
-    const std::wstring priceStr = std::to_wstring(amountPrice.second);
+    const std::wstring priceStr = std::to_wstring(row.price);
     item.pszText = const_cast<LPWSTR>(priceStr.c_str());
     SendMessageW(regionForSaleList_, LVM_SETITEMW, 0, reinterpret_cast<LPARAM>(&item));
 
     item.iSubItem = 3;
-    int amountAfterCommands = amountPrice.first;
-    auto afterIt = afterCommandForSale.find(token);
-    if (afterIt == afterCommandForSale.end())
-    {
-      std::wstring tokenUpper = token;
-      for (wchar_t& ch : tokenUpper)
-      {
-        ch = static_cast<wchar_t>(towupper(ch));
-      }
-      afterIt = afterCommandForSale.find(tokenUpper);
-    }
-    if (afterIt != afterCommandForSale.end())
-    {
-      amountAfterCommands = afterIt->second.first;
-    }
-    const std::wstring amountAfterCommandsStr = std::to_wstring(amountAfterCommands);
+    const std::wstring amountAfterCommandsStr = std::to_wstring(row.amountAfterOrders);
     item.pszText = const_cast<LPWSTR>(amountAfterCommandsStr.c_str());
     SendMessageW(regionForSaleList_, LVM_SETITEMW, 0, reinterpret_cast<LPARAM>(&item));
 
@@ -322,45 +200,30 @@ void MapTabContent::populateWantedList(const Region* region)
     return;
   }
 
-  const auto& wanted = region->getWanted();
-  const auto& afterCommandWanted = region->getWantedAfterOrders();
+  const std::vector<MapRegionDetailsUtils::WantedRow> rows =
+    MapRegionDetailsUtils::buildWantedRows(*region);
   int itemIndex = 0;
-  for (const auto& [token, amountPrice] : wanted)
+  for (const MapRegionDetailsUtils::WantedRow& row : rows)
   {
     LVITEMW item {};
     item.mask = LVIF_TEXT;
     item.iItem = itemIndex;
     item.iSubItem = 0;
-    item.pszText = const_cast<LPWSTR>(token.c_str());
+    item.pszText = const_cast<LPWSTR>(row.token.c_str());
     SendMessageW(regionWantedList_, LVM_INSERTITEMW, 0, reinterpret_cast<LPARAM>(&item));
 
     item.iSubItem = 1;
-    const std::wstring amountStr = std::to_wstring(amountPrice.first);
+    const std::wstring amountStr = std::to_wstring(row.amount);
     item.pszText = const_cast<LPWSTR>(amountStr.c_str());
     SendMessageW(regionWantedList_, LVM_SETITEMW, 0, reinterpret_cast<LPARAM>(&item));
 
     item.iSubItem = 2;
-    const std::wstring priceStr = std::to_wstring(amountPrice.second);
+    const std::wstring priceStr = std::to_wstring(row.price);
     item.pszText = const_cast<LPWSTR>(priceStr.c_str());
     SendMessageW(regionWantedList_, LVM_SETITEMW, 0, reinterpret_cast<LPARAM>(&item));
 
     item.iSubItem = 3;
-    int amountAfterCommands = amountPrice.first;
-    auto afterIt = afterCommandWanted.find(token);
-    if (afterIt == afterCommandWanted.end())
-    {
-      std::wstring tokenUpper = token;
-      for (wchar_t& ch : tokenUpper)
-      {
-        ch = static_cast<wchar_t>(towupper(ch));
-      }
-      afterIt = afterCommandWanted.find(tokenUpper);
-    }
-    if (afterIt != afterCommandWanted.end())
-    {
-      amountAfterCommands = afterIt->second.first;
-    }
-    const std::wstring amountAfterCommandsStr = std::to_wstring(amountAfterCommands);
+    const std::wstring amountAfterCommandsStr = std::to_wstring(row.amountAfterOrders);
     item.pszText = const_cast<LPWSTR>(amountAfterCommandsStr.c_str());
     SendMessageW(regionWantedList_, LVM_SETITEMW, 0, reinterpret_cast<LPARAM>(&item));
 

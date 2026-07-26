@@ -27,8 +27,8 @@
 
 #include "Data/AppData.hpp"
 #include "Data/Region.hpp"
-#include "Data/Unit.hpp"
 #include "Data/UnitNew.hpp"
+#include "Function/MapNavigationUtils.hpp"
 
 #include <QLineEdit>
 #include <QMessageBox>
@@ -55,22 +55,22 @@ void MapTabContentQt::selectUnitInMap(int unitNumber)
         return;
     }
 
-    const Unit* unit = appData_->unitRepository().findByNumber(unitNumber);
-    if (!unit)
+    MapNavigationUtils::UnitSelectionContext context {};
+    if (!MapNavigationUtils::tryBuildUnitSelectionContext(*appData_, unitNumber, context))
     {
         QMessageBox::warning(
             unitSearchEdit_,
             "Unit Not Found",
-            QString("Unit %1 was not found in the database.").arg(unitNumber)
+            QString::fromStdWString(MapNavigationUtils::buildUnitNotFoundMessage(unitNumber))
         );
         return;
     }
 
     // Update selected region
-    selectedZ_ = unit->getZCoordinate();
+    selectedZ_ = context.zCoordinate;
     hasSelectedRegion_ = true;
-    selectedRegionX_ = unit->getXCoordinate();
-    selectedRegionY_ = unit->getYCoordinate();
+    selectedRegionX_ = context.xCoordinate;
+    selectedRegionY_ = context.yCoordinate;
     if (mapCanvas_)
     {
         mapCanvas_->setSelectedZ(selectedZ_);
@@ -81,14 +81,7 @@ void MapTabContentQt::selectUnitInMap(int unitNumber)
     refresh();
 
     // Update region details view
-    const Region* region = appData_->regionRepository().findByCoordinates(
-        selectedRegionX_, selectedRegionY_, selectedZ_);
-    if (!region)
-    {
-        region = appData_->regionRepository().findByCoordinates(
-            selectedRegionX_, selectedRegionY_);
-    }
-    updateRegionDetailsView(region);
+    updateRegionDetailsView(context.region);
 
     // Find and select the unit row in the units list
     if (unitsList_)
@@ -158,29 +151,20 @@ void MapTabContentQt::searchAndSelectUnitById()
         return;
     }
 
-    const QString unitIdText = unitSearchEdit_->text();
-    if (unitIdText.isEmpty())
+    const MapNavigationUtils::UnitSearchResult searchResult =
+        MapNavigationUtils::resolveUnitSearch(*appData_, unitSearchEdit_->text().toStdWString());
+    if (searchResult.status == MapNavigationUtils::UnitSearchStatus::Found)
     {
+        selectUnitInMap(searchResult.unitNumber);
         return;
     }
 
-    bool ok = false;
-    int unitNumber = unitIdText.toInt(&ok);
-    if (!ok || unitNumber <= 0)
-    {
-        return;
-    }
-
-    const Unit* unit = appData_->unitRepository().findByNumber(unitNumber);
-    if (!unit)
+    if (searchResult.status == MapNavigationUtils::UnitSearchStatus::NotFound)
     {
         QMessageBox::warning(
             unitSearchEdit_,
             "Unit Not Found",
-            QString("Unit %1 was not found in the database.").arg(unitNumber)
+            QString::fromStdWString(MapNavigationUtils::buildUnitNotFoundMessage(searchResult.unitNumber))
         );
-        return;
     }
-
-    selectUnitInMap(unitNumber);
 }

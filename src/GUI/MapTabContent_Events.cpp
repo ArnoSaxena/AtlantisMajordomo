@@ -61,6 +61,220 @@
 
 using OrderParsingUtils::tryExtractOrderKeywordUpper;
 
+namespace
+{
+const wchar_t* getUnitsListBaseColumnTitle(int columnIndex)
+{
+  static constexpr const wchar_t* kTitles[] = {
+    L"#",
+    L"Name",
+    L"Faction",
+    L"Faction Name",
+    L"Structure",
+    L"Men",
+    L"Silver",
+    L"Flags",
+    L"Skills",
+    L"!",
+    L"D"
+  };
+
+  if (columnIndex < 0 || columnIndex >= static_cast<int>(std::size(kTitles)))
+  {
+    return L"";
+  }
+
+  return kTitles[columnIndex];
+}
+
+struct UnitsListRowSnapshot
+{
+  std::vector<std::wstring> columns;
+  LPARAM itemParam { 0 };
+  int originalIndex { 0 };
+  bool selected { false };
+  bool focused { false };
+};
+
+bool tryParseLeadingInteger(const std::wstring& text, long long& value)
+{
+  std::wstring trimmed = StringUtils::trimWhitespace(text);
+  if (trimmed.empty())
+  {
+    return false;
+  }
+
+  std::size_t startIndex = 0;
+  while (startIndex < trimmed.size() && !iswdigit(trimmed[startIndex]) && trimmed[startIndex] != L'+' && trimmed[startIndex] != L'-')
+  {
+    ++startIndex;
+  }
+  if (startIndex >= trimmed.size())
+  {
+    return false;
+  }
+
+  std::size_t parsedLength = 0;
+  try
+  {
+    value = std::stoll(trimmed.substr(startIndex), &parsedLength);
+  }
+  catch (...)
+  {
+    return false;
+  }
+
+  return parsedLength > 0;
+}
+
+std::wstring getUnitsListSubItemText(HWND listView, int row, int column)
+{
+  std::wstring buffer(1024, L'\0');
+  LVITEMW item {};
+  item.iSubItem = column;
+  item.pszText = buffer.data();
+  item.cchTextMax = static_cast<int>(buffer.size());
+  const int copiedLength = static_cast<int>(SendMessageW(
+    listView,
+    LVM_GETITEMTEXTW,
+    static_cast<WPARAM>(row),
+    reinterpret_cast<LPARAM>(&item)));
+  if (copiedLength <= 0)
+  {
+    return L"";
+  }
+
+  buffer.resize(static_cast<std::size_t>(copiedLength));
+  return buffer;
+}
+
+int compareUnitsListCellValues(const std::wstring& leftValue,
+                               const std::wstring& rightValue,
+                               bool ascending)
+{
+  const std::wstring trimmedLeft = StringUtils::trimWhitespace(leftValue);
+  const std::wstring trimmedRight = StringUtils::trimWhitespace(rightValue);
+
+  const bool leftEmpty = trimmedLeft.empty();
+  const bool rightEmpty = trimmedRight.empty();
+  if (leftEmpty != rightEmpty)
+  {
+    // Keep empty entries at the bottom in both sort directions.
+    return leftEmpty ? 1 : -1;
+  }
+  if (leftEmpty)
+  {
+    return 0;
+  }
+
+  long long leftNumber = 0;
+  long long rightNumber = 0;
+  const bool leftHasNumber = tryParseLeadingInteger(trimmedLeft, leftNumber);
+  const bool rightHasNumber = tryParseLeadingInteger(trimmedRight, rightNumber);
+
+  if (leftHasNumber && rightHasNumber && leftNumber != rightNumber)
+  {
+    return ascending ? (leftNumber < rightNumber ? -1 : 1) : (leftNumber > rightNumber ? -1 : 1);
+  }
+
+  const int textComparison = _wcsicmp(trimmedLeft.c_str(), trimmedRight.c_str());
+  if (textComparison == 0)
+  {
+    return 0;
+  }
+
+  return ascending ? textComparison : -textComparison;
+}
+
+void reinsertUnitsListRows(HWND listView,
+                           const std::vector<UnitsListRowSnapshot>& rows,
+                           int columnCount)
+{
+  ListView_DeleteAllItems(listView);
+
+  for (int rowIndex = 0; rowIndex < static_cast<int>(rows.size()); ++rowIndex)
+  {
+    const UnitsListRowSnapshot& row = rows[static_cast<std::size_t>(rowIndex)];
+
+    LVITEMW listItem {};
+    listItem.mask = LVIF_TEXT | LVIF_PARAM;
+    listItem.iItem = rowIndex;
+    listItem.iSubItem = 0;
+    listItem.pszText = const_cast<LPWSTR>(row.columns.empty() ? L"" : row.columns[0].c_str());
+    listItem.lParam = row.itemParam;
+    ListView_InsertItem(listView, &listItem);
+
+    for (int columnIndex = 1; columnIndex < columnCount; ++columnIndex)
+    {
+      const wchar_t* text = columnIndex < static_cast<int>(row.columns.size())
+        ? row.columns[static_cast<std::size_t>(columnIndex)].c_str()
+        : L"";
+      ListView_SetItemText(listView, rowIndex, columnIndex, const_cast<LPWSTR>(text));
+    }
+
+    UINT stateMask = 0;
+    UINT stateValue = 0;
+    if (row.selected)
+    {
+      stateMask |= LVIS_SELECTED;
+      stateValue |= LVIS_SELECTED;
+    }
+    if (row.focused)
+    {
+      stateMask |= LVIS_FOCUSED;
+      stateValue |= LVIS_FOCUSED;
+    }
+    if (stateMask != 0)
+    {
+      ListView_SetItemState(listView, rowIndex, stateValue, stateMask);
+      if (row.selected)
+      {
+        ListView_EnsureVisible(listView, rowIndex, FALSE);
+      }
+    }
+  }
+}
+} // namespace
+
+LRESULT CALLBACK MapTabContent::unitsListHeaderSubclassProc(HWND hwnd,
+                                                            UINT msg,
+                                                            WPARAM wp,
+                                                            LPARAM lp,
+                                                            UINT_PTR subclassId,
+                                                            DWORD_PTR refData)
+{
+  (void)subclassId;
+  (void)wp;
+
+  auto* self = reinterpret_cast<MapTabContent*>(refData);
+  if (!self)
+  {
+    return DefSubclassProc(hwnd, msg, wp, lp);
+  }
+
+  if (msg == WM_LBUTTONDBLCLK)
+  {
+    POINT clientPoint {};
+    clientPoint.x = GET_X_LPARAM(lp);
+    clientPoint.y = GET_Y_LPARAM(lp);
+
+    HDHITTESTINFO hitInfo {};
+    hitInfo.pt = clientPoint;
+    const int columnIndex = static_cast<int>(SendMessageW(
+      hwnd,
+      HDM_HITTEST,
+      0,
+      reinterpret_cast<LPARAM>(&hitInfo)));
+    if (columnIndex >= 0 && (hitInfo.flags & HHT_ONHEADER) != 0)
+    {
+      self->handleUnitsListHeaderDoubleClickNotify(columnIndex);
+      return 0;
+    }
+  }
+
+  return DefSubclassProc(hwnd, msg, wp, lp);
+}
+
 bool MapTabContent::handleNotify(const NMHDR* hdr)
 {
   notifyResult_ = 0;
@@ -120,86 +334,22 @@ bool MapTabContent::handleNotify(const NMHDR* hdr)
 
   if (hdr->hwndFrom == unitSkillsList_ && hdr->code == NM_RCLICK)
   {
-    if (!appData_ || !unitSkillsList_ || !ordersEditor_ || selectedUnitNumber_ == 0)
-    {
-      return true;
-    }
+    handleUnitSkillsContextMenuNotify();
+    return true;
+  }
 
-    Unit* unit = appData_->unitRepository().findByNumber(selectedUnitNumber_);
-    if (!unit || !canEditOrdersForUnit(unit) || IsWindowEnabled(ordersEditor_) == FALSE)
-    {
-      return true;
-    }
+  if (hdr->hwndFrom == unitWarningsList_ && hdr->code == NM_RCLICK)
+  {
+    handleUnitWarningsContextMenuNotify();
+    return true;
+  }
 
-    POINT screenPoint {};
-    const DWORD messagePos = GetMessagePos();
-    screenPoint.x = GET_X_LPARAM(messagePos);
-    screenPoint.y = GET_Y_LPARAM(messagePos);
-
-    POINT clientPoint = screenPoint;
-    ScreenToClient(unitSkillsList_, &clientPoint);
-    LVHITTESTINFO hitInfo {};
-    hitInfo.pt = clientPoint;
-    const int hitRow = ListView_SubItemHitTest(unitSkillsList_, &hitInfo);
-    if (hitRow < 0)
-    {
-      return true;
-    }
-
-    std::wstring skillToken(128, L'\0');
-    LVITEMW skillItem {};
-    skillItem.iSubItem = 0;
-    skillItem.pszText = skillToken.data();
-    skillItem.cchTextMax = static_cast<int>(skillToken.size());
-    const int copiedLength = static_cast<int>(SendMessageW(
-      unitSkillsList_,
-      LVM_GETITEMTEXTW,
-      static_cast<WPARAM>(hitRow),
-      reinterpret_cast<LPARAM>(&skillItem)));
-    if (copiedLength <= 0)
-    {
-      return true;
-    }
-
-    skillToken.resize(static_cast<std::size_t>(copiedLength));
-    skillToken = StringUtils::trimWhitespace(skillToken);
-    if (skillToken.empty())
-    {
-      return true;
-    }
-
-    HMENU menu = CreatePopupMenu();
-    if (!menu)
-    {
-      return true;
-    }
-
-    AppendMenuW(menu, MF_STRING, kSkillStudyContextCommandId, L"Add Study Order");
-    AppendMenuW(menu, MF_STRING, kSkillDescriptionPopupContextCommandId, L"Skill Description");
-    AppendMenuW(menu, MF_STRING, kSkillDescriptionListContextCommandId, L"Skill Tab");
-    const UINT selectedCommand = TrackPopupMenu(
-      menu,
-      TPM_RETURNCMD | TPM_RIGHTBUTTON,
-      screenPoint.x,
-      screenPoint.y,
-      0,
-      unitSkillsList_,
-      nullptr);
-    DestroyMenu(menu);
-
-    if (selectedCommand == kSkillStudyContextCommandId)
-    {
-      appendOrderLineToOrdersEditor(L"study " + skillToken);
-    }
-    else if (selectedCommand == kSkillDescriptionListContextCommandId)
-    {
-      navigateToSkillList(skillToken);
-    }
-    else if (selectedCommand == kSkillDescriptionPopupContextCommandId)
-    {
-      showSkillDescription(skillToken);
-    }
-
+  if ((hdr->hwndFrom == regionResourcesList_
+      || hdr->hwndFrom == regionForSaleList_
+      || hdr->hwndFrom == regionWantedList_)
+      && hdr->code == NM_RCLICK)
+  {
+    handleRegionItemsContextMenuNotify(hdr->hwndFrom);
     return true;
   }
 
@@ -424,6 +574,410 @@ bool MapTabContent::handleNotify(const NMHDR* hdr)
   return false;
 }
 
+bool MapTabContent::handleUnitSkillsContextMenuNotify()
+{
+  if (!appData_ || !unitSkillsList_ || !ordersEditor_ || selectedUnitNumber_ == 0)
+  {
+    return true;
+  }
+
+  Unit* unit = appData_->unitRepository().findByNumber(selectedUnitNumber_);
+  if (!unit || !canEditOrdersForUnit(unit) || IsWindowEnabled(ordersEditor_) == FALSE)
+  {
+    return true;
+  }
+
+  POINT screenPoint {};
+  const DWORD messagePos = GetMessagePos();
+  screenPoint.x = GET_X_LPARAM(messagePos);
+  screenPoint.y = GET_Y_LPARAM(messagePos);
+
+  POINT clientPoint = screenPoint;
+  ScreenToClient(unitSkillsList_, &clientPoint);
+  LVHITTESTINFO hitInfo {};
+  hitInfo.pt = clientPoint;
+  const int hitRow = ListView_SubItemHitTest(unitSkillsList_, &hitInfo);
+  if (hitRow < 0)
+  {
+    return true;
+  }
+
+  std::wstring skillToken(128, L'\0');
+  LVITEMW skillItem {};
+  skillItem.iSubItem = 0;
+  skillItem.pszText = skillToken.data();
+  skillItem.cchTextMax = static_cast<int>(skillToken.size());
+  const int copiedLength = static_cast<int>(SendMessageW(
+    unitSkillsList_,
+    LVM_GETITEMTEXTW,
+    static_cast<WPARAM>(hitRow),
+    reinterpret_cast<LPARAM>(&skillItem)));
+  if (copiedLength <= 0)
+  {
+    return true;
+  }
+
+  skillToken.resize(static_cast<std::size_t>(copiedLength));
+  skillToken = StringUtils::trimWhitespace(skillToken);
+  if (skillToken.empty())
+  {
+    return true;
+  }
+
+  HMENU menu = CreatePopupMenu();
+  if (!menu)
+  {
+    return true;
+  }
+
+  AppendMenuW(menu, MF_STRING, kSkillStudyContextCommandId, L"Add Study Order");
+  AppendMenuW(menu, MF_STRING, kSkillDescriptionPopupContextCommandId, L"Skill Description");
+  AppendMenuW(menu, MF_STRING, kSkillDescriptionListContextCommandId, L"Skill Tab");
+  const UINT selectedCommand = TrackPopupMenu(
+    menu,
+    TPM_RETURNCMD | TPM_RIGHTBUTTON,
+    screenPoint.x,
+    screenPoint.y,
+    0,
+    unitSkillsList_,
+    nullptr);
+  DestroyMenu(menu);
+
+  if (selectedCommand == kSkillStudyContextCommandId)
+  {
+    appendOrderLineToOrdersEditor(L"study " + skillToken);
+  }
+  else if (selectedCommand == kSkillDescriptionListContextCommandId)
+  {
+    navigateToSkillList(skillToken);
+  }
+  else if (selectedCommand == kSkillDescriptionPopupContextCommandId)
+  {
+    showSkillDescription(skillToken);
+  }
+
+  return true;
+}
+
+bool MapTabContent::handleUnitWarningsContextMenuNotify()
+{
+  if (!appData_ || !unitWarningsList_ || selectedUnitNumber_ == 0)
+  {
+    return true;
+  }
+
+  Unit* unit = appData_->unitRepository().findByNumber(selectedUnitNumber_);
+  if (!unit || unit->getWarnings().empty())
+  {
+    return true;
+  }
+
+  POINT screenPoint {};
+  const DWORD messagePos = GetMessagePos();
+  screenPoint.x = GET_X_LPARAM(messagePos);
+  screenPoint.y = GET_Y_LPARAM(messagePos);
+
+  POINT clientPoint = screenPoint;
+  ScreenToClient(unitWarningsList_, &clientPoint);
+  LVHITTESTINFO hitInfo {};
+  hitInfo.pt = clientPoint;
+  const int hitRow = ListView_SubItemHitTest(unitWarningsList_, &hitInfo);
+  if (hitRow < 0)
+  {
+    return true;
+  }
+
+  ListView_SetItemState(unitWarningsList_, hitRow, LVIS_SELECTED | LVIS_FOCUSED, LVIS_SELECTED | LVIS_FOCUSED);
+
+  HMENU menu = CreatePopupMenu();
+  if (!menu)
+  {
+    return true;
+  }
+
+  AppendMenuW(menu, MF_STRING, kWarningClearContextCommandId, L"Clear");
+  const UINT selectedCommand = TrackPopupMenu(
+    menu,
+    TPM_RETURNCMD | TPM_RIGHTBUTTON,
+    screenPoint.x,
+    screenPoint.y,
+    0,
+    unitWarningsList_,
+    nullptr);
+  DestroyMenu(menu);
+
+  if (selectedCommand == kWarningClearContextCommandId)
+  {
+    clearWarningsForSelectedUnit();
+  }
+
+  return true;
+}
+
+bool MapTabContent::handleRegionItemsContextMenuNotify(HWND sourceList)
+{
+  if (!appData_ || sourceList == nullptr)
+  {
+    return true;
+  }
+
+  POINT screenPoint {};
+  const DWORD messagePos = GetMessagePos();
+  screenPoint.x = GET_X_LPARAM(messagePos);
+  screenPoint.y = GET_Y_LPARAM(messagePos);
+
+  POINT clientPoint = screenPoint;
+  ScreenToClient(sourceList, &clientPoint);
+  LVHITTESTINFO hitInfo {};
+  hitInfo.pt = clientPoint;
+  const int hitRow = ListView_SubItemHitTest(sourceList, &hitInfo);
+  if (hitRow < 0)
+  {
+    return true;
+  }
+
+  wchar_t tokenBuffer[256] = {};
+  LVITEMW tokenItem {};
+  tokenItem.iSubItem = 0;
+  tokenItem.pszText = tokenBuffer;
+  tokenItem.cchTextMax = static_cast<int>(std::size(tokenBuffer));
+  const int copiedLength = static_cast<int>(SendMessageW(
+    sourceList,
+    LVM_GETITEMTEXTW,
+    static_cast<WPARAM>(hitRow),
+    reinterpret_cast<LPARAM>(&tokenItem)));
+  if (copiedLength <= 0)
+  {
+    return true;
+  }
+
+  std::wstring itemToken = StringUtils::trimWhitespace(
+    std::wstring(tokenBuffer, static_cast<std::size_t>(copiedLength)));
+  if (itemToken.empty())
+  {
+    return true;
+  }
+
+  const std::wstring itemTokenUpper = StringUtils::toUpper(itemToken);
+  const Item* item = appData_->itemRepository().findByIdentifierToken(itemTokenUpper);
+  if (!item)
+  {
+    return true;
+  }
+
+  ListView_SetItemState(sourceList, hitRow, LVIS_SELECTED | LVIS_FOCUSED, LVIS_SELECTED | LVIS_FOCUSED);
+
+  HMENU menu = CreatePopupMenu();
+  if (!menu)
+  {
+    return true;
+  }
+
+  AppendMenuW(menu, MF_STRING, kRegionItemDescriptionContextCommandId, L"Item Description");
+  AppendMenuW(menu, MF_STRING, kRegionItemTabContextCommandId, L"Items Tab");
+  const UINT selectedCommand = TrackPopupMenu(
+    menu,
+    TPM_RETURNCMD | TPM_RIGHTBUTTON,
+    screenPoint.x,
+    screenPoint.y,
+    0,
+    sourceList,
+    nullptr);
+  DestroyMenu(menu);
+
+  if (selectedCommand == kRegionItemDescriptionContextCommandId)
+  {
+    showItemDescription(item->getIdentifierToken());
+  }
+  else if (selectedCommand == kRegionItemTabContextCommandId)
+  {
+    navigateToItemList(item->getIdentifierToken());
+  }
+
+  return true;
+}
+
+void MapTabContent::sortUnitsListByColumn(int columnIndex, bool ascending)
+{
+  if (!unitsList_ || columnIndex < 0)
+  {
+    return;
+  }
+
+  HWND header = ListView_GetHeader(unitsList_);
+  if (!header)
+  {
+    return;
+  }
+
+  const int columnCount = Header_GetItemCount(header);
+  if (columnIndex >= columnCount)
+  {
+    return;
+  }
+
+  const int rowCount = ListView_GetItemCount(unitsList_);
+  if (rowCount <= 1)
+  {
+    return;
+  }
+
+  std::vector<UnitsListRowSnapshot> rows;
+  rows.reserve(static_cast<std::size_t>(rowCount));
+  for (int rowIndex = 0; rowIndex < rowCount; ++rowIndex)
+  {
+    UnitsListRowSnapshot row {};
+    row.columns.resize(static_cast<std::size_t>(columnCount));
+    row.originalIndex = rowIndex;
+
+    for (int currentColumn = 0; currentColumn < columnCount; ++currentColumn)
+    {
+      row.columns[static_cast<std::size_t>(currentColumn)] =
+        getUnitsListSubItemText(unitsList_, rowIndex, currentColumn);
+    }
+
+    LVITEMW item {};
+    item.mask = LVIF_PARAM;
+    item.iItem = rowIndex;
+    item.iSubItem = 0;
+    if (ListView_GetItem(unitsList_, &item))
+    {
+      row.itemParam = item.lParam;
+    }
+
+    const UINT state = ListView_GetItemState(unitsList_, rowIndex, LVIS_SELECTED | LVIS_FOCUSED);
+    row.selected = (state & LVIS_SELECTED) != 0;
+    row.focused = (state & LVIS_FOCUSED) != 0;
+    rows.push_back(std::move(row));
+  }
+
+  std::stable_sort(rows.begin(), rows.end(), [columnIndex, ascending](const UnitsListRowSnapshot& left,
+                                                                       const UnitsListRowSnapshot& right)
+  {
+    const int comparison = compareUnitsListCellValues(
+      left.columns[static_cast<std::size_t>(columnIndex)],
+      right.columns[static_cast<std::size_t>(columnIndex)],
+      ascending);
+    if (comparison != 0)
+    {
+      return comparison < 0;
+    }
+    return left.originalIndex < right.originalIndex;
+  });
+
+  reinsertUnitsListRows(unitsList_, rows, columnCount);
+}
+
+void MapTabContent::updateUnitsListSortHeaderMarkers()
+{
+  if (!unitsList_)
+  {
+    return;
+  }
+
+  HWND header = ListView_GetHeader(unitsList_);
+  if (!header)
+  {
+    return;
+  }
+
+  const int columnCount = Header_GetItemCount(header);
+  for (int columnIndex = 0; columnIndex < columnCount; ++columnIndex)
+  {
+    const bool isActive = (columnIndex == unitsListSortColumn_);
+    const wchar_t* baseTitle = getUnitsListBaseColumnTitle(columnIndex);
+    std::wstring displayTitle = baseTitle;
+    if (isActive)
+    {
+      displayTitle += unitsListSortAscending_ ? L" ^" : L" v";
+    }
+
+    HDITEMW textItem {};
+    textItem.mask = HDI_TEXT;
+    textItem.pszText = const_cast<LPWSTR>(displayTitle.c_str());
+    SendMessageW(header,
+                 HDM_SETITEMW,
+                 static_cast<WPARAM>(columnIndex),
+                 reinterpret_cast<LPARAM>(&textItem));
+
+#if defined(HDF_SORTUP) && defined(HDF_SORTDOWN)
+    HDITEMW headerItem {};
+    headerItem.mask = HDI_FORMAT;
+    if (SendMessageW(header,
+                     HDM_GETITEMW,
+                     static_cast<WPARAM>(columnIndex),
+                     reinterpret_cast<LPARAM>(&headerItem)) == FALSE)
+    {
+      continue;
+    }
+
+    headerItem.fmt &= ~(HDF_SORTUP | HDF_SORTDOWN);
+    if (columnIndex == unitsListSortColumn_)
+    {
+      headerItem.fmt |= unitsListSortAscending_ ? HDF_SORTUP : HDF_SORTDOWN;
+    }
+
+    SendMessageW(header,
+                 HDM_SETITEMW,
+                 static_cast<WPARAM>(columnIndex),
+                 reinterpret_cast<LPARAM>(&headerItem));
+#endif
+  }
+}
+
+bool MapTabContent::handleUnitsListHeaderDoubleClickNotify(int forcedColumnIndex)
+{
+  if (!unitsList_)
+  {
+    return true;
+  }
+
+  HWND header = ListView_GetHeader(unitsList_);
+  if (!header)
+  {
+    return true;
+  }
+
+  int columnIndex = forcedColumnIndex;
+  if (columnIndex < 0)
+  {
+    POINT screenPoint {};
+    const DWORD messagePos = GetMessagePos();
+    screenPoint.x = GET_X_LPARAM(messagePos);
+    screenPoint.y = GET_Y_LPARAM(messagePos);
+
+    POINT clientPoint = screenPoint;
+    ScreenToClient(header, &clientPoint);
+
+    HDHITTESTINFO hitInfo {};
+    hitInfo.pt = clientPoint;
+    columnIndex = static_cast<int>(SendMessageW(
+      header,
+      HDM_HITTEST,
+      0,
+      reinterpret_cast<LPARAM>(&hitInfo)));
+    if (columnIndex < 0 || (hitInfo.flags & HHT_ONHEADER) == 0)
+    {
+      return true;
+    }
+  }
+
+  if (unitsListSortColumn_ != columnIndex)
+  {
+    unitsListSortColumn_ = columnIndex;
+    unitsListSortAscending_ = true;
+  }
+  else
+  {
+    unitsListSortAscending_ = !unitsListSortAscending_;
+  }
+
+  updateUnitsListSortHeaderMarkers();
+  sortUnitsListByColumn(unitsListSortColumn_, unitsListSortAscending_);
+  updateSelectedUnitFromList();
+  return true;
+}
+
 
 bool MapTabContent::handleDrawItem(const DRAWITEMSTRUCT* drawItem)
 {
@@ -551,6 +1105,12 @@ LRESULT MapTabContent::getNotifyResult() const
 
 bool MapTabContent::handleCommand(int commandId, int /*notificationCode*/)
 {
+  if (commandId == static_cast<int>(kWarningClearContextCommandId))
+  {
+    clearWarningsForSelectedUnit();
+    return true;
+  }
+
   if (commandId == kUnitSearchButtonId)
   {
     searchAndSelectUnitById();

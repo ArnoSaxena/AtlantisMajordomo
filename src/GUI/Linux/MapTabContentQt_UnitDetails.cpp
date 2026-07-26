@@ -51,6 +51,7 @@
 #include <QTabWidget>
 #include <QTableWidget>
 #include <QTableWidgetItem>
+#include <QHeaderView>
 
 #include <algorithm>
 #include <cwctype>
@@ -64,6 +65,15 @@ namespace
 {
 constexpr int kUnitNumberRole = Qt::UserRole;
 
+struct UnitsTableRowSnapshot
+{
+    std::vector<QString> columns;
+    int unitNumberRoleValue { 0 };
+    int originalIndex { 0 };
+    bool selected { false };
+    bool focused { false };
+};
+
 QString toQString(const std::wstring& value)
 {
     return QString::fromStdWString(value);
@@ -74,6 +84,87 @@ QTableWidgetItem* makeReadOnlyItem(const QString& text)
     auto* item = new QTableWidgetItem(text);
     item->setFlags(item->flags() & ~Qt::ItemIsEditable);
     return item;
+}
+
+bool tryParseLeadingInteger(const QString& text, long long& value)
+{
+    const QString trimmed = text.trimmed();
+    if (trimmed.isEmpty())
+    {
+        return false;
+    }
+
+    int start = 0;
+    while (start < trimmed.size())
+    {
+        const QChar ch = trimmed.at(start);
+        if (ch.isDigit() || ch == QChar(u'+') || ch == QChar(u'-'))
+        {
+            break;
+        }
+        ++start;
+    }
+    if (start >= trimmed.size())
+    {
+        return false;
+    }
+
+    int end = start;
+    if (trimmed.at(end) == QChar(u'+') || trimmed.at(end) == QChar(u'-'))
+    {
+        ++end;
+    }
+    while (end < trimmed.size() && trimmed.at(end).isDigit())
+    {
+        ++end;
+    }
+    if (end <= start)
+    {
+        return false;
+    }
+
+    bool ok = false;
+    const QString numberToken = trimmed.mid(start, end - start);
+    value = numberToken.toLongLong(&ok);
+    return ok;
+}
+
+int compareUnitsListCellValues(const QString& leftValue,
+                               const QString& rightValue,
+                               bool ascending)
+{
+    const QString trimmedLeft = leftValue.trimmed();
+    const QString trimmedRight = rightValue.trimmed();
+
+    const bool leftEmpty = trimmedLeft.isEmpty();
+    const bool rightEmpty = trimmedRight.isEmpty();
+    if (leftEmpty != rightEmpty)
+    {
+        // Keep empty entries at the bottom for both sort directions.
+        return leftEmpty ? 1 : -1;
+    }
+    if (leftEmpty)
+    {
+        return 0;
+    }
+
+    long long leftNumber = 0;
+    long long rightNumber = 0;
+    const bool leftHasNumber = tryParseLeadingInteger(trimmedLeft, leftNumber);
+    const bool rightHasNumber = tryParseLeadingInteger(trimmedRight, rightNumber);
+    if (leftHasNumber && rightHasNumber && leftNumber != rightNumber)
+    {
+        return ascending ? (leftNumber < rightNumber ? -1 : 1)
+                         : (leftNumber > rightNumber ? -1 : 1);
+    }
+
+    const int textComparison = QString::compare(trimmedLeft, trimmedRight, Qt::CaseInsensitive);
+    if (textComparison == 0)
+    {
+        return 0;
+    }
+
+    return ascending ? textComparison : -textComparison;
 }
 
 std::wstring normalizeOrderItemToken(std::wstring token)
@@ -290,6 +381,28 @@ void MapTabContentQt::refreshItemsForCurrentUnit()
 
 void MapTabContentQt::onUnitsSelectionChanged()
 {
+    updateSelectedUnitFromList();
+}
+
+void MapTabContentQt::onUnitsHeaderSectionDoubleClicked(int logicalIndex)
+{
+    if (!unitsList_ || logicalIndex < 0)
+    {
+        return;
+    }
+
+    if (unitsListSortColumn_ != logicalIndex)
+    {
+        unitsListSortColumn_ = logicalIndex;
+        unitsListSortAscending_ = true;
+    }
+    else
+    {
+        unitsListSortAscending_ = !unitsListSortAscending_;
+    }
+
+    updateUnitsListSortHeaderMarkers();
+    sortUnitsListByColumn(unitsListSortColumn_, unitsListSortAscending_);
     updateSelectedUnitFromList();
 }
 
@@ -647,7 +760,140 @@ void MapTabContentQt::populateUnitsForSelectedRegion()
         unitsList_->selectRow(selectedRow);
     }
 
+    if (unitsListSortColumn_ >= 0)
+    {
+        updateUnitsListSortHeaderMarkers();
+        sortUnitsListByColumn(unitsListSortColumn_, unitsListSortAscending_);
+    }
+
     updateSelectedUnitFromList();
+}
+
+void MapTabContentQt::sortUnitsListByColumn(int columnIndex, bool ascending)
+{
+    if (!unitsList_ || columnIndex < 0)
+    {
+        return;
+    }
+
+    const int rowCount = unitsList_->rowCount();
+    const int columnCount = unitsList_->columnCount();
+    if (rowCount <= 1 || columnIndex >= columnCount)
+    {
+        return;
+    }
+
+    std::vector<UnitsTableRowSnapshot> rows;
+    rows.reserve(static_cast<std::size_t>(rowCount));
+
+    for (int rowIndex = 0; rowIndex < rowCount; ++rowIndex)
+    {
+        UnitsTableRowSnapshot row {};
+        row.columns.resize(static_cast<std::size_t>(columnCount));
+        row.originalIndex = rowIndex;
+
+        for (int currentColumn = 0; currentColumn < columnCount; ++currentColumn)
+        {
+            const QTableWidgetItem* item = unitsList_->item(rowIndex, currentColumn);
+            row.columns[static_cast<std::size_t>(currentColumn)] = item ? item->text() : QString();
+        }
+
+        const QTableWidgetItem* numberItem = unitsList_->item(rowIndex, 0);
+        row.unitNumberRoleValue = numberItem ? numberItem->data(kUnitNumberRole).toInt() : 0;
+
+        row.selected = unitsList_->selectionModel() && unitsList_->selectionModel()->isRowSelected(
+            rowIndex,
+            QModelIndex());
+        row.focused = unitsList_->currentRow() == rowIndex;
+
+        rows.push_back(std::move(row));
+    }
+
+    std::stable_sort(rows.begin(), rows.end(), [columnIndex, ascending](const UnitsTableRowSnapshot& left,
+                                                                         const UnitsTableRowSnapshot& right)
+    {
+        const int comparison = compareUnitsListCellValues(
+            left.columns[static_cast<std::size_t>(columnIndex)],
+            right.columns[static_cast<std::size_t>(columnIndex)],
+            ascending);
+        if (comparison != 0)
+        {
+            return comparison < 0;
+        }
+        return left.originalIndex < right.originalIndex;
+    });
+
+    const QSignalBlocker blocker(unitsList_);
+    unitsList_->setRowCount(0);
+    for (int rowIndex = 0; rowIndex < static_cast<int>(rows.size()); ++rowIndex)
+    {
+        const UnitsTableRowSnapshot& row = rows[static_cast<std::size_t>(rowIndex)];
+        unitsList_->insertRow(rowIndex);
+
+        for (int currentColumn = 0; currentColumn < columnCount; ++currentColumn)
+        {
+            QTableWidgetItem* item = makeReadOnlyItem(row.columns[static_cast<std::size_t>(currentColumn)]);
+            if (currentColumn == 0)
+            {
+                item->setData(kUnitNumberRole, row.unitNumberRoleValue);
+            }
+            unitsList_->setItem(rowIndex, currentColumn, item);
+        }
+
+        if (row.selected)
+        {
+            unitsList_->selectRow(rowIndex);
+            unitsList_->scrollToItem(unitsList_->item(rowIndex, 0));
+        }
+        if (row.focused)
+        {
+            unitsList_->setCurrentCell(rowIndex, 0);
+        }
+    }
+}
+
+void MapTabContentQt::updateUnitsListSortHeaderMarkers()
+{
+    if (!unitsList_)
+    {
+        return;
+    }
+
+    QHeaderView* header = unitsList_->horizontalHeader();
+    if (!header)
+    {
+        return;
+    }
+
+    QStringList labels = unitsListBaseHeaderLabels_;
+    if (labels.size() != unitsList_->columnCount())
+    {
+        labels.clear();
+        for (int i = 0; i < unitsList_->columnCount(); ++i)
+        {
+            labels.push_back(unitsList_->horizontalHeaderItem(i)
+                ? unitsList_->horizontalHeaderItem(i)->text()
+                : QString());
+        }
+    }
+
+    for (int i = 0; i < labels.size(); ++i)
+    {
+        if (i == unitsListSortColumn_)
+        {
+            labels[i] += unitsListSortAscending_ ? " ^" : " v";
+        }
+    }
+
+    unitsList_->setHorizontalHeaderLabels(labels);
+    if (unitsListSortColumn_ >= 0)
+    {
+        header->setSortIndicator(unitsListSortColumn_, unitsListSortAscending_ ? Qt::AscendingOrder : Qt::DescendingOrder);
+    }
+    else
+    {
+        header->setSortIndicator(-1, Qt::AscendingOrder);
+    }
 }
 
 void MapTabContentQt::clearUnitsList()

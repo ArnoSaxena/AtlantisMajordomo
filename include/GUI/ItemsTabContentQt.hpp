@@ -61,6 +61,9 @@ public:
     /** Repopulates the list and refreshes the detail form. */
     void refresh();
 
+    /** Selects the item identified by itemToken in the list and loads details. */
+    void focusItemByToken(const std::wstring& itemToken);
+
 private slots:
     void onItemSelectionChanged();
     void onSaveClicked();

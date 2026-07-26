@@ -16,31 +16,29 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  *
- * File: SkillFormattingUtils.hpp
+ * File: TabRefreshUtils.hpp
  */
 
 // 304c89c8-6d3c-4586-b0c4-fad2e67b2f65
 #pragma once
 
-#include <map>
-#include <string>
-#include <vector>
+#include <functional>
 
-struct SkillPrerequisite;
-class AppData;
+namespace TabRefreshUtils
+{
 
-namespace SkillFormattingUtils
+struct RefreshCallbacks
 {
-struct SkillDescriptionContent
-{
-	bool found { false };
-	std::wstring title;
-	std::wstring description;
-	std::wstring notFoundMessage;
+  std::function<void()> refreshReports;
+  std::function<void()> refreshMap;
+  std::function<void()> refreshEvents;
+  std::function<void()> refreshItems;
+  std::function<void()> refreshSkills;
+  std::function<void()> refreshFactions;
+  std::function<void()> refreshBattles;
+  std::function<void()> afterRefresh;
 };
 
-std::wstring formatSkills(const std::map<std::wstring, int>& skills);
-std::wstring formatPrerequisites(const std::vector<SkillPrerequisite>& prerequisites);
-std::vector<SkillPrerequisite> parsePrerequisites(const std::wstring& text);
-SkillDescriptionContent buildSkillDescriptionContent(const AppData& appData, const std::wstring& skillToken);
-}
+void runRefreshContract(const RefreshCallbacks& callbacks);
+
+} // namespace TabRefreshUtils

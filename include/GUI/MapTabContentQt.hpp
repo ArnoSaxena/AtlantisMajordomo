@@ -24,6 +24,7 @@
 
 #include <QPoint>
 #include <QString>
+#include <QStringList>
 #include <QWidget>
 
 #include "GUI/MapCanvasWidget.hpp"
@@ -114,6 +115,13 @@ signals:
      */
     void navigateToSkill(const QString& skillToken);
 
+    /**
+     * @brief Emitted when the user navigates to an item from map region item
+     *        lists. The receiver should switch to the Items tab and call
+     *        ItemsTabContentQt::focusItemByToken().
+     */
+    void navigateToItem(const QString& itemToken);
+
 private slots:
     // -----------------------------------------------------------------------
     // Map canvas events — wired in MapTabContentQt_Events.cpp (7.8)
@@ -129,6 +137,7 @@ private slots:
     // Units list — wired in 7.8; implemented in 7.3
     // -----------------------------------------------------------------------
     void onUnitsSelectionChanged();
+    void onUnitsHeaderSectionDoubleClicked(int logicalIndex);
 
     // -----------------------------------------------------------------------
     // Unit-detail inner tabs — wired in 7.8; implemented in 7.3
@@ -158,6 +167,10 @@ private slots:
     // -----------------------------------------------------------------------
     void onOrdersEditorContextMenuRequested(const QPoint& pos);
     void onUnitSkillsContextMenuRequested(const QPoint& pos);
+    void onUnitWarningsContextMenuRequested(const QPoint& pos);
+    void onRegionResourcesContextMenuRequested(const QPoint& pos);
+    void onRegionForSaleContextMenuRequested(const QPoint& pos);
+    void onRegionWantedContextMenuRequested(const QPoint& pos);
 
 private:
     // -----------------------------------------------------------------------
@@ -243,6 +256,9 @@ private:
     int  selectedRegionY_      { 0 };
     int  selectedUnitNumber_   { 0 };
     bool selectedUnitIsNew_    { false };
+    int  unitsListSortColumn_  { -1 };
+    bool unitsListSortAscending_ { true };
+    QStringList unitsListBaseHeaderLabels_;
 
     // Capacity display values (computed in updateUnitWeightAndCapacities)
     int  capacityWalkDisplay_       { 0 };
@@ -283,6 +299,8 @@ private:
     void updateSelectedUnitFromList();
     void updateSelectedUnitDetailsByNumber(int unitNumber);
     void clearSelectedUnitDetails();
+    void sortUnitsListByColumn(int columnIndex, bool ascending);
+    void updateUnitsListSortHeaderMarkers();
 
     // 7.4 — Orders editor
     void appendOrderLineToOrdersEditor(const std::wstring& orderLine);
@@ -307,6 +325,7 @@ private:
     void selectUnitInMap(int unitNumber);
     bool focusOriginUnitForSelectedUnitNew();
     void searchAndSelectUnitById();
+    void handleRegionItemContextMenuRequested(QTreeWidget* sourceList, const QPoint& pos);
 
     // 7.9 — Map canvas helpers
     void navigateToSkillList(const std::wstring& skillToken);

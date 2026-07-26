@@ -50,6 +50,7 @@ constexpr int kMinBottomHeight     = 140;
 // ---------------------------------------------------------------------------
 constexpr wchar_t    kMapCanvasClassName[]   = L"WindowsAppMapCanvas";
 constexpr UINT_PTR   kUnitSearchEditSubclassId = 231001;
+constexpr UINT_PTR   kUnitsListHeaderSubclassId = 231002;
 
 // ---------------------------------------------------------------------------
 // Region context menu command IDs
@@ -78,6 +79,9 @@ constexpr int kWarningsTabIndex = 3;
 constexpr UINT kSkillStudyContextCommandId            = 4711;
 constexpr UINT kSkillDescriptionListContextCommandId  = 4712;
 constexpr UINT kSkillDescriptionPopupContextCommandId = 4713;
+constexpr UINT kWarningClearContextCommandId          = 4714;
+constexpr UINT kRegionItemDescriptionContextCommandId = 4715;
+constexpr UINT kRegionItemTabContextCommandId         = 4716;
 
 // ---------------------------------------------------------------------------
 // Utility template

@@ -45,6 +45,7 @@
 #include "Function/OrderBusinessLogic.hpp"
 #include "Function/OrderParsingUtils.hpp"
 #include "Function/OrderWarningService.hpp"
+#include "Function/ReadOnlyPopupService.hpp"
 #include "Function/SkillFormattingUtils.hpp"
 #include "Function/StringUtils.hpp"
 
@@ -220,6 +221,23 @@ void showReadOnlyTextPopup(HWND ownerWindow, const std::wstring& windowTitle, co
   ShowWindow(popup, SW_SHOW);
   UpdateWindow(popup);
 }
+
+class Win32ReadOnlyPopupBackend : public ReadOnlyPopupService::IBackend
+{
+public:
+  explicit Win32ReadOnlyPopupBackend(HWND ownerWindow)
+    : ownerWindow_(ownerWindow)
+  {
+  }
+
+  void show(const ReadOnlyPopupService::PopupRequest& request) override
+  {
+    showReadOnlyTextPopup(ownerWindow_, request.title, request.text, request.softWrap);
+  }
+
+private:
+  HWND ownerWindow_ { nullptr };
+};
 
 
 
@@ -1551,12 +1569,58 @@ void MapTabContent::showSkillDescription(const std::wstring& skillToken)
   {
     return;
   }
-  std::wstring skillName = appData_->skillRepository().findByIdentifier(skillToken)->getName();
-  std::wstring skillDescription = appData_->skillRepository().findByIdentifier(skillToken)->getAllLevelDescriptions();
-  showReadOnlyTextPopup(GetParent(mapCanvas_),
-                          L"Skill Description " + skillName,
-                          StringUtils::toCRLF(skillDescription),
-                          true);
+
+  const SkillFormattingUtils::SkillDescriptionContent content =
+    SkillFormattingUtils::buildSkillDescriptionContent(*appData_, skillToken);
+  if (!content.found)
+  {
+    MessageBoxW(GetParent(mapCanvas_),
+                StringUtils::toCRLF(content.notFoundMessage).c_str(),
+                L"Skill Description",
+                MB_OK | MB_ICONINFORMATION);
+    return;
+  }
+
+  Win32ReadOnlyPopupBackend popupBackend(GetParent(mapCanvas_));
+  ReadOnlyPopupService::show(popupBackend,
+                             ReadOnlyPopupService::PopupRequest{
+                               content.title,
+                               StringUtils::toCRLF(content.description),
+                               true
+                             });
+}
+
+void MapTabContent::showItemDescription(const std::wstring& itemToken)
+{
+  if (!appData_ || itemToken.empty())
+  {
+    return;
+  }
+
+  const Item* item = appData_->itemRepository().findByIdentifierToken(itemToken);
+  if (!item)
+  {
+    MessageBoxW(GetParent(mapCanvas_),
+                (L"No description found for item '" + itemToken + L"'.").c_str(),
+                L"Item Description",
+                MB_OK | MB_ICONINFORMATION);
+    return;
+  }
+
+  const std::wstring itemName = item->getItemName();
+  std::wstring description = item->getFullText();
+  if (description.empty())
+  {
+    description = L"No description available.";
+  }
+
+  Win32ReadOnlyPopupBackend popupBackend(GetParent(mapCanvas_));
+  ReadOnlyPopupService::show(popupBackend,
+                             ReadOnlyPopupService::PopupRequest{
+                               L"Item Description " + itemName + L" [" + item->getIdentifierToken() + L"]",
+                               StringUtils::toCRLF(description),
+                               true
+                             });
 }
 
 
@@ -1688,10 +1752,13 @@ void MapTabContent::onMapRightClick(POINT pointInMapClient)
 
   if (selectedCommand == kRegionContextShowTextEditorCommandId)
   {
-    showReadOnlyTextPopup(GetParent(mapCanvas_),
-                          L"Region Report",
-                          StringUtils::toCRLF(region->region->getRegionReport()),
-                          false);
+    Win32ReadOnlyPopupBackend popupBackend(GetParent(mapCanvas_));
+    ReadOnlyPopupService::show(popupBackend,
+                               ReadOnlyPopupService::PopupRequest{
+                                 L"Region Report",
+                                 StringUtils::toCRLF(region->region->getRegionReport()),
+                                 false
+                               });
   }
   else if (selectedCommand == kRegionContextShowBattleReportCommandId && navigationCallback_)
   {

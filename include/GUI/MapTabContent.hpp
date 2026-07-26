@@ -143,6 +143,7 @@ public:
   {
     Battles,
     Skills,
+    Items,
   };
 
   /**
@@ -164,6 +165,11 @@ public:
     std::wstring skillToken;
   };
 
+  struct ItemNavigationPayload
+  {
+    std::wstring itemToken;
+  };
+
   /**
   * @brief Unified navigation request passed to the navigation callback.
   *
@@ -177,7 +183,7 @@ public:
   struct NavigationRequest
   {
     NavigationTarget                                           target;
-    std::variant<BattleNavigationPayload, SkillNavigationPayload> payload;
+    std::variant<BattleNavigationPayload, SkillNavigationPayload, ItemNavigationPayload> payload;
   };
 
   /**
@@ -302,6 +308,8 @@ private:
   bool movePathHasNegativeCapacity_ { false };
   bool movePathSailRouteInvalid_ { false };
   int selectedUnitDetailsTab_ { 0 };
+  int unitsListSortColumn_ { -1 };
+  bool unitsListSortAscending_ { true };
   std::function<void(const NavigationRequest&)> navigationCallback_;
 
   static LRESULT CALLBACK mapCanvasWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp);
@@ -311,6 +319,12 @@ private:
                                                      LPARAM lp,
                                                      UINT_PTR subclassId,
                                                      DWORD_PTR refData);
+  static LRESULT CALLBACK unitsListHeaderSubclassProc(HWND hwnd,
+                                                      UINT msg,
+                                                      WPARAM wp,
+                                                      LPARAM lp,
+                                                      UINT_PTR subclassId,
+                                                      DWORD_PTR refData);
   static LRESULT CALLBACK ordersEditorSubclassProc(HWND hwnd,
                                                    UINT msg,
                                                    WPARAM wp,
@@ -344,7 +358,9 @@ private:
   void clearSelectedUnitDetails();
   void appendOrderLineToOrdersEditor(const std::wstring& orderLine);
   void navigateToSkillList(const std::wstring& skillToken);
+  void navigateToItemList(const std::wstring& itemToken);
   void showSkillDescription(const std::wstring& skillToken);
+  void showItemDescription(const std::wstring& itemToken);
   void saveOrdersToSelectedUnit();
   void runOrderChecksForMainFaction();
   void updateWarningsSummaryLabel();
@@ -377,4 +393,10 @@ private:
                              int leftPanelWidth,
                              int rightPanelWidth,
                              int detailsWidth);
+  void sortUnitsListByColumn(int columnIndex, bool ascending);
+  void updateUnitsListSortHeaderMarkers();
+  bool handleUnitsListHeaderDoubleClickNotify(int forcedColumnIndex = -1);
+  bool handleUnitSkillsContextMenuNotify();
+  bool handleUnitWarningsContextMenuNotify();
+  bool handleRegionItemsContextMenuNotify(HWND sourceList);
 };

@@ -57,7 +57,7 @@ bool EventsTabContent::create(HWND parentWindow, HINSTANCE instance, AppData& ap
     0,
     L"COMBOBOX",
     nullptr,
-    WS_CHILD | WS_VISIBLE | WS_VSCROLL | CBS_DROPDOWNLIST,
+    WS_CHILD | WS_VSCROLL | CBS_DROPDOWNLIST,
     0,
     0,
     240,
