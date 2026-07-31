@@ -35,6 +35,7 @@
 #include "Function/OrderBusinessLogic.hpp"
 #include "Function/ReadOnlyPopupService.hpp"
 #include "Function/StringUtils.hpp"
+#include "Function/SkillFormattingUtils.hpp"
 
 #include <QDialog>
 #include <QDialogButtonBox>
