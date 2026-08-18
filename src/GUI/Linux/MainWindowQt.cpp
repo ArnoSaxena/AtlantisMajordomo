@@ -269,6 +269,97 @@ std::wstring buildSuggestedOrdersFilename(const MainFactionExportContext& ctx)
         + L".ord";
 }
 
+// Returns the number of units updated on success, or -1 on error.
+// Parses a .ord file and updates the order fields for matching units.
+int importOrdersFromContent(AppData& appData, const std::wstring& fileContent, std::wstring& errorMessage)
+{
+    errorMessage.clear();
+    int unitsUpdated = 0;
+
+    // Split content into lines
+    std::vector<std::wstring> lines;
+    {
+        std::wistringstream iss(fileContent);
+        std::wstring line;
+        while (std::getline(iss, line))
+        {
+            // Remove trailing whitespace
+            while (!line.empty() && (line.back() == L'\r' || line.back() == L' ' || line.back() == L'\t'))
+            {
+                line.pop_back();
+            }
+            lines.push_back(line);
+        }
+    }
+
+    // Parse the file
+    int currentUnitNumber = -1;
+    std::vector<std::wstring> currentOrders;
+
+    for (const auto& line : lines)
+    {
+        // Skip empty lines and comments
+        if (line.empty() || line[0] == L'#')
+        {
+            continue;
+        }
+
+        // Trim leading whitespace
+        std::size_t startPos = 0;
+        while (startPos < line.size() && (line[startPos] == L' ' || line[startPos] == L'\t'))
+        {
+            ++startPos;
+        }
+
+        std::wstring trimmedLine = line.substr(startPos);
+
+        // Check for "unit <number>" directive
+        if (trimmedLine.size() > 5 && trimmedLine.substr(0, 5) == L"unit ")
+        {
+            // Save previous unit's orders if any
+            if (currentUnitNumber != -1 && !currentOrders.empty())
+            {
+                Unit* unit = appData.unitRepository().findByNumber(currentUnitNumber);
+                if (unit)
+                {
+                    unit->setOrders(currentOrders);
+                    ++unitsUpdated;
+                }
+            }
+
+            // Parse new unit number
+            try
+            {
+                currentUnitNumber = std::stoi(trimmedLine.substr(5));
+                currentOrders.clear();
+            }
+            catch (const std::exception&)
+            {
+                errorMessage = L"Invalid unit number format in file.";
+                return -1;
+            }
+        }
+        else if (currentUnitNumber != -1)
+        {
+            // This is an order line for the current unit
+            currentOrders.push_back(trimmedLine);
+        }
+    }
+
+    // Save the last unit's orders if any
+    if (currentUnitNumber != -1 && !currentOrders.empty())
+    {
+        Unit* unit = appData.unitRepository().findByNumber(currentUnitNumber);
+        if (unit)
+        {
+            unit->setOrders(currentOrders);
+            ++unitsUpdated;
+        }
+    }
+
+    return unitsUpdated;
+}
+
 std::wstring buildOrdersExportContent(const AppData& appData,
                                        int mainFactionNumber,
                                        const std::wstring& password)
@@ -427,6 +518,7 @@ void MainWindow::setupMenus()
     fileMenu->addAction("&Import Data...",   this, &MainWindow::onFileImportData);
     fileMenu->addSeparator();
     fileMenu->addAction("E&xport Orders...", this, &MainWindow::onFileExportOrders);
+    fileMenu->addAction("&Import Orders...", this, &MainWindow::onFileImportOrders);
     fileMenu->addSeparator();
     fileMenu->addAction("E&xit",             this, &QWidget::close);
 
@@ -779,6 +871,51 @@ void MainWindow::onFileExportOrders()
 
     QMessageBox::information(this, "Export Orders",
         QString("Orders exported successfully to:\n\n%1").arg(filePath));
+}
+
+void MainWindow::onFileImportOrders()
+{
+    // Determine initial directory: prefer configured export folder, fall back to save file dir
+    QString initialDir = QString::fromStdWString(appConfig_.getExportOrdersFolder());
+    if (initialDir.isEmpty())
+        initialDir = dirFromPath(appConfig_.getSaveFilePath());
+
+    const QString filePath = QFileDialog::getOpenFileName(
+        this,
+        "Import Orders",
+        initialDir,
+        "Order Files (*.ord);;All Files (*)");
+
+    if (filePath.isEmpty()) return;
+
+    // Read file content
+    std::wifstream file(std::filesystem::path(filePath.toStdWString()));
+    if (!file.is_open())
+    {
+        QMessageBox::critical(this, "Import Orders",
+            QString("Failed to open file:\n\n%1").arg(filePath));
+        return;
+    }
+
+    std::wstring fileContent((std::istreambuf_iterator<wchar_t>(file)),
+                             std::istreambuf_iterator<wchar_t>());
+
+    std::wstring errorMessage;
+    int unitsUpdated = importOrdersFromContent(appData_, fileContent, errorMessage);
+    if (unitsUpdated < 0)
+    {
+        QMessageBox::critical(this, "Import Orders",
+            QString("Failed to import orders:\n\n%1").arg(QString::fromStdWString(errorMessage)));
+        return;
+    }
+
+    appConfig_.setExportOrdersFolder(
+        std::filesystem::path(filePath.toStdWString()).parent_path().wstring());
+    appConfig_.save();
+    refreshAllTabs();
+
+    QMessageBox::information(this, "Import Orders",
+        QString("Orders imported successfully for %1 unit(s).").arg(unitsUpdated));
 }
 
 // ---------------------------------------------------------------------------

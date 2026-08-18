@@ -72,6 +72,7 @@ private slots:
     void onFileLoadReport();
     void onFileImportData();
     void onFileExportOrders();
+    void onFileImportOrders();
     void onSettingsOptions();
     void onHelpDescription();
     void onHelpAbout();

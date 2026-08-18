@@ -31,6 +31,7 @@
 #include "Data/Structure.hpp"
 #include "Data/Unit.hpp"
 #include "Function/CommandSimulationService.hpp"
+#include "Function/CoordinateUtils.hpp"
 #include "Function/OrderParsingUtils.hpp"
 #include "Function/StringUtils.hpp"
 #include "Function/UnitCapacityUtils.hpp"
@@ -48,6 +49,9 @@
 namespace
 {
 using OrderParsingUtils::isMonthLongOrderLine;
+using OrderParsingUtils::extractFormNewUnitBlock;
+using OrderParsingUtils::extractFormNewUnitNumbers;
+using OrderParsingUtils::filterOrdersIgnoringFormBlocks;
 using OrderParsingUtils::normalizeItemTokenForWarning;
 using OrderParsingUtils::tokenizeOrderLine;
 using OrderParsingUtils::tryExtractOrderKeywordUpper;
@@ -135,6 +139,86 @@ bool tryExtractStructureIdFromOrder(const std::wstring& orderLine,
   }
 
   return false;
+}
+
+bool tryResolveMoveDestinationCoordinates(const Unit& unit,
+                                          const std::wstring& orderLine,
+                                          const std::wstring& keyword,
+                                          int& destinationX,
+                                          int& destinationY)
+{
+  destinationX = unit.getXCoordinate();
+  destinationY = unit.getYCoordinate();
+
+  if (orderLine.length() <= keyword.length())
+  {
+    return true;
+  }
+
+  std::wstring afterKeyword = orderLine.substr(keyword.length());
+  const auto start = afterKeyword.find_first_not_of(L" \t");
+  if (start == std::wstring::npos)
+  {
+    return true;
+  }
+
+  afterKeyword = afterKeyword.substr(start);
+  std::vector<std::wstring> tokens;
+  std::vector<bool> tokenWasQuoted;
+  if (!tokenizeOrderLine(afterKeyword, tokens, tokenWasQuoted))
+  {
+    return false;
+  }
+
+  std::vector<std::wstring> directions;
+  directions.reserve(tokens.size());
+  for (const std::wstring& token : tokens)
+  {
+    const std::wstring normalizedDirection = CoordinateUtils::normalizeHexDirection(token);
+    if (normalizedDirection.empty())
+    {
+      break;
+    }
+
+    directions.push_back(normalizedDirection);
+  }
+
+  if (directions.empty())
+  {
+    return true;
+  }
+
+  const std::vector<std::pair<int, int>> movePath =
+    CoordinateUtils::calculateMovePathCoordinates(unit.getXCoordinate(), unit.getYCoordinate(), directions);
+  if (movePath.empty())
+  {
+    return true;
+  }
+
+  destinationX = movePath.back().first;
+  destinationY = movePath.back().second;
+  return true;
+}
+
+bool hasStructureAtMoveDestination(const AppData& appData,
+                                   const Unit& unit,
+                                   const std::wstring& orderLine,
+                                   const std::wstring& keyword,
+                                   int structureId)
+{
+  int destinationX = unit.getXCoordinate();
+  int destinationY = unit.getYCoordinate();
+  if (!tryResolveMoveDestinationCoordinates(unit, orderLine, keyword, destinationX, destinationY))
+  {
+    return false;
+  }
+
+  const Structure* structure = appData.structureRepository().findByIdAndCoordinates(
+    structureId,
+    destinationX,
+    destinationY,
+    unit.getZCoordinate());
+  return structure != nullptr;
 }
 
 int getManItemSkillLimitForWarning(const Item& item, const std::wstring& skillToken)
@@ -844,6 +928,20 @@ void checkGiveTakeWarningsForMainFaction(AppData& appData, int mainFactionNumber
       continue;
     }
 
+    int totalItemCount = 0;
+    for (const auto& [itemToken, amount] : finalCounts)
+    {
+      (void)itemToken;
+      if (amount > 0)
+      {
+        totalItemCount += amount;
+      }
+    }
+    if (totalItemCount <= 0)
+    {
+      continue;
+    }
+
     Unit* unit = unitRepository.findByNumber(unitNumber);
     if (unit)
     {
@@ -1314,7 +1412,15 @@ void updateFutureStructureIdsForMainFaction(AppData& appData, int mainFactionNum
         int structureId = 0;
         if (tryExtractStructureIdFromOrder(orderLine, keyword, structureId))
         {
-          unit->setFutureStructureId(structureId);
+          if (hasStructureAtMoveDestination(appData, *unit, orderLine, keyword, structureId))
+          {
+            unit->setFutureStructureId(structureId);
+          }
+          else
+          {
+            unit->addWarning(
+              keyword + L": target structure " + std::to_wstring(structureId) + L" not found in destination region");
+          }
           break;
         }
       }
@@ -1328,7 +1434,20 @@ void updateFutureStructureIdsForMainFaction(AppData& appData, int mainFactionNum
         int structureId = 0;
         if (tryExtractStructureIdFromOrder(orderLine, keyword, structureId))
         {
-          unit->setFutureStructureId(structureId);
+          const Structure* structure = appData.structureRepository().findByIdAndCoordinates(
+            structureId,
+            unit->getXCoordinate(),
+            unit->getYCoordinate(),
+            unit->getZCoordinate());
+          if (structure)
+          {
+            unit->setFutureStructureId(structureId);
+          }
+          else
+          {
+            unit->addWarning(
+              keyword + L": target structure " + std::to_wstring(structureId) + L" not found in current region");
+          }
           break;
         }
       }
@@ -1453,6 +1572,22 @@ void checkShipCapacityWarningsForMainFaction(AppData& appData, int mainFactionNu
 void checkMonthLongOrderWarningsForMainFaction(AppData& appData, int mainFactionNumber)
 {
   auto& unitRepository = appData.unitRepository();
+  auto& unitNewRepository = appData.unitNewRepository();
+
+  const auto countMonthLongOrders = [](const std::vector<std::wstring>& orders)
+  {
+    int monthLongOrderCount = 0;
+    for (const std::wstring& orderLine : orders)
+    {
+      if (isMonthLongOrderLine(orderLine))
+      {
+        ++monthLongOrderCount;
+      }
+    }
+
+    return monthLongOrderCount;
+  };
+
   for (std::size_t index = 0; index < unitRepository.size(); ++index)
   {
     const Unit& view = unitRepository.at(index);
@@ -1467,24 +1602,60 @@ void checkMonthLongOrderWarningsForMainFaction(AppData& appData, int mainFaction
       continue;
     }
 
-    int monthLongOrderCount = 0;
-    for (const std::wstring& orderLine : unit->getOrders())
-    {
-      if (isMonthLongOrderLine(orderLine))
-      {
-        ++monthLongOrderCount;
-      }
-    }
+    const std::vector<std::wstring> nonFormOrders =
+      filterOrdersIgnoringFormBlocks(unit->getOrders());
+    const int monthLongOrderCount = countMonthLongOrders(nonFormOrders);
 
     if (monthLongOrderCount == 0)
     {
       unit->addWarning(L"month long order missing");
-      continue;
     }
-
-    if (monthLongOrderCount >= 2)
+    else if (monthLongOrderCount >= 2)
     {
       unit->addWarning(L"multiple month long orders");
+    }
+
+    const std::vector<int> formUnitNumbers = extractFormNewUnitNumbers(unit->getOrders());
+    for (int formUnitNumber : formUnitNumbers)
+    {
+      UnitNew* formUnit = nullptr;
+      for (std::size_t newIndex = 0; newIndex < unitNewRepository.size(); ++newIndex)
+      {
+        const UnitNew& newView = unitNewRepository.at(newIndex);
+        if (newView.getOriginUnit() != unit->getUnitNumber()
+            || newView.getUnitNumber() != formUnitNumber)
+        {
+          continue;
+        }
+
+        formUnit = unitNewRepository.findByNumberAndCoordinates(
+          newView.getUnitNumber(),
+          newView.getXCoordinate(),
+          newView.getYCoordinate(),
+          newView.getZCoordinate());
+        if (formUnit != nullptr)
+        {
+          break;
+        }
+      }
+
+      if (formUnit == nullptr)
+      {
+        continue;
+      }
+
+      const std::vector<std::wstring> formBlockOrders =
+        extractFormNewUnitBlock(unit->getOrders(), formUnitNumber);
+      const int formMonthLongOrderCount = countMonthLongOrders(formBlockOrders);
+
+      if (formMonthLongOrderCount == 0)
+      {
+        formUnit->addWarning(L"month long order missing");
+      }
+      else if (formMonthLongOrderCount >= 2)
+      {
+        formUnit->addWarning(L"multiple month long orders");
+      }
     }
   }
 }

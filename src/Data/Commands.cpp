@@ -197,6 +197,14 @@ namespace
   {};
 
   /**
+  * @brief Parsed CLAIM command payload.
+  */
+  struct ClaimCommand
+  {
+    int amount { 0 }; /**< Requested unclaimed silver amount. */
+  };
+
+  /**
   * @brief Parsed NAME UNIT command payload.
   */
   struct NameUnitCommand
@@ -219,6 +227,7 @@ namespace
     Sail, /**< SAIL command category. */
     Produce, /**< PRODUCE command effects. */
     Entertain, /**< ENTERTAIN income effects. */
+      Claim, /**< CLAIM silver effects. */
     Study, /**< STUDY silver-consumption effects. */
     Teach, /**< TEACH command effects. */
     NameUnit, /**< NAME UNIT command effects. */
@@ -241,6 +250,7 @@ namespace
     SailCommand sail; /**< Parsed payload for Sail kind. */
     ProduceCommand produce; /**< Parsed payload for Produce kind. */
     EntertainCommand entertain; /**< Parsed payload for Entertain kind. */
+      ClaimCommand claim; /**< Parsed payload for Claim kind. */
     StudyCommand study; /**< Parsed payload for Study kind. */
     TeachCommand teach; /**< Parsed payload for Teach kind. */
     NameUnitCommand nameUnit; /**< Parsed payload for NameUnit kind. */
@@ -697,6 +707,14 @@ namespace
                           std::wstring& resolvedToken)
   {
     std::wstring normalizedOperand = normalizeItemToken(operand);
+    // SILV is a core currency token that can exist in unit inventories even
+    // when item reports were not imported yet.
+    if (normalizedOperand == L"SILV" || normalizedOperand == L"SILVER")
+    {
+      resolvedToken = L"SILV";
+      return true;
+    }
+
     if (!normalizedOperand.empty() && appData.itemRepository().findByIdentifierToken(normalizedOperand))
     {
       resolvedToken = normalizedOperand;
@@ -939,6 +957,52 @@ namespace
     command.itemOperandWasQuoted = tokenWasQuoted[tokenIndex];
     ++tokenIndex;
     command.exceptQuantity = 0;
+    return tokenIndex == tokens.size();
+  }
+  /**
+  * @brief Parses a CLAIM command and captures the claimed silver amount.
+  */
+  bool tryParseClaimCommand(const std::wstring& line, ClaimCommand& command)
+  {
+    std::vector<std::wstring> tokens;
+    std::vector<bool> tokenWasQuoted;
+    if (!tokenizeCommandLine(line, tokens, tokenWasQuoted) || tokens.empty())
+    {
+      return false;
+    }
+
+    std::size_t tokenIndex = 0;
+    if (!tokens.empty() && !tokens.front().empty() && tokens.front().front() == L'@')
+    {
+      if (tokens.front().size() == 1)
+      {
+        tokenIndex = 1;
+      }
+      else
+      {
+        tokens.front().erase(tokens.front().begin());
+      }
+    }
+
+    if (tokenIndex >= tokens.size() || StringUtils::toUpper(tokens[tokenIndex]) != L"CLAIM")
+    {
+      return false;
+    }
+
+    ++tokenIndex;
+    if (tokenIndex >= tokens.size())
+    {
+      return false;
+    }
+
+    int parsedAmount = 0;
+    if (!tryParseInt(tokens[tokenIndex], parsedAmount) || parsedAmount <= 0)
+    {
+      return false;
+    }
+
+    command.amount = parsedAmount;
+    ++tokenIndex;
     return tokenIndex == tokens.size();
   }
 
@@ -1885,6 +1949,14 @@ namespace
       return true;
     }
 
+    ClaimCommand claimCommand;
+    if (tryParseClaimCommand(line, claimCommand))
+    {
+      parsed.kind = SimulatedCommandKind::Claim;
+      parsed.claim = claimCommand;
+      return true;
+    }
+
     if (isWorkCommand(line))
     {
       parsed.kind = SimulatedCommandKind::Work;
@@ -2215,6 +2287,9 @@ namespace
       case SimulatedCommandKind::Entertain:
         return CommandPhase::Entertain;
 
+      case SimulatedCommandKind::Claim:
+        return CommandPhase::Tax;
+
       case SimulatedCommandKind::Study:
         return CommandPhase::Produce;
 
@@ -2267,6 +2342,26 @@ namespace
     {
       case SimulatedCommandKind::NoEffect:
       {
+        return;
+      }
+
+      case SimulatedCommandKind::Claim:
+      {
+        if (parsedCommand.claim.amount <= 0)
+        {
+          return;
+        }
+
+        std::map<int, std::map<std::wstring, int>>& originItemCountsMap =
+          isNewUnit ? simulation.itemCountsByNewUnit : simulation.itemCountsByUnit;
+
+        auto originCountsIter = originItemCountsMap.find(originUnitNumber);
+        if (originCountsIter == originItemCountsMap.end())
+        {
+          return;
+        }
+
+        originCountsIter->second[L"SILV"] += parsedCommand.claim.amount;
         return;
       }
 
@@ -2711,12 +2806,12 @@ namespace
         }
         else
         {
-          sourceIsNewUnit = false;
+          sourceIsNewUnit = isNewUnit;
           destinationIsNewUnit = giveCommand.receiverIsNewUnit;
         }
 
         std::map<std::wstring, int>* sourceCounts = nullptr;
-        if (giveCommand.isTake && giveCommand.receiverIsNewUnit)
+        if (sourceIsNewUnit)
         {
           const auto sourceCountsNewIter = simulation.itemCountsByNewUnit.find(sourceUnitNumber);
           if (sourceCountsNewIter == simulation.itemCountsByNewUnit.end())
@@ -3671,6 +3766,28 @@ namespace
 
       if (doubledHexDistance(candidate.getXCoordinate(), candidate.getYCoordinate(), regionX, regionY) <= 2)
       {
+        const auto existingNearbyIter = simulation.nearbyNewUnits.find(unitNumber);
+        if (existingNearbyIter != simulation.nearbyNewUnits.end() && existingNearbyIter->second)
+        {
+          const UnitNew* existing = existingNearbyIter->second;
+          const bool existingIsLocal =
+            existing->getXCoordinate() == regionX &&
+            existing->getYCoordinate() == regionY &&
+            existing->getZCoordinate() == regionZ;
+          const bool candidateIsLocal =
+            candidate.getXCoordinate() == regionX &&
+            candidate.getYCoordinate() == regionY &&
+            candidate.getZCoordinate() == regionZ;
+
+          // UnitNew numbers can repeat across coordinates. Keep the local-region
+          // snapshot when collisions happen so local BUY/SELL effects are simulated
+          // against the correct unit.
+          if (existingIsLocal && !candidateIsLocal)
+          {
+            continue;
+          }
+        }
+
         simulation.nearbyNewUnits[unitNumber] = &candidate;
         simulation.itemCountsByNewUnit[unitNumber] = normalizeItemCountsMap(candidate.getItems());
         simulation.skillsByNewUnit[unitNumber] = candidate.getSkills();
@@ -3767,6 +3884,16 @@ namespace
 
       for (const Order& storedOrder : *storedOrders)
       {
+        // OrderRepository groups UnitNew orders by unit number only. When the same
+        // UnitNew number exists at different coordinates, keep only orders that match
+        // the currently simulated UnitNew snapshot.
+        if (storedOrder.getXCoordinate() != originNewUnit->getXCoordinate()
+            || storedOrder.getYCoordinate() != originNewUnit->getYCoordinate()
+            || storedOrder.getZCoordinate() != originNewUnit->getZCoordinate())
+        {
+          continue;
+        }
+
         ParsedOrderCommand parsedCommand;
         if (!tryParseSupportedOrderCommand(storedOrder.getFullOrderText(), parsedCommand))
         {

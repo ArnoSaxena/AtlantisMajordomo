@@ -25,6 +25,8 @@
 
 #include "GUI/MapTabContentQt.hpp"
 
+#include "AppConfig.hpp"
+
 #include "Data/AppData.hpp"
 #include "Data/BattleRepository.hpp"
 #include "Data/EventRepository.hpp"
@@ -47,6 +49,8 @@
 #include <QListWidget>
 #include <QPlainTextEdit>
 #include <QPushButton>
+#include <QBrush>
+#include <QColor>
 #include <QSignalBlocker>
 #include <QTabWidget>
 #include <QTableWidget>
@@ -206,6 +210,131 @@ bool tryResolveOrderItemToken(const AppData& appData,
         {
             resolvedToken = item.getIdentifierToken();
             return true;
+        }
+
+        int resolveSingleMainFactionNumber(const AppData* appData)
+        {
+            if (!appData)
+            {
+                return 0;
+            }
+
+            const auto& factionRepository = appData->factionRepository();
+            int mainFactionNumber = 0;
+            int mainFactionCount = 0;
+            for (std::size_t index = 0; index < factionRepository.size(); ++index)
+            {
+                const Faction& faction = factionRepository.at(index);
+                if (!faction.isMainFaction())
+                {
+                    continue;
+                }
+
+                ++mainFactionCount;
+                mainFactionNumber = faction.getFactionNumber();
+            }
+
+            return (mainFactionCount == 1) ? mainFactionNumber : 0;
+        }
+
+        int resolveRowFactionNumber(const AppData* appData,
+                                   int rowUnitRoleValue,
+                                   int selectedRegionX,
+                                   int selectedRegionY,
+                                   int selectedZ)
+        {
+            if (!appData)
+            {
+                return 0;
+            }
+
+            if (rowUnitRoleValue > 0)
+            {
+                const Unit* unit = appData->unitRepository().findByNumber(rowUnitRoleValue);
+                return unit ? unit->getFactionNumber() : 0;
+            }
+
+            if (rowUnitRoleValue < 0)
+            {
+                const int unitNewNumber = -rowUnitRoleValue;
+                const UnitNew* unitNew = appData->unitNewRepository().findByNumberAndCoordinates(
+                    unitNewNumber,
+                    selectedRegionX,
+                    selectedRegionY,
+                    selectedZ);
+                if (!unitNew)
+                {
+                    return 0;
+                }
+
+                int factionNumber = unitNew->getFactionNumber();
+                if (factionNumber <= 0)
+                {
+                    const Unit* originUnit = appData->unitRepository().findByNumber(unitNew->getOriginUnit());
+                    if (originUnit)
+                    {
+                        factionNumber = originUnit->getFactionNumber();
+                    }
+                }
+
+                return factionNumber;
+            }
+
+            return 0;
+        }
+
+        void applyUnitsListFactionTextColors(QTableWidget* unitsList,
+                                             const AppData* appData,
+                                             const AppConfig* appConfig,
+                                             int selectedRegionX,
+                                             int selectedRegionY,
+                                             int selectedZ)
+        {
+            if (!unitsList || !appData || !appConfig)
+            {
+                return;
+            }
+
+            const int mainFactionNumber = resolveSingleMainFactionNumber(appData);
+            if (mainFactionNumber <= 0)
+            {
+                return;
+            }
+
+            const int rowCount = unitsList->rowCount();
+            const int columnCount = unitsList->columnCount();
+            for (int row = 0; row < rowCount; ++row)
+            {
+                const QTableWidgetItem* numberItem = unitsList->item(row, 0);
+                const int rowUnitRoleValue = numberItem ? numberItem->data(kUnitNumberRole).toInt() : 0;
+                const int rowFactionNumber = resolveRowFactionNumber(
+                    appData,
+                    rowUnitRoleValue,
+                    selectedRegionX,
+                    selectedRegionY,
+                    selectedZ);
+                if (rowFactionNumber <= 0)
+                {
+                    continue;
+                }
+
+                const std::array<int, 3> rgb = (rowFactionNumber == mainFactionNumber)
+                    ? appConfig->getMainFactionUnitTextColor()
+                    : appConfig->getOtherFactionUnitTextColor();
+                const QBrush brush(QColor(
+                    std::clamp(rgb[0], 0, 255),
+                    std::clamp(rgb[1], 0, 255),
+                    std::clamp(rgb[2], 0, 255)));
+
+                for (int column = 0; column < columnCount; ++column)
+                {
+                    QTableWidgetItem* item = unitsList->item(row, column);
+                    if (item)
+                    {
+                        item->setForeground(brush);
+                    }
+                }
+            }
         }
     }
 
@@ -766,6 +895,14 @@ void MapTabContentQt::populateUnitsForSelectedRegion()
         sortUnitsListByColumn(unitsListSortColumn_, unitsListSortAscending_);
     }
 
+    applyUnitsListFactionTextColors(
+        unitsList_,
+        appData_,
+        appConfig_,
+        selectedRegionX_,
+        selectedRegionY_,
+        selectedZ_);
+
     updateSelectedUnitFromList();
 }
 
@@ -850,6 +987,14 @@ void MapTabContentQt::sortUnitsListByColumn(int columnIndex, bool ascending)
             unitsList_->setCurrentCell(rowIndex, 0);
         }
     }
+
+    applyUnitsListFactionTextColors(
+        unitsList_,
+        appData_,
+        appConfig_,
+        selectedRegionX_,
+        selectedRegionY_,
+        selectedZ_);
 }
 
 void MapTabContentQt::updateUnitsListSortHeaderMarkers()
@@ -1591,7 +1736,7 @@ void MapTabContentQt::updateSelectedUnitDetailsByNumber(int unitNumber)
 
         if (!unitNew->getWarnings().empty())
         {
-            unitWarningLabel_->setText(toQString(unitNew->getWarnings().front()));
+            unitWarningLabel_->setText(toQString(StringUtils::joinLines(unitNew->getWarnings(), L" | ")));
         }
         else
         {
@@ -1635,7 +1780,7 @@ void MapTabContentQt::updateSelectedUnitDetailsByNumber(int unitNumber)
 
     if (!unit->getWarnings().empty())
     {
-        unitWarningLabel_->setText(toQString(unit->getWarnings().front()));
+        unitWarningLabel_->setText(toQString(StringUtils::joinLines(unit->getWarnings(), L" | ")));
     }
     else
     {

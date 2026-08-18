@@ -77,6 +77,8 @@ private:
   static constexpr int IDC_REPORT_FOLDER_PATH_BROWSE = GUI::ControlIds::kSettingsReportFolderBrowse;
   static constexpr int IDC_UI_SIZE_MODE_COMBO = GUI::ControlIds::kSettingsUiSizeModeCombo;
   static constexpr int IDC_MAP_HEX_SIZE_MODE_COMBO = GUI::ControlIds::kSettingsMapHexSizeModeCombo;
+  static constexpr int IDC_MAIN_FACTION_UNIT_COLOR_EDIT = GUI::ControlIds::kSettingsMainFactionUnitColorEdit;
+  static constexpr int IDC_OTHER_FACTION_UNIT_COLOR_EDIT = GUI::ControlIds::kSettingsOtherFactionUnitColorEdit;
   //static constexpr int IDC_FLYING_SHIPS_ADD = GUI::ControlIds::kSettingsFlyingShipsAdd;
   //static constexpr int IDC_FLYING_SHIPS_REMOVE = GUI::ControlIds::kSettingsFlyingShipsRemove;
   static constexpr int IDC_FULL_MONTH_ORDERS_ADD = GUI::ControlIds::kSettingsFullMonthOrdersAdd;
@@ -99,6 +101,8 @@ private:
   HWND reportFolderPathEdit_ { nullptr };
   HWND uiSizeModeCombo_ { nullptr };
   HWND mapHexSizeModeCombo_ { nullptr };
+  HWND mainFactionUnitColorEdit_ { nullptr };
+  HWND otherFactionUnitColorEdit_ { nullptr };
   //HWND flyingShipsList_ { nullptr };
   HWND fullMonthOrdersList_ { nullptr };
   HWND magicTriggersList_ { nullptr };

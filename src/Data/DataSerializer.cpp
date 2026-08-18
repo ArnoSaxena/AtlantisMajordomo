@@ -22,6 +22,8 @@
 // 304c89c8-6d3c-4586-b0c4-fad2e67b2f65
 #include "Data/DataSerializer.hpp"
 #include "Data/AppData.hpp"
+#include "Data/Event.hpp"
+#include "Data/EventRepository.hpp"
 #include "Data/Faction.hpp"
 #include "Data/FactionRepository.hpp"
 #include "Data/Region.hpp"
@@ -91,7 +93,21 @@ bool DataSerializer::saveToFile(const AppData& appData, const std::wstring& file
       file << L"      \"apprenticesCurrent\": " << faction.getApprenticesCurrent() << L",\n";
       file << L"      \"apprenticesMax\": " << faction.getApprenticesMax() << L",\n";
       file << L"      \"month\": " << faction.getMonth() << L",\n";
-      file << L"      \"year\": " << faction.getYear() << L"\n";
+      file << L"      \"year\": " << faction.getYear() << L",\n";
+      file << L"      \"unclaimedSilver\": " << faction.getUnclaimedSilver() << L",\n";
+      file << L"      \"unclaimedSilverAfterOrders\": " << faction.getUnclaimedSilverAfterOrders() << L",\n";
+      file << L"      \"commandUnitNumber\": " << faction.getCommandUnitNumber() << L",\n";
+      file << L"      \"defaultAttitude\": \"" << static_cast<int>(faction.getDefaultAttitude()) << L"\",\n";
+      file << L"      \"declaredAttitudes\": {";
+      const auto& attitudes = faction.getDeclaredAttitudes();
+      size_t attIndex = 0;
+      for (const auto& [factionNum, attitude] : attitudes)
+      {
+        if (attIndex > 0) file << L", ";
+        file << L"\"" << factionNum << L"\": " << static_cast<int>(attitude);
+        ++attIndex;
+      }
+      file << L"}\n";
       file << L"    }";
     }
 
@@ -231,7 +247,8 @@ bool DataSerializer::saveToFile(const AppData& appData, const std::wstring& file
         if (j > 0) file << L", ";
         file << L"\"" << JsonUtils::escapeJsonString(orders[j]) << L"\"";
       }
-      file << L"]\n";
+      file << L"],\n";
+      file << L"      \"onGuard\": " << (unit.isOnGuard() ? L"true" : L"false") << L"\n";
       file << L"    }";
     }
 
@@ -317,7 +334,9 @@ bool DataSerializer::saveToFile(const AppData& appData, const std::wstring& file
       if (i > 0) file << L",\n";
       file << L"    {\n";
       file << L"      \"unitId\": " << eventValue.getUnitId() << L",\n";
-      file << L"      \"message\": \"" << JsonUtils::escapeJsonString(eventValue.getMessage()) << L"\"\n";
+      file << L"      \"message\": \"" << JsonUtils::escapeJsonString(eventValue.getMessage()) << L"\",\n";
+      file << L"      \"month\": " << eventValue.getMonth() << L",\n";
+      file << L"      \"year\": " << eventValue.getYear() << L"\n";
       file << L"    }";
     }
 
@@ -1012,6 +1031,10 @@ bool DataSerializer::loadFromFile(AppData& appData, const std::wstring& filePath
         std::wstring obj = factionsArray.substr(objStart + 1, objEnd - objStart - 1);
 
         int number = 0, month = 0, year = 0;
+        int unclaimedSilver = 0;
+        int unclaimedSilverAfterOrders = 0;
+        int commandUnitNumber = 0;
+        int defaultAttitudeValue = static_cast<int>(Faction::Attitude::Neutral);
         int taxedOrTradedRegionsCurrent = 0;
         int taxedOrTradedRegionsMax = 0;
         int quartermastersCurrent = 0;
@@ -1023,6 +1046,7 @@ bool DataSerializer::loadFromFile(AppData& appData, const std::wstring& filePath
         std::wstring name;
         std::wstring password;
         bool mainFaction = false;
+        std::map<int, int> declaredAttitudesMap;
 
         size_t fieldPos = 0;
         while ((fieldPos = obj.find(L'"', fieldPos)) != std::wstring::npos)
@@ -1064,6 +1088,22 @@ bool DataSerializer::loadFromFile(AppData& appData, const std::wstring& filePath
             parseJsonNumber(fieldValue, month);
           else if (fieldName == L"year")
             parseJsonNumber(fieldValue, year);
+          else if (fieldName == L"unclaimedSilver")
+            parseJsonNumber(fieldValue, unclaimedSilver);
+          else if (fieldName == L"unclaimedSilverAfterOrders")
+            parseJsonNumber(fieldValue, unclaimedSilverAfterOrders);
+          else if (fieldName == L"commandUnitNumber")
+            parseJsonNumber(fieldValue, commandUnitNumber);
+          else if (fieldName == L"defaultAttitude")
+            parseJsonNumber(fieldValue, defaultAttitudeValue);
+          else if (fieldName == L"declaredAttitudes")
+          {
+            std::map<std::wstring, int> rawMap = parseJsonStringIntMap(fieldValue);
+            for (const auto& [keyStr, value] : rawMap)
+            {
+              try { declaredAttitudesMap[std::stoi(keyStr)] = value; } catch (...) { }
+            }
+          }
 
           fieldPos = fieldEnd + 1;
         }
@@ -1082,6 +1122,19 @@ bool DataSerializer::loadFromFile(AppData& appData, const std::wstring& filePath
                                         magesMax,
                                         apprenticesCurrent,
                                         apprenticesMax);
+
+        // Set additional fields that were not in the original add() parameters
+        if (Faction* faction = const_cast<Faction*>(appData.factionRepository().findByNumber(number)))
+        {
+          faction->setUnclaimedSilver(unclaimedSilver);
+          faction->setUnclaimedSilverAfterOrders(unclaimedSilverAfterOrders);
+          faction->setCommandUnitNumber(commandUnitNumber);
+          faction->setDefaultAttitude(static_cast<Faction::Attitude>(defaultAttitudeValue));
+          for (const auto& [factionNum, attitude] : declaredAttitudesMap)
+          {
+            faction->setDeclaredAttitude(factionNum, static_cast<Faction::Attitude>(attitude));
+          }
+        }
         pos = objEnd + 1;
       }
     }
@@ -1312,6 +1365,7 @@ bool DataSerializer::loadFromFile(AppData& appData, const std::wstring& filePath
 
         int number = 0, factionNumber = 0, structureId = 0, x = 0, y = 0, z = 1, month = 0, year = 0, weight = 0;
         int capacityWalk = 0, capacityRide = 0, capacityFly = 0, capacitySwim = 0;
+        bool onGuard = false;
         std::wstring name;
         std::vector<std::wstring> flags, skillStrings, canStudySkills, orders;
         std::map<std::wstring, int> skills;
@@ -1359,6 +1413,7 @@ bool DataSerializer::loadFromFile(AppData& appData, const std::wstring& filePath
         if (extractObjectFieldValue(L"skills", fieldValue))      skillStrings = parseJsonStringArray(fieldValue);
         if (extractObjectFieldValue(L"canStudySkills", fieldValue)) canStudySkills = parseJsonStringArray(fieldValue);
         if (extractObjectFieldValue(L"orders", fieldValue))      orders = parseJsonStringArray(fieldValue);
+        if (extractObjectFieldValue(L"onGuard", fieldValue))     parseJsonBool(fieldValue, onGuard);
 
         static const std::wregex skillDetailPattern(L"(\\[([^\\]]+)\\]\\s+)?(\\d+)");
         for (const std::wstring& skillString : skillStrings)
@@ -1414,6 +1469,13 @@ bool DataSerializer::loadFromFile(AppData& appData, const std::wstring& filePath
           if (Unit* loadedUnit = appData.unitRepository().findByNumber(number))
           {
             loadedUnit->setCanStudySkillTokens(std::move(canStudySkills));
+          }
+        }
+        if (onGuard)
+        {
+          if (Unit* loadedUnit = appData.unitRepository().findByNumber(number))
+          {
+            loadedUnit->setOnGuard(true);
           }
         }
         pos = objEnd + 1;
@@ -1570,6 +1632,8 @@ bool DataSerializer::loadFromFile(AppData& appData, const std::wstring& filePath
         std::wstring obj = eventsArray.substr(objStart + 1, objEnd - objStart - 1);
 
         int unitId = 0;
+        int month = 0;
+        int year = 0;
         std::wstring message;
 
         size_t fieldPos = 0;
@@ -1588,13 +1652,18 @@ bool DataSerializer::loadFromFile(AppData& appData, const std::wstring& filePath
             parseJsonNumber(fieldValue, unitId);
           else if (fieldName == L"message")
             parseJsonString(fieldValue, message);
+          else if (fieldName == L"month")
+            parseJsonNumber(fieldValue, month);
+          else if (fieldName == L"year")
+            parseJsonNumber(fieldValue, year);
 
           fieldPos = fieldEnd + 1;
         }
 
         if (unitId != 0 && !message.empty())
         {
-          appData.eventRepository().add(unitId, message);
+          int eventId = appData.eventRepository().getNextEventId();
+          appData.eventRepository().add(Event(unitId, eventId, message, month, year));
         }
         pos = objEnd + 1;
       }

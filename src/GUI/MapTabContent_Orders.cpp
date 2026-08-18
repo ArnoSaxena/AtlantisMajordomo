@@ -141,6 +141,11 @@ LRESULT CALLBACK MapTabContent::ordersEditorSubclassProc(HWND hwnd,
     }
   }
 
+  if (msg == WM_KILLFOCUS && hwnd == self->ordersEditor_)
+  {
+    self->saveOrdersToSelectedUnit();
+  }
+
   return DefSubclassProc(hwnd, msg, wp, lp);
 }
 

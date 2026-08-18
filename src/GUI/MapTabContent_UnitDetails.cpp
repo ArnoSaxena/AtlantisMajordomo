@@ -1345,7 +1345,7 @@ void MapTabContent::updateSelectedUnitDetailsByNumber(int unitNumber)
     {
       if (!unitNew->getWarnings().empty())
       {
-        SetWindowTextW(unitWarningLabel_, unitNew->getWarnings().front().c_str());
+        SetWindowTextW(unitWarningLabel_, StringUtils::joinLines(unitNew->getWarnings(), L" | ").c_str());
       }
       else
       {
@@ -1407,7 +1407,7 @@ void MapTabContent::updateSelectedUnitDetailsByNumber(int unitNumber)
   {
     if (!unit->getWarnings().empty())
     {
-      SetWindowTextW(unitWarningLabel_, unit->getWarnings().front().c_str());
+      SetWindowTextW(unitWarningLabel_, StringUtils::joinLines(unit->getWarnings(), L" | ").c_str());
     }
     else
     {

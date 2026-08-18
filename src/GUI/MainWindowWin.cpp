@@ -63,6 +63,7 @@ constexpr int IDM_FILE_SAVE        = 1003;
 constexpr int IDM_FILE_LOAD_REPORT = 1004;
 constexpr int IDM_FILE_IMPORT_DATA = 1006;
 constexpr int IDM_FILE_EXPORT_ORDERS = 1007;
+constexpr int IDM_FILE_IMPORT_ORDERS = 1008;
 constexpr int IDM_FILE_EXIT        = 1005;
 constexpr int IDM_SETTINGS_OPTIONS = 2001;
 constexpr int IDM_HELP_ABOUT       = 9001;
@@ -447,6 +448,97 @@ namespace
       + L"_"
       + formatTwoDigits(exportContext.nextMonth)
       + L".ord";
+  }
+
+  // Returns the number of units updated on success, or -1 on error.
+  // Parses a .ord file and updates the order fields for matching units.
+  int importOrdersFromContent(AppData& appData, const std::wstring& fileContent, std::wstring& errorMessage)
+  {
+    errorMessage.clear();
+    int unitsUpdated = 0;
+
+    // Split content into lines
+    std::vector<std::wstring> lines;
+    {
+      std::wistringstream iss(fileContent);
+      std::wstring line;
+      while (std::getline(iss, line))
+      {
+        // Remove trailing whitespace
+        while (!line.empty() && (line.back() == L'\r' || line.back() == L' ' || line.back() == L'\t'))
+        {
+          line.pop_back();
+        }
+        lines.push_back(line);
+      }
+    }
+
+    // Parse the file
+    int currentUnitNumber = -1;
+    std::vector<std::wstring> currentOrders;
+
+    for (const auto& line : lines)
+    {
+      // Skip empty lines and comments
+      if (line.empty() || line[0] == L'#')
+      {
+        continue;
+      }
+
+      // Trim leading whitespace
+      std::size_t startPos = 0;
+      while (startPos < line.size() && (line[startPos] == L' ' || line[startPos] == L'\t'))
+      {
+        ++startPos;
+      }
+
+      std::wstring trimmedLine = line.substr(startPos);
+
+      // Check for "unit <number>" directive
+      if (trimmedLine.size() > 5 && trimmedLine.substr(0, 5) == L"unit ")
+      {
+        // Save previous unit's orders if any
+        if (currentUnitNumber != -1 && !currentOrders.empty())
+        {
+          Unit* unit = appData.unitRepository().findByNumber(currentUnitNumber);
+          if (unit)
+          {
+            unit->setOrders(currentOrders);
+            ++unitsUpdated;
+          }
+        }
+
+        // Parse new unit number
+        try
+        {
+          currentUnitNumber = std::stoi(trimmedLine.substr(5));
+          currentOrders.clear();
+        }
+        catch (const std::exception&)
+        {
+          errorMessage = L"Invalid unit number format in file.";
+          return -1;
+        }
+      }
+      else if (currentUnitNumber != -1)
+      {
+        // This is an order line for the current unit
+        currentOrders.push_back(trimmedLine);
+      }
+    }
+
+    // Save the last unit's orders if any
+    if (currentUnitNumber != -1 && !currentOrders.empty())
+    {
+      Unit* unit = appData.unitRepository().findByNumber(currentUnitNumber);
+      if (unit)
+      {
+        unit->setOrders(currentOrders);
+        ++unitsUpdated;
+      }
+    }
+
+    return unitsUpdated;
   }
 
   std::wstring buildOrdersExportContent(const AppData& appData,
@@ -893,6 +985,35 @@ namespace
       return false;
     }
 
+    errorMessage.clear();
+    return true;
+  }
+
+  bool readTextFile(const std::wstring& filePath,
+                    std::wstring& content,
+                    std::wstring& errorMessage)
+  {
+    std::wifstream file(filePath);
+    if (!file.is_open())
+    {
+      errorMessage = L"Failed to open file for reading: " + filePath;
+      return false;
+    }
+
+    std::wstring line;
+    std::wostringstream buffer;
+    while (std::getline(file, line))
+    {
+      buffer << line << L"\n";
+    }
+
+    if (!file.good() && !file.eof())
+    {
+      errorMessage = L"Failed while reading file: " + filePath;
+      return false;
+    }
+
+    content = buffer.str();
     errorMessage.clear();
     return true;
   }
@@ -1572,6 +1693,55 @@ LRESULT MainWindow::handleMessage(UINT msg, WPARAM wp, LPARAM lp)
           return 0;
         }
 
+        case IDM_FILE_IMPORT_ORDERS:
+        {
+          if (mapTabContent_)
+          {
+            mapTabContent_->commitPendingEdits();
+          }
+
+          std::wstring initialFolder = appConfig_.getExportOrdersFolder();
+          if (initialFolder.empty())
+          {
+            initialFolder = directoryFromFilePath(appConfig_.getSaveFilePath());
+          }
+
+          static constexpr wchar_t kOrdersFilter[] = L"Order Files (*.ord)\0*.ord\0All Files (*)\0*.*\0";
+          std::wstring inputFilePath = getFileDialogPath(hwnd_,
+                                                         false,
+                                                         initialFolder,
+                                                         L"ord",
+                                                         kOrdersFilter);
+          if (inputFilePath.empty())
+          {
+            return 0;
+          }
+
+          appConfig_.setExportOrdersFolder(directoryFromFilePath(inputFilePath));
+          appConfig_.save();
+
+          std::wstring fileContent;
+          std::wstring readError;
+          if (!readTextFile(inputFilePath, fileContent, readError))
+          {
+            MessageBoxW(hwnd_, readError.c_str(), L"Import Orders", MB_ICONERROR | MB_OK);
+            return 0;
+          }
+
+          std::wstring importError;
+          int unitsUpdated = importOrdersFromContent(*appData_, fileContent, importError);
+          if (unitsUpdated < 0)
+          {
+            MessageBoxW(hwnd_, importError.c_str(), L"Import Orders", MB_ICONERROR | MB_OK);
+            return 0;
+          }
+
+          refreshAllTabContents();
+          std::wstring successMessage = L"Orders imported successfully for " + std::to_wstring(unitsUpdated) + L" unit(s).";
+          MessageBoxW(hwnd_, successMessage.c_str(), L"Import Orders", MB_ICONINFORMATION | MB_OK);
+          return 0;
+        }
+
         case IDM_FILE_EXIT:
           PostMessageW(hwnd_, WM_CLOSE, 0, 0);
           return 0;
@@ -1720,6 +1890,7 @@ void MainWindow::createMenu()
   AppendMenuW(hFileMenu, MFT_STRING, IDM_FILE_LOAD_REPORT, L"&Load Report");
   AppendMenuW(hFileMenu, MFT_STRING, IDM_FILE_IMPORT_DATA, L"&Import Data...");
   AppendMenuW(hFileMenu, MFT_STRING, IDM_FILE_EXPORT_ORDERS, L"E&xport Orders...");
+  AppendMenuW(hFileMenu, MFT_STRING, IDM_FILE_IMPORT_ORDERS, L"&Import Orders...");
   AppendMenuW(hFileMenu, MFT_SEPARATOR, 0,                 nullptr);
   AppendMenuW(hFileMenu, MFT_STRING, IDM_FILE_EXIT,        L"E&xit");
 

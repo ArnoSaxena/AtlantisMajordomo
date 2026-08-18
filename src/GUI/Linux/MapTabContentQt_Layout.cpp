@@ -26,6 +26,7 @@
 #include "GUI/MapTabContentQt.hpp"
 #include "GUI/MapCanvasWidget.hpp"
 
+#include <QApplication>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
@@ -359,6 +360,16 @@ MapTabContentQt::MapTabContentQt(AppData&   appData,
         ordersEditor_->setContextMenuPolicy(Qt::CustomContextMenu);
         connect(ordersEditor_, &QPlainTextEdit::customContextMenuRequested,
             this, &MapTabContentQt::onOrdersEditorContextMenuRequested);
+
+        connect(qApp, &QApplication::focusChanged,
+            this,
+            [this](QWidget* oldWidget, QWidget* nowWidget)
+            {
+                if (oldWidget == ordersEditor_ && nowWidget != ordersEditor_)
+                {
+                    saveOrdersToSelectedUnit();
+                }
+            });
 
         unitSkillsList_->setContextMenuPolicy(Qt::CustomContextMenu);
         connect(unitSkillsList_, &QListWidget::customContextMenuRequested,

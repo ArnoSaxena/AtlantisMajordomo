@@ -30,6 +30,7 @@
 #include "Function/StringUtils.hpp"
 
 #include <algorithm>
+#include <array>
 #include <commdlg.h>
 #include <shlobj.h>
 #include <cwchar>
@@ -245,6 +246,45 @@ std::wstring getReportFolderPath(HWND hwnd)
   return folder;
 }
 
+std::wstring formatRgbColor(const std::array<int, 3>& rgb)
+{
+  return std::to_wstring(rgb[0]) + L", " + std::to_wstring(rgb[1]) + L", " + std::to_wstring(rgb[2]);
+}
+
+bool tryParseRgbColorText(const std::wstring& text, std::array<int, 3>& rgb)
+{
+  const std::vector<std::wstring> tokens = StringUtils::splitByComma(text);
+  if (tokens.size() != 3)
+  {
+    return false;
+  }
+
+  for (std::size_t index = 0; index < 3; ++index)
+  {
+    const std::wstring token = StringUtils::trimWhitespace(tokens[index]);
+    if (token.empty())
+    {
+      return false;
+    }
+
+    try
+    {
+      const int value = std::stoi(token);
+      if (value < 0 || value > 255)
+      {
+        return false;
+      }
+      rgb[index] = value;
+    }
+    catch (const std::exception&)
+    {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 } // namespace
 
 SettingsDialog::SettingsDialog() = default;
@@ -331,6 +371,36 @@ bool SettingsDialog::applySettingsFromControls(HWND hwnd, bool closeOnSuccess)
     reportFolderPath = StringUtils::trimWhitespace(folderPathBuffer);
   }
 
+  std::array<int, 3> mainFactionUnitTextColor { 0, 0, 0 };
+  if (mainFactionUnitColorEdit_)
+  {
+    wchar_t colorBuffer[64] = {};
+    GetWindowTextW(mainFactionUnitColorEdit_, colorBuffer, static_cast<int>(std::size(colorBuffer)));
+    if (!tryParseRgbColorText(colorBuffer, mainFactionUnitTextColor))
+    {
+      MessageBoxW(hwnd,
+                  L"Main faction unit text color must be in format R, G, B with values from 0 to 255.",
+                  L"Invalid Settings",
+                  MB_ICONERROR | MB_OK);
+      return false;
+    }
+  }
+
+  std::array<int, 3> otherFactionUnitTextColor { 128, 128, 128 };
+  if (otherFactionUnitColorEdit_)
+  {
+    wchar_t colorBuffer[64] = {};
+    GetWindowTextW(otherFactionUnitColorEdit_, colorBuffer, static_cast<int>(std::size(colorBuffer)));
+    if (!tryParseRgbColorText(colorBuffer, otherFactionUnitTextColor))
+    {
+      MessageBoxW(hwnd,
+                  L"Other faction unit text color must be in format R, G, B with values from 0 to 255.",
+                  L"Invalid Settings",
+                  MB_ICONERROR | MB_OK);
+      return false;
+    }
+  }
+
   if (appConfig_)
   {
     const LRESULT onlyLeaderChecked = SendMessageW(onlyLeaderCanTeachCheck_, BM_GETCHECK, 0, 0);
@@ -342,6 +412,8 @@ bool SettingsDialog::applySettingsFromControls(HWND hwnd, bool closeOnSuccess)
     appConfig_->setMagicSkillTriggersCsv(magicTriggersCsv);
     appConfig_->setDataFilePath(dataFilePath);
     appConfig_->setReportImportFolder(reportFolderPath);
+    appConfig_->setMainFactionUnitTextColor(mainFactionUnitTextColor);
+    appConfig_->setOtherFactionUnitTextColor(otherFactionUnitTextColor);
 
     if (uiSizeModeCombo_)
     {
@@ -860,6 +932,66 @@ int SettingsDialog::showDialog(HWND parentHwnd, AppData& appData, AppConfig& app
     SendMessageW(mapHexSizeModeCombo_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Large"));
   }
 
+  CreateWindowExW(
+    0,
+    L"STATIC",
+    L"Main faction unit text color (R,G,B):",
+    WS_CHILD | WS_VISIBLE,
+    sx(320),
+    sx(114),
+    sx(220),
+    (std::max)(metrics.rowHeight, sx(20)),
+    hwnd_,
+    nullptr,
+    GetModuleHandleW(nullptr),
+    nullptr
+  );
+
+  mainFactionUnitColorEdit_ = CreateWindowExW(
+    WS_EX_CLIENTEDGE,
+    L"EDIT",
+    L"",
+    WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
+    sx(540),
+    sx(110),
+    sx(190),
+    (std::max)(metrics.buttonHeight, sx(24)),
+    hwnd_,
+    reinterpret_cast<HMENU>(static_cast<intptr_t>(IDC_MAIN_FACTION_UNIT_COLOR_EDIT)),
+    GetModuleHandleW(nullptr),
+    nullptr
+  );
+
+  CreateWindowExW(
+    0,
+    L"STATIC",
+    L"Other faction unit text color (R,G,B):",
+    WS_CHILD | WS_VISIBLE,
+    sx(320),
+    sx(148),
+    sx(220),
+    (std::max)(metrics.rowHeight, sx(20)),
+    hwnd_,
+    nullptr,
+    GetModuleHandleW(nullptr),
+    nullptr
+  );
+
+  otherFactionUnitColorEdit_ = CreateWindowExW(
+    WS_EX_CLIENTEDGE,
+    L"EDIT",
+    L"",
+    WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
+    sx(540),
+    sx(144),
+    sx(190),
+    (std::max)(metrics.buttonHeight, sx(24)),
+    hwnd_,
+    reinterpret_cast<HMENU>(static_cast<intptr_t>(IDC_OTHER_FACTION_UNIT_COLOR_EDIT)),
+    GetModuleHandleW(nullptr),
+    nullptr
+  );
+
   /*
   CreateWindowExW(
     0,
@@ -1180,6 +1312,16 @@ int SettingsDialog::showDialog(HWND parentHwnd, AppData& appData, AppConfig& app
     const int index = findComboItemByTextInsensitive(mapHexSizeModeCombo_, appConfig_->getMapHexSizeMode().c_str());
     SendMessageW(mapHexSizeModeCombo_, CB_SETCURSEL, static_cast<WPARAM>((index >= 0) ? index : 1), 0);
   }
+  if (mainFactionUnitColorEdit_)
+  {
+    const std::wstring value = formatRgbColor(appConfig_->getMainFactionUnitTextColor());
+    SetWindowTextW(mainFactionUnitColorEdit_, value.c_str());
+  }
+  if (otherFactionUnitColorEdit_)
+  {
+    const std::wstring value = formatRgbColor(appConfig_->getOtherFactionUnitTextColor());
+    SetWindowTextW(otherFactionUnitColorEdit_, value.c_str());
+  }
   if (leaderMagesCheck_)
   {
     SendMessageW(leaderMagesCheck_,
@@ -1211,6 +1353,8 @@ int SettingsDialog::showDialog(HWND parentHwnd, AppData& appData, AppConfig& app
   reportFolderPathEdit_ = nullptr;
   uiSizeModeCombo_ = nullptr;
   mapHexSizeModeCombo_ = nullptr;
+  mainFactionUnitColorEdit_ = nullptr;
+  otherFactionUnitColorEdit_ = nullptr;
   //flyingShipsList_ = nullptr;
   fullMonthOrdersList_ = nullptr;
   magicTriggersList_ = nullptr;

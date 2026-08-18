@@ -228,6 +228,26 @@ public:
     */
     std::array<int, 3> getStructureMarkerColor() const;
 
+    /**
+    * @brief Gets the configured RGB text color for map unit-list rows of the main faction.
+    */
+    std::array<int, 3> getMainFactionUnitTextColor() const;
+
+    /**
+    * @brief Gets the configured RGB text color for map unit-list rows of non-main factions.
+    */
+    std::array<int, 3> getOtherFactionUnitTextColor() const;
+
+    /**
+    * @brief Sets the configured RGB text color for map unit-list rows of the main faction.
+    */
+    void setMainFactionUnitTextColor(const std::array<int, 3>& rgbColor);
+
+    /**
+    * @brief Sets the configured RGB text color for map unit-list rows of non-main factions.
+    */
+    void setOtherFactionUnitTextColor(const std::array<int, 3>& rgbColor);
+
 private:
   std::wstring configFilePath_;
   std::wstring saveFilePath_;
@@ -272,4 +292,6 @@ private:
   std::array<int, 3> roadColor_ { 0, 0, 0 };
   std::array<int, 3> structureMarkerColor_ { 0, 0, 0 };
   std::array<int, 3> selectedRegionBorderColor_ { 173, 216, 230 };
+  std::array<int, 3> mainFactionUnitTextColor_ { 0, 0, 0 };
+  std::array<int, 3> otherFactionUnitTextColor_ { 128, 128, 128 };
 };

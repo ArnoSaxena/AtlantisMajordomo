@@ -31,6 +31,7 @@
 #include "Function/JsonUtils.hpp"
 #include "Function/StringUtils.hpp"
 
+#include <algorithm>
 #include <cwctype>
 #include <filesystem>
 #include <fstream>
@@ -276,6 +277,8 @@ bool AppConfig::load()
   bool hasPeasantsBlock = false;
   bool hasRoadEntry = false;
   bool hasStructureMarkerEntry = false;
+  bool hasMainFactionUnitTextEntry = false;
+  bool hasOtherFactionUnitTextEntry = false;
   std::wstring coloursObject;
   if (JsonUtils::extractJsonObjectField(content, L"colours", coloursObject))
   {
@@ -352,13 +355,35 @@ bool AppConfig::load()
         selectedRegionBorderColor_ = parsedRgb;
       }
     }
+
+    std::wstring jsonMainFactionUnitTextRgb;
+    if (JsonUtils::extractJsonFieldValue(coloursObject, L"mainFactionUnitText", jsonMainFactionUnitTextRgb))
+    {
+      hasMainFactionUnitTextEntry = true;
+      std::array<int, 3> parsedRgb { 0, 0, 0 };
+      if (JsonUtils::parseRgbColorArray(jsonMainFactionUnitTextRgb, parsedRgb))
+      {
+        mainFactionUnitTextColor_ = parsedRgb;
+      }
+    }
+
+    std::wstring jsonOtherFactionUnitTextRgb;
+    if (JsonUtils::extractJsonFieldValue(coloursObject, L"otherFactionUnitText", jsonOtherFactionUnitTextRgb))
+    {
+      hasOtherFactionUnitTextEntry = true;
+      std::array<int, 3> parsedRgb { 0, 0, 0 };
+      if (JsonUtils::parseRgbColorArray(jsonOtherFactionUnitTextRgb, parsedRgb))
+      {
+        otherFactionUnitTextColor_ = parsedRgb;
+      }
+    }
   }
   else
   {
     DebugLog(L"AppConfig::load() - colours block NOT found in config");
   }
 
-  if (!hasColoursBlock || !hasRegionsBlock || !hasPeasantsBlock || !hasRoadEntry || !hasStructureMarkerEntry || !hasMainWindowWidth || !hasMainWindowHeight || !hasMapHexWidth || !hasUiSizeMode || !hasExportOrdersFolder || !hasDataFilePath || !hasOnlyLeaderCanTeach || !hasLeaderMages || !hasFlyingShipsCsv || !hasFullMonthOrdersCsv || !hasMagicSkillTriggersCsv)
+  if (!hasColoursBlock || !hasRegionsBlock || !hasPeasantsBlock || !hasRoadEntry || !hasStructureMarkerEntry || !hasMainFactionUnitTextEntry || !hasOtherFactionUnitTextEntry || !hasMainWindowWidth || !hasMainWindowHeight || !hasMapHexWidth || !hasUiSizeMode || !hasExportOrdersFolder || !hasDataFilePath || !hasOnlyLeaderCanTeach || !hasLeaderMages || !hasFlyingShipsCsv || !hasFullMonthOrdersCsv || !hasMagicSkillTriggersCsv)
   {
     DebugLog(L"AppConfig::load() - missing fields detected, re-saving config with defaults");
     save();
@@ -432,7 +457,15 @@ bool AppConfig::save() const
       file << L"    \"selectedRegionBorder\": ["
         << selectedRegionBorderColor_[0] << L", "
         << selectedRegionBorderColor_[1] << L", "
-        << selectedRegionBorderColor_[2] << L"]\n";
+        << selectedRegionBorderColor_[2] << L"],\n";
+      file << L"    \"mainFactionUnitText\": ["
+        << mainFactionUnitTextColor_[0] << L", "
+        << mainFactionUnitTextColor_[1] << L", "
+        << mainFactionUnitTextColor_[2] << L"],\n";
+      file << L"    \"otherFactionUnitText\": ["
+        << otherFactionUnitTextColor_[0] << L", "
+        << otherFactionUnitTextColor_[1] << L", "
+        << otherFactionUnitTextColor_[2] << L"]\n";
       file << L"  }\n";
   file << L"}\n";
 
@@ -683,6 +716,34 @@ std::array<int, 3> AppConfig::getStructureMarkerColor() const
   return structureMarkerColor_;
 }
 
+std::array<int, 3> AppConfig::getMainFactionUnitTextColor() const
+{
+  return mainFactionUnitTextColor_;
+}
+
+std::array<int, 3> AppConfig::getOtherFactionUnitTextColor() const
+{
+  return otherFactionUnitTextColor_;
+}
+
+void AppConfig::setMainFactionUnitTextColor(const std::array<int, 3>& rgbColor)
+{
+  mainFactionUnitTextColor_ = {
+    std::clamp(rgbColor[0], 0, 255),
+    std::clamp(rgbColor[1], 0, 255),
+    std::clamp(rgbColor[2], 0, 255)
+  };
+}
+
+void AppConfig::setOtherFactionUnitTextColor(const std::array<int, 3>& rgbColor)
+{
+  otherFactionUnitTextColor_ = {
+    std::clamp(rgbColor[0], 0, 255),
+    std::clamp(rgbColor[1], 0, 255),
+    std::clamp(rgbColor[2], 0, 255)
+  };
+}
+
 std::wstring AppConfig::getExecutableDirectory()
 {
 #ifdef _WIN32
@@ -811,4 +872,6 @@ void AppConfig::applyDefaults()
   roadColor_ = { 112, 128, 144 };
   structureMarkerColor_ = { 112, 128, 144 };
   selectedRegionBorderColor_ = { 173, 216, 230 };
+  mainFactionUnitTextColor_ = { 0, 0, 0 };
+  otherFactionUnitTextColor_ = { 128, 128, 128 };
 }

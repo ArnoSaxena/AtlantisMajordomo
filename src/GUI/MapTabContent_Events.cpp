@@ -414,6 +414,99 @@ bool MapTabContent::handleNotify(const NMHDR* hdr)
         return true;
       }
 
+      const auto resolveMainFactionNumber = [this]() -> int
+      {
+        if (!appData_)
+        {
+          return 0;
+        }
+
+        const auto& factionRepository = appData_->factionRepository();
+        int mainFactionNumber = 0;
+        int mainFactionCount = 0;
+        for (std::size_t index = 0; index < factionRepository.size(); ++index)
+        {
+          const Faction& faction = factionRepository.at(index);
+          if (!faction.isMainFaction())
+          {
+            continue;
+          }
+
+          ++mainFactionCount;
+          mainFactionNumber = faction.getFactionNumber();
+        }
+
+        return (mainFactionCount == 1) ? mainFactionNumber : 0;
+      };
+
+      const auto resolveFactionNumberForRowUnit = [this](int rowUnitNumber) -> int
+      {
+        if (!appData_)
+        {
+          return 0;
+        }
+
+        if (rowUnitNumber > 0)
+        {
+          const Unit* rowUnit = appData_->unitRepository().findByNumber(rowUnitNumber);
+          return rowUnit ? rowUnit->getFactionNumber() : 0;
+        }
+
+        if (rowUnitNumber < 0)
+        {
+          const int unitNewNumber = -rowUnitNumber;
+          const UnitNew* unitNew = appData_->unitNewRepository().findByNumberAndCoordinates(
+            unitNewNumber,
+            selectedRegionX_,
+            selectedRegionY_,
+            selectedZ_);
+          if (!unitNew)
+          {
+            return 0;
+          }
+
+          int factionNumber = unitNew->getFactionNumber();
+          if (factionNumber <= 0)
+          {
+            const Unit* originUnit = appData_->unitRepository().findByNumber(unitNew->getOriginUnit());
+            if (originUnit)
+            {
+              factionNumber = originUnit->getFactionNumber();
+            }
+          }
+
+          return factionNumber;
+        }
+
+        return 0;
+      };
+
+      bool hasFactionRowTextColor = false;
+      COLORREF factionRowTextColor = CLR_DEFAULT;
+      if (appConfig_ && appData_)
+      {
+        const int mainFactionNumber = resolveMainFactionNumber();
+        if (mainFactionNumber > 0)
+        {
+          const int rowFactionNumber = resolveFactionNumberForRowUnit(static_cast<int>(rowItem.lParam));
+          const std::array<int, 3> rowRgb =
+            (rowFactionNumber == mainFactionNumber)
+              ? appConfig_->getMainFactionUnitTextColor()
+              : appConfig_->getOtherFactionUnitTextColor();
+
+          factionRowTextColor = RGB(
+            std::clamp(rowRgb[0], 0, 255),
+            std::clamp(rowRgb[1], 0, 255),
+            std::clamp(rowRgb[2], 0, 255));
+          hasFactionRowTextColor = true;
+        }
+      }
+
+      if (hasFactionRowTextColor)
+      {
+        customDraw->clrText = factionRowTextColor;
+      }
+
       const int unitNumber = static_cast<int>(rowItem.lParam);
       const Unit* unit = appData_ ? appData_->unitRepository().findByNumber(unitNumber) : nullptr;
 
@@ -421,7 +514,14 @@ bool MapTabContent::handleNotify(const NMHDR* hdr)
       if ((customDraw->iSubItem == kUnitNumberSubItem || customDraw->iSubItem == kUnitNameSubItem) && unit && unit->isOnGuard())
       {
         customDraw->clrTextBk = RGB(144, 238, 144);  // Light green
-        customDraw->clrText = RGB(0, 0, 0);
+        if (hasFactionRowTextColor)
+        {
+          customDraw->clrText = factionRowTextColor;
+        }
+        else
+        {
+          customDraw->clrText = RGB(0, 0, 0);
+        }
         notifyResult_ = CDRF_NEWFONT;
         return true;
       }
@@ -431,12 +531,19 @@ bool MapTabContent::handleNotify(const NMHDR* hdr)
         if (unit && !unit->getWarnings().empty())
         {
           customDraw->clrTextBk = RGB(255, 204, 128);
-          customDraw->clrText = RGB(0, 0, 0);
+          if (hasFactionRowTextColor)
+          {
+            customDraw->clrText = factionRowTextColor;
+          }
+          else
+          {
+            customDraw->clrText = RGB(0, 0, 0);
+          }
           notifyResult_ = CDRF_NEWFONT;
           return true;
         }
 
-        notifyResult_ = CDRF_DODEFAULT;
+        notifyResult_ = hasFactionRowTextColor ? CDRF_NEWFONT : CDRF_DODEFAULT;
         return true;
       }
 
@@ -449,20 +556,27 @@ bool MapTabContent::handleNotify(const NMHDR* hdr)
           appData_->battleRepository().isUnitDamagedInAnyBattleForPeriod(unitNumber, latestBattleMonth, latestBattleYear);
         if (isDamaged)
         {
-          customDraw->clrText = RGB(200, 0, 0);
+          if (hasFactionRowTextColor)
+          {
+            customDraw->clrText = factionRowTextColor;
+          }
+          else
+          {
+            customDraw->clrText = RGB(200, 0, 0);
+          }
           customDraw->clrTextBk = CLR_DEFAULT;
           notifyResult_ = CDRF_NEWFONT;
           return true;
         }
 
-        notifyResult_ = CDRF_DODEFAULT;
+        notifyResult_ = hasFactionRowTextColor ? CDRF_NEWFONT : CDRF_DODEFAULT;
         return true;
       }
 
       // For columns after the structure column, reset the text color to default
       if (customDraw->iSubItem > kStructureSubItem)
       {
-        customDraw->clrText = CLR_DEFAULT;
+        customDraw->clrText = hasFactionRowTextColor ? factionRowTextColor : CLR_DEFAULT;
         customDraw->clrTextBk = CLR_DEFAULT;
         notifyResult_ = CDRF_NEWFONT;
         return true;
@@ -470,13 +584,13 @@ bool MapTabContent::handleNotify(const NMHDR* hdr)
 
       if (customDraw->iSubItem != kStructureSubItem || !appData_)
       {
-        notifyResult_ = CDRF_DODEFAULT;
+        notifyResult_ = hasFactionRowTextColor ? CDRF_NEWFONT : CDRF_DODEFAULT;
         return true;
       }
 
       if (!unit || unit->getStructureId() == 0)
       {
-        notifyResult_ = CDRF_DODEFAULT;
+        notifyResult_ = hasFactionRowTextColor ? CDRF_NEWFONT : CDRF_DODEFAULT;
         return true;
       }
 
@@ -487,11 +601,11 @@ bool MapTabContent::handleNotify(const NMHDR* hdr)
         unit->getZCoordinate());
       if (!structure || structure->getOwnerUnitId() != unitNumber)
       {
-        notifyResult_ = CDRF_DODEFAULT;
+        notifyResult_ = hasFactionRowTextColor ? CDRF_NEWFONT : CDRF_DODEFAULT;
         return true;
       }
 
-      customDraw->clrText = RGB(0, 140, 0);
+      customDraw->clrText = hasFactionRowTextColor ? factionRowTextColor : RGB(0, 140, 0);
       customDraw->clrTextBk = CLR_DEFAULT;
       notifyResult_ = CDRF_NEWFONT;
       return true;

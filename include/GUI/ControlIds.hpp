@@ -91,8 +91,10 @@ constexpr int kSettingsFullMonthOrdersRemove = 5016;
 constexpr int kSettingsMagicTriggersAdd = 5017;
 constexpr int kSettingsMagicTriggersRemove = 5018;
 constexpr int kSettingsLeaderMagesCheck = 5019;
+constexpr int kSettingsMainFactionUnitColorEdit = 5026;
+constexpr int kSettingsOtherFactionUnitColorEdit = 5027;
 
-constexpr std::array<int, 56> kAll = {
+constexpr std::array<int, 58> kAll = {
   kMainTabView,
   kReportsList,
   kReportsRemoveButton,
@@ -149,6 +151,8 @@ constexpr std::array<int, 56> kAll = {
   kSettingsMagicTriggersAdd,
   kSettingsMagicTriggersRemove,
   kSettingsLeaderMagesCheck,
+  kSettingsMainFactionUnitColorEdit,
+  kSettingsOtherFactionUnitColorEdit,
 };
 
 constexpr bool hasDuplicateControlIds()

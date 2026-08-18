@@ -40,6 +40,38 @@
 #include <QPushButton>
 #include <QVBoxLayout>
 
+#include <array>
+
+namespace
+{
+QString formatRgbColor(const std::array<int, 3>& rgb)
+{
+    return QString::number(rgb[0]) + ", " + QString::number(rgb[1]) + ", " + QString::number(rgb[2]);
+}
+
+bool tryParseRgbColor(const QString& text, std::array<int, 3>& rgb)
+{
+    const QStringList parts = text.split(',', Qt::SkipEmptyParts);
+    if (parts.size() != 3)
+    {
+        return false;
+    }
+
+    for (int i = 0; i < 3; ++i)
+    {
+        bool ok = false;
+        const int value = parts[i].trimmed().toInt(&ok);
+        if (!ok || value < 0 || value > 255)
+        {
+            return false;
+        }
+        rgb[static_cast<std::size_t>(i)] = value;
+    }
+
+    return true;
+}
+}
+
 // ---------------------------------------------------------------------------
 // Constructor
 // ---------------------------------------------------------------------------
@@ -117,6 +149,14 @@ SettingsDialogQt::SettingsDialogQt(AppData&   appData,
     mapHexSizeModeCombo_->addItem("Medium");
     mapHexSizeModeCombo_->addItem("Large");
     formLayout->addRow("Map hex size:", mapHexSizeModeCombo_);
+
+    mainFactionUnitColorEdit_ = new QLineEdit(this);
+    mainFactionUnitColorEdit_->setPlaceholderText("0, 0, 0");
+    formLayout->addRow("Main faction unit text color (R,G,B):", mainFactionUnitColorEdit_);
+
+    otherFactionUnitColorEdit_ = new QLineEdit(this);
+    otherFactionUnitColorEdit_->setPlaceholderText("128, 128, 128");
+    formLayout->addRow("Other faction unit text color (R,G,B):", otherFactionUnitColorEdit_);
 
     // Checkboxes — placed as a horizontal group in a single form row
     onlyLeaderCanTeachCheck_ = new QCheckBox("Only leader can teach", this);
@@ -236,6 +276,16 @@ SettingsDialogQt::SettingsDialogQt(AppData&   appData,
         mapHexSizeModeCombo_->setCurrentIndex(modeIndex >= 0 ? modeIndex : 1); // default: Medium
     }
 
+    if (mainFactionUnitColorEdit_)
+    {
+        mainFactionUnitColorEdit_->setText(formatRgbColor(appConfig_->getMainFactionUnitTextColor()));
+    }
+
+    if (otherFactionUnitColorEdit_)
+    {
+        otherFactionUnitColorEdit_->setText(formatRgbColor(appConfig_->getOtherFactionUnitTextColor()));
+    }
+
     onlyLeaderCanTeachCheck_->setChecked(appData_->getOnlyLeaderCanTeach());
     leaderMagesCheck_->setChecked(appData_->getLeaderMages());
 
@@ -328,6 +378,26 @@ bool SettingsDialogQt::applySettings()
         return false;
     }
 
+    std::array<int, 3> mainFactionColor { 0, 0, 0 };
+    if (mainFactionUnitColorEdit_ && !tryParseRgbColor(mainFactionUnitColorEdit_->text(), mainFactionColor))
+    {
+        QMessageBox::warning(this,
+            "Invalid Value",
+            "Main faction unit text color must be in format R, G, B with values from 0 to 255.");
+        mainFactionUnitColorEdit_->setFocus();
+        return false;
+    }
+
+    std::array<int, 3> otherFactionColor { 128, 128, 128 };
+    if (otherFactionUnitColorEdit_ && !tryParseRgbColor(otherFactionUnitColorEdit_->text(), otherFactionColor))
+    {
+        QMessageBox::warning(this,
+            "Invalid Value",
+            "Other faction unit text color must be in format R, G, B with values from 0 to 255.");
+        otherFactionUnitColorEdit_->setFocus();
+        return false;
+    }
+
     // Apply to AppData
     appData_->setShipStructureIdThreshold(threshold);
     appData_->setMagicSkillTriggersCsv(buildCsvFromList(magicTriggersList_));
@@ -350,6 +420,8 @@ bool SettingsDialogQt::applySettings()
     {
         appConfig_->setMapHexSizeMode(mapHexSizeModeCombo_->currentText().toStdWString());
     }
+    appConfig_->setMainFactionUnitTextColor(mainFactionColor);
+    appConfig_->setOtherFactionUnitTextColor(otherFactionColor);
     appConfig_->save();
 
     return true;

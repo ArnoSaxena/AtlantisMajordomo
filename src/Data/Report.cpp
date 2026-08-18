@@ -26,6 +26,7 @@
 #include <cctype>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <map>
 #include <regex>
 #include <set>
@@ -44,13 +45,186 @@
 #include "Function/MonthUtils.hpp"
 #include "Function/StringUtils.hpp"
 
+namespace
+{
+bool appendCodePointToWide(char32_t codePoint, std::wstring& output)
+{
+  if (codePoint > 0x10FFFF)
+  {
+    return false;
+  }
+
+  if constexpr (sizeof(wchar_t) == 2)
+  {
+    if (codePoint <= 0xFFFF)
+    {
+      if (codePoint >= 0xD800 && codePoint <= 0xDFFF)
+      {
+        return false;
+      }
+
+      output.push_back(static_cast<wchar_t>(codePoint));
+      return true;
+    }
+
+    const char32_t surrogate = codePoint - 0x10000;
+    output.push_back(static_cast<wchar_t>(0xD800 + (surrogate >> 10)));
+    output.push_back(static_cast<wchar_t>(0xDC00 + (surrogate & 0x3FF)));
+    return true;
+  }
+
+  output.push_back(static_cast<wchar_t>(codePoint));
+  return true;
+}
+
+std::wstring decodeUtf8ToWide(const std::string& utf8Bytes)
+{
+  std::wstring result;
+  result.reserve(utf8Bytes.size());
+
+  std::size_t index = 0;
+  if (utf8Bytes.size() >= 3 &&
+      static_cast<unsigned char>(utf8Bytes[0]) == 0xEF &&
+      static_cast<unsigned char>(utf8Bytes[1]) == 0xBB &&
+      static_cast<unsigned char>(utf8Bytes[2]) == 0xBF)
+  {
+    index = 3;
+  }
+
+  while (index < utf8Bytes.size())
+  {
+    const unsigned char first = static_cast<unsigned char>(utf8Bytes[index]);
+    char32_t codePoint = 0;
+    std::size_t sequenceLength = 0;
+
+    if (first <= 0x7F)
+    {
+      codePoint = first;
+      sequenceLength = 1;
+    }
+    else if ((first & 0xE0) == 0xC0)
+    {
+      if (index + 1 >= utf8Bytes.size())
+      {
+        sequenceLength = 1;
+        codePoint = 0xFFFD;
+      }
+      else
+      {
+        const unsigned char b1 = static_cast<unsigned char>(utf8Bytes[index + 1]);
+        if ((b1 & 0xC0) != 0x80)
+        {
+          sequenceLength = 1;
+          codePoint = 0xFFFD;
+        }
+        else
+        {
+          codePoint = static_cast<char32_t>(((first & 0x1F) << 6) | (b1 & 0x3F));
+          sequenceLength = (codePoint < 0x80) ? 1 : 2;
+          if (sequenceLength == 1)
+          {
+            codePoint = 0xFFFD;
+          }
+        }
+      }
+    }
+    else if ((first & 0xF0) == 0xE0)
+    {
+      if (index + 2 >= utf8Bytes.size())
+      {
+        sequenceLength = 1;
+        codePoint = 0xFFFD;
+      }
+      else
+      {
+        const unsigned char b1 = static_cast<unsigned char>(utf8Bytes[index + 1]);
+        const unsigned char b2 = static_cast<unsigned char>(utf8Bytes[index + 2]);
+        if ((b1 & 0xC0) != 0x80 || (b2 & 0xC0) != 0x80)
+        {
+          sequenceLength = 1;
+          codePoint = 0xFFFD;
+        }
+        else
+        {
+          codePoint = static_cast<char32_t>(((first & 0x0F) << 12) |
+                                            ((b1 & 0x3F) << 6) |
+                                            (b2 & 0x3F));
+          const bool overlong = codePoint < 0x800;
+          const bool surrogate = codePoint >= 0xD800 && codePoint <= 0xDFFF;
+          if (overlong || surrogate)
+          {
+            sequenceLength = 1;
+            codePoint = 0xFFFD;
+          }
+          else
+          {
+            sequenceLength = 3;
+          }
+        }
+      }
+    }
+    else if ((first & 0xF8) == 0xF0)
+    {
+      if (index + 3 >= utf8Bytes.size())
+      {
+        sequenceLength = 1;
+        codePoint = 0xFFFD;
+      }
+      else
+      {
+        const unsigned char b1 = static_cast<unsigned char>(utf8Bytes[index + 1]);
+        const unsigned char b2 = static_cast<unsigned char>(utf8Bytes[index + 2]);
+        const unsigned char b3 = static_cast<unsigned char>(utf8Bytes[index + 3]);
+        if ((b1 & 0xC0) != 0x80 || (b2 & 0xC0) != 0x80 || (b3 & 0xC0) != 0x80)
+        {
+          sequenceLength = 1;
+          codePoint = 0xFFFD;
+        }
+        else
+        {
+          codePoint = static_cast<char32_t>(((first & 0x07) << 18) |
+                                            ((b1 & 0x3F) << 12) |
+                                            ((b2 & 0x3F) << 6) |
+                                            (b3 & 0x3F));
+          const bool overlong = codePoint < 0x10000;
+          const bool outOfRange = codePoint > 0x10FFFF;
+          if (overlong || outOfRange)
+          {
+            sequenceLength = 1;
+            codePoint = 0xFFFD;
+          }
+          else
+          {
+            sequenceLength = 4;
+          }
+        }
+      }
+    }
+    else
+    {
+      sequenceLength = 1;
+      codePoint = 0xFFFD;
+    }
+
+    if (!appendCodePointToWide(codePoint, result))
+    {
+      appendCodePointToWide(0xFFFD, result);
+    }
+
+    index += (sequenceLength == 0) ? 1 : sequenceLength;
+  }
+
+  return result;
+}
+}
+
 bool Report::loadFromFile(const std::wstring& filePath)
 {
   DebugLog(L"Report::loadFromFile() - begin: " + filePath);
   clear();
   filePath_ = filePath;
 
-  std::wifstream file{std::filesystem::path(filePath)};
+  std::ifstream file{std::filesystem::path(filePath), std::ios::binary};
   if (!file.is_open())
   {
     lastError_ = L"Failed to open file: " + filePath;
@@ -59,11 +233,16 @@ bool Report::loadFromFile(const std::wstring& filePath)
   }
 
   DebugLog(L"Report::loadFromFile() - file opened, reading content");
-  // Set up UTF-8 codecvt for proper wide character handling
-  std::wstringstream buffer;
-  buffer << file.rdbuf();
-  content_ = buffer.str();
+  // Decode report files as UTF-8 so punctuation like typographic apostrophes
+  // is preserved consistently in region/event text parsing.
+  std::string utf8Bytes((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
   file.close();
+  content_ = decodeUtf8ToWide(utf8Bytes);
+
+  // Normalize curly apostrophes to plain apostrophe so existing regex parsing
+  // and string comparisons treat settlement/province names consistently.
+  std::replace(content_.begin(), content_.end(), L'\u2018', L'\'');
+  std::replace(content_.begin(), content_.end(), L'\u2019', L'\'');
 
   if (content_.empty())
   {
@@ -2101,7 +2280,7 @@ void Report::parseEvents(EventRepository& eventRepository)
   DebugLog(L"Report::parseEvents() - begin");
   static const std::wstring errorsHeader { L"Errors during turn:" };
   static const std::wstring eventsHeader { L"Events during turn:" };
-  static const std::wregex eventPattern(L"^\\s*(.+?)\\s*\\((\\d+)\\):\\s*(.+)$");
+  static const std::wregex eventPattern(L"^\\s*(.+?)\\s*\\((\\d+)\\):\\s*(.*)$");
   static const std::wregex sectionHeaderPattern(L"^[A-Za-z][^\\r\\n]*:\\s*$");
 
   const int reportMonth { getMonth() };
