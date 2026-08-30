@@ -200,12 +200,10 @@ bool AppConfig::load()
     DebugLog(L"AppConfig::load() - uiSizeMode: " + uiSizeMode_);
   }
 
-  bool hasMapHexSizeMode = false;
   std::wstring configuredMapHexSizeMode;
   if (JsonUtils::extractJsonStringField(content, L"mapHexSizeMode", configuredMapHexSizeMode))
   {
     mapHexSizeMode_ = normalizeMapHexSizeMode(configuredMapHexSizeMode);
-    hasMapHexSizeMode = true;
     DebugLog(L"AppConfig::load() - mapHexSizeMode: " + mapHexSizeMode_);
   }
 

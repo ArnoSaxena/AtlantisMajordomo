@@ -147,6 +147,16 @@ const std::vector<int>& Battle::getDefenderDamagedUnitIds() const
   return defenderDamagedUnitIds_;
 }
 
+const std::vector<int>& Battle::getAttackerParticipantUnitIds() const
+{
+  return attackerParticipantUnitIds_;
+}
+
+const std::vector<int>& Battle::getDefenderParticipantUnitIds() const
+{
+  return defenderParticipantUnitIds_;
+}
+
 const std::vector<BattleSpoil>& Battle::getSpoils() const
 {
   return spoils_;
@@ -246,6 +256,16 @@ void Battle::clearAttackerDamagedUnitIds()
 void Battle::clearDefenderDamagedUnitIds()
 {
   defenderDamagedUnitIds_.clear();
+}
+
+void Battle::addAttackerParticipantUnitId(int unitId)
+{
+  attackerParticipantUnitIds_.push_back(unitId);
+}
+
+void Battle::addDefenderParticipantUnitId(int unitId)
+{
+  defenderParticipantUnitIds_.push_back(unitId);
 }
 
 void Battle::addSpoil(BattleSpoil spoil)

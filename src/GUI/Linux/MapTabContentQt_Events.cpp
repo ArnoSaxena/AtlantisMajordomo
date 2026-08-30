@@ -368,6 +368,7 @@ void MapTabContentQt::onOrdersEditorContextMenuRequested(const QPoint& pos)
     QMenu* menu = ordersEditor_->createStandardContextMenu();
     menu->addSeparator();
     QAction* formNewUnitAction = menu->addAction("Form New Unit");
+    QAction* giveAction = menu->addAction("Give...");
 
     QAction* selected = menu->exec(ordersEditor_->mapToGlobal(pos));
     if (selected == formNewUnitAction && appData_)
@@ -403,6 +404,10 @@ void MapTabContentQt::onOrdersEditorContextMenuRequested(const QPoint& pos)
         cursor.movePosition(QTextCursor::StartOfLine);
         ordersEditor_->setTextCursor(cursor);
         ordersEditor_->setFocus();
+    }
+    else if (selected == giveAction && appData_)
+    {
+        showGiveToUnitDialog();
     }
 
     delete menu;

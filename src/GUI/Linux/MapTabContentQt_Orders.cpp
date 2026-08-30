@@ -40,6 +40,14 @@
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QTextCursor>
+// Qt widgets used by the Give dialog
+#include <QDialog>
+#include <QVBoxLayout>
+#include <QHBoxLayout>
+#include <QLabel>
+#include <QLineEdit>
+#include <QComboBox>
+#include <QMessageBox>
 
 #include <string>
 #include <vector>
@@ -150,5 +158,113 @@ void MapTabContentQt::appendOrderLineToOrdersEditor(const std::wstring& orderLin
     cursor.movePosition(QTextCursor::End);
     ordersEditor_->setTextCursor(cursor);
     ordersEditor_->setFocus();
+}
+
+void MapTabContentQt::showGiveToUnitDialog()
+{
+    if (!appData_ || selectedUnitNumber_ == 0 || !ordersEditor_)
+    {
+        return;
+    }
+
+    const Unit* originUnit = appData_->unitRepository().findByNumber(selectedUnitNumber_);
+    if (!originUnit)
+    {
+        return;
+    }
+
+    QDialog dlg(nullptr);
+    dlg.setWindowTitle("Give to unit");
+    QVBoxLayout* v = new QVBoxLayout(&dlg);
+
+    QHBoxLayout* h1 = new QHBoxLayout();
+    QLabel* lbl = new QLabel("Give to unit:");
+    QLineEdit* edit = new QLineEdit();
+    edit->setPlaceholderText("Unit number or NEW n");
+    h1->addWidget(lbl);
+    h1->addWidget(edit);
+    v->addLayout(h1);
+
+    QHBoxLayout* h2 = new QHBoxLayout();
+    QLabel* lbl2 = new QLabel("Item:");
+    QComboBox* combo = new QComboBox();
+    h2->addWidget(lbl2);
+    h2->addWidget(combo);
+    v->addLayout(h2);
+
+    // Populate combo with origin unit items, SILV first if present
+    std::vector<std::wstring> tokens;
+    for (const auto& p : originUnit->getItems())
+    {
+        if (p.second <= 0) continue;
+        tokens.push_back(p.first);
+    }
+    auto it = std::find_if(tokens.begin(), tokens.end(), [](const std::wstring& t){ return StringUtils::toUpper(t) == L"SILV"; });
+    if (it != tokens.end())
+    {
+        std::wstring s = *it; tokens.erase(it); tokens.insert(tokens.begin(), s);
+    }
+    for (const auto& t : tokens) combo->addItem(QString::fromStdWString(t));
+    if (!tokens.empty()) combo->setCurrentIndex(0);
+
+    QHBoxLayout* buttons = new QHBoxLayout();
+    buttons->addStretch(1);
+    QPushButton* give = new QPushButton("Give");
+    QPushButton* cancel = new QPushButton("Cancel");
+    buttons->addWidget(give);
+    buttons->addWidget(cancel);
+    v->addLayout(buttons);
+
+    connect(cancel, &QPushButton::clicked, &dlg, &QDialog::reject);
+    connect(give, &QPushButton::clicked, [&]() {
+        const QString editText = edit->text().trimmed();
+        if (editText.isEmpty())
+        {
+            QMessageBox::warning(nullptr, "Give", "Invalid receiving unit reference.");
+            return;
+        }
+
+        bool isNewRef = false;
+        int target = 0;
+        const QString upper = editText.toUpper();
+        if (upper.startsWith("NEW "))
+        {
+            bool ok = false;
+            const int v = editText.mid(4).trimmed().toInt(&ok);
+            if (!ok || v <= 0)
+            {
+                QMessageBox::warning(nullptr, "Give", "Invalid NEW unit index.");
+                return;
+            }
+            isNewRef = true;
+            target = v;
+        }
+        else
+        {
+            bool ok = false;
+            const int v = editText.toInt(&ok);
+            if (!ok || v <= 0)
+            {
+                QMessageBox::warning(nullptr, "Give", "Invalid receiving unit number.");
+                return;
+            }
+            target = v;
+        }
+        const QString itemStr = combo->currentText();
+        if (itemStr.isEmpty())
+        {
+            QMessageBox::warning(nullptr, "Give", "No item selected.");
+            return;
+        }
+        std::wstring itemToken = itemStr.toStdWString();
+
+        const std::wstring giveLine = OrderBusinessLogic::buildGiveCommand(
+            *appData_, selectedUnitNumber_, target, isNewRef, itemToken);
+        appendOrderLineToOrdersEditor(giveLine);
+        dlg.accept();
+        return;
+    });
+
+    dlg.exec();
 }
 

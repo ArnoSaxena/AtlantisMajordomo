@@ -27,6 +27,7 @@
 
 #include "Data/AppData.hpp"
 #include "Data/Unit.hpp"
+#include "Function/AppDataUtils.hpp"
 #include "Function/OrderChecksUtils.hpp"
 
 #include <QLabel>
@@ -45,6 +46,8 @@ void MapTabContentQt::runOrderChecksForMainFaction()
         [this]() { populateUnitsForSelectedRegion(); },
         [this]() { updateWarningsSummaryLabel(); },
         [this](int unitNumber) { updateSelectedUnitDetailsByNumber(unitNumber); });
+
+    emit warningsChanged();
 }
 
 void MapTabContentQt::updateWarningsSummaryLabel()
@@ -54,7 +57,8 @@ void MapTabContentQt::updateWarningsSummaryLabel()
         return;
     }
 
-    const int warningCount = appData_->unitRepository().countTotalWarnings();
+    const int warningCount = static_cast<int>(
+        AppDataUtils::getWarningsForLatestPeriod(*appData_).size());
     const std::wstring text = L"Warnings: " + std::to_wstring(warningCount);
     warningsCountLabel_->setText(QString::fromStdWString(text));
 }
@@ -82,7 +86,7 @@ void MapTabContentQt::selectPreviousWarningUnit()
     }
 
     const int previousWarningUnitNumber =
-        OrderChecksUtils::selectPreviousWarningUnitNumber(*appData_, selectedUnitNumber_);
+        OrderChecksUtils::selectPreviousWarningUnitNumber(*appData_, selectedUnitNumber_, selectedUnitIsNew_);
     if (previousWarningUnitNumber == 0)
     {
         return;
@@ -99,7 +103,7 @@ void MapTabContentQt::selectNextWarningUnit()
     }
 
     const int nextWarningUnitNumber =
-        OrderChecksUtils::selectNextWarningUnitNumber(*appData_, selectedUnitNumber_);
+        OrderChecksUtils::selectNextWarningUnitNumber(*appData_, selectedUnitNumber_, selectedUnitIsNew_);
     if (nextWarningUnitNumber == 0)
     {
         return;
@@ -115,14 +119,33 @@ void MapTabContentQt::clearWarningsForSelectedUnit()
         return;
     }
 
-    Unit* unit = appData_->unitRepository().findByNumber(selectedUnitNumber_);
-    if (!unit)
+    if (selectedUnitIsNew_)
     {
-        return;
+        UnitNew* unitNew = appData_->unitNewRepository().findByNumberAndCoordinates(
+            selectedUnitNumber_,
+            selectedRegionX_,
+            selectedRegionY_,
+            selectedZ_);
+        if (!unitNew)
+        {
+            return;
+        }
+
+        unitNew->clearWarnings();
+    }
+    else
+    {
+        Unit* unit = appData_->unitRepository().findByNumber(selectedUnitNumber_);
+        if (!unit)
+        {
+            return;
+        }
+
+        unit->clearWarnings();
     }
 
-    unit->clearWarnings();
     populateUnitsForSelectedRegion();
     updateWarningsSummaryLabel();
     updateSelectedUnitDetailsByNumber(selectedUnitNumber_);
+    emit warningsChanged();
 }

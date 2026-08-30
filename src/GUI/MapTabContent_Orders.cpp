@@ -58,6 +58,8 @@
 #include <string>
 #include <vector>
 #include <windowsx.h>
+#include <fstream>
+#include <shellapi.h>
 
 LRESULT CALLBACK MapTabContent::ordersEditorSubclassProc(HWND hwnd,
                                                           UINT msg,
@@ -115,6 +117,12 @@ LRESULT CALLBACK MapTabContent::ordersEditorSubclassProc(HWND hwnd,
         }
         const int newNumber = OrderBusinessLogic::computeNextNewUnitNumber(self->appData_, x, y, z);
         OrdersEditorUtils::insertFormBlockAtEnd(hwnd, newNumber);
+      }
+      break;
+      case OrdersEditorUtils::kOrdersGiveCmd:
+      {
+        // Open a small modal dialog to insert a computed GIVE order
+        self->showGiveToUnitDialog(hwnd);
         break;
       }
       default:
@@ -147,6 +155,223 @@ LRESULT CALLBACK MapTabContent::ordersEditorSubclassProc(HWND hwnd,
   }
 
   return DefSubclassProc(hwnd, msg, wp, lp);
+}
+
+// Small modal dialog for inserting GIVE orders from the selected unit
+void MapTabContent::showGiveToUnitDialog(HWND parent)
+{
+  if (!appData_ || selectedUnitNumber_ == 0)
+  {
+    MessageBoxW(parent, L"No unit selected.", L"Give", MB_OK | MB_ICONERROR);
+    return;
+  }
+
+  const Unit* originUnit = appData_->unitRepository().findByNumber(selectedUnitNumber_);
+  if (!originUnit)
+  {
+    MessageBoxW(parent, L"Origin unit not found.", L"Give", MB_OK | MB_ICONERROR);
+    return;
+  }
+
+  // Register dialog window class
+  const HINSTANCE instance = reinterpret_cast<HINSTANCE>(GetWindowLongPtr(parent, GWLP_HINSTANCE));
+  static bool registered = false;
+  const wchar_t* kClassName = L"WindowsAppGiveDialog";
+  if (!registered)
+  {
+    WNDCLASSW wc{};
+    wc.lpfnWndProc = [](HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) -> LRESULT
+    {
+      if (msg == WM_CLOSE)
+      {
+        DestroyWindow(hwnd);
+        return 0;
+      }
+      if (msg == WM_COMMAND)
+      {
+        const int id = LOWORD(wp);
+        if (id == 1001 || id == 1002)
+        {
+          // Close button handlers: call back into MapTabContent when Give pressed
+          MapTabContent* parentObj = reinterpret_cast<MapTabContent*>(GetWindowLongPtr(hwnd, GWLP_USERDATA));
+          if (id == 1001 && parentObj)
+          {
+            parentObj->handleGiveDialogAccept(hwnd);
+          }
+
+          DestroyWindow(hwnd);
+          return 0;
+        }
+      }
+      return DefWindowProcW(hwnd, msg, wp, lp);
+    };
+    wc.hInstance = instance;
+    wc.lpszClassName = kClassName;
+    wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+    wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
+    RegisterClassW(&wc);
+    registered = true;
+  }
+
+  // Desired client area for dialog; compute real window size including non-client
+  const int desiredClientWidth = 420;
+  const int desiredClientHeight = 160;
+  DWORD style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU;
+  RECT wr{0,0, desiredClientWidth, desiredClientHeight};
+  AdjustWindowRectEx(&wr, style, FALSE, 0);
+  const int windowWidth = wr.right - wr.left;
+  const int windowHeight = wr.bottom - wr.top;
+  RECT parentRect; GetWindowRect(parent, &parentRect);
+  const int x = parentRect.left + ((parentRect.right - parentRect.left) - windowWidth) / 2;
+  const int y = parentRect.top + ((parentRect.bottom - parentRect.top) - windowHeight) / 2;
+
+  HWND dlg = CreateWindowExW(0, kClassName, L"Give to unit", WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU,
+                             x, y, windowWidth, windowHeight, parent, nullptr, instance, nullptr);
+  if (!dlg)
+  {
+    return;
+  }
+
+  // store parent HWND so the dialog proc can notify the parent
+  // store 'this' pointer so dialog proc can call back
+  SetWindowLongPtr(dlg, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
+
+  // Controls: static label, edit for unit number, combo box, Give and Cancel buttons
+  HWND label = CreateWindowExW(0, L"STATIC", L"Give to unit:", WS_CHILD | WS_VISIBLE,
+                                12, 12, 100, 20, dlg, nullptr, instance, nullptr);
+  HWND edit = CreateWindowExW(0, L"EDIT", L"", WS_CHILD | WS_VISIBLE | WS_BORDER | ES_LEFT | ES_AUTOHSCROLL,
+                              120, 10, 80, 24, dlg, nullptr, instance, nullptr);
+
+  HWND combo = CreateWindowExW(0, WC_COMBOBOXW, nullptr, CBS_DROPDOWNLIST | WS_CHILD | WS_VISIBLE | WS_VSCROLL,
+                               210, 10, 190, 200, dlg, nullptr, instance, nullptr);
+
+  // Populate combo with item tokens from origin unit, preferring SILV
+  std::vector<std::wstring> tokens;
+  for (const auto& [token, amount] : originUnit->getItems())
+  {
+    if (amount <= 0) continue;
+    tokens.push_back(token);
+  }
+  // Ensure SILV on top if present
+  auto it = std::find_if(tokens.begin(), tokens.end(), [](const std::wstring& t){ return _wcsicmp(t.c_str(), L"SILV") == 0; });
+  if (it != tokens.end())
+  {
+    std::wstring silv = *it;
+    tokens.erase(it);
+    tokens.insert(tokens.begin(), silv);
+  }
+  for (const auto& tok : tokens)
+  {
+    SendMessageW(combo, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(tok.c_str()));
+  }
+  if (!tokens.empty()) SendMessageW(combo, CB_SETCURSEL, 0, 0);
+
+  // Place buttons relative to desired client area
+  HWND giveBtn = CreateWindowExW(0, L"BUTTON", L"Give", WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON,
+                                  desiredClientWidth - 200, desiredClientHeight - 44, 80, 28, dlg, reinterpret_cast<HMENU>(1001), instance, nullptr);
+  HWND cancelBtn = CreateWindowExW(0, L"BUTTON", L"Cancel", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+                                    desiredClientWidth - 100, desiredClientHeight - 44, 80, 28, dlg, reinterpret_cast<HMENU>(1002), instance, nullptr);
+
+  // silence unused variable warnings (controls are referenced by OS via HWND)
+  (void)label; (void)edit; (void)giveBtn; (void)cancelBtn;
+
+  ShowWindow(dlg, SW_SHOW);
+  UpdateWindow(dlg);
+
+  // Modal message loop
+  MSG msg;
+  while (IsWindow(dlg) && GetMessageW(&msg, nullptr, 0, 0))
+  {
+    if (!IsDialogMessage(dlg, &msg))
+    {
+      TranslateMessage(&msg);
+      DispatchMessageW(&msg);
+    }
+    // dialog now calls back into handleGiveDialogAccept; no posted messages expected
+  }
+}
+
+void MapTabContent::handleGiveDialogAccept(HWND dlgHwnd)
+{
+  if (!dlgHwnd)
+  {
+    return;
+  }
+
+  // Read fields from dialog controls and perform same logic previously in modal loop
+  wchar_t buf[256] = {};
+  HWND edit = FindWindowExW(dlgHwnd, nullptr, L"EDIT", nullptr);
+  if (edit)
+  {
+    GetWindowTextW(edit, buf, (int)std::size(buf));
+  }
+
+  const std::wstring editText = StringUtils::trimWhitespace(buf);
+  if (editText.empty())
+  {
+    MessageBoxW(dlgHwnd, L"Invalid receiving unit reference.", L"Give", MB_OK | MB_ICONERROR);
+    return;
+  }
+
+  bool isNewRef = false;
+  int targetUnit = 0;
+  const std::wstring upperText = StringUtils::toUpper(editText);
+  if (upperText.rfind(L"NEW ", 0) == 0)
+  {
+    const std::wstring rest = StringUtils::trimWhitespace(editText.substr(4));
+    try
+    {
+      targetUnit = std::stoi(rest);
+      if (targetUnit <= 0) throw 0;
+      isNewRef = true;
+    }
+    catch(...) {
+      MessageBoxW(dlgHwnd, L"Invalid NEW unit index.", L"Give", MB_OK | MB_ICONERROR);
+      return;
+    }
+  }
+  else
+  {
+    try
+    {
+      targetUnit = std::stoi(editText);
+      if (targetUnit <= 0) throw 0;
+    }
+    catch(...) {
+      MessageBoxW(dlgHwnd, L"Invalid receiving unit number.", L"Give", MB_OK | MB_ICONERROR);
+      return;
+    }
+  }
+
+  HWND combo = FindWindowExW(dlgHwnd, nullptr, WC_COMBOBOXW, nullptr);
+  int sel = -1;
+  if (combo)
+  {
+    sel = (int)SendMessageW(combo, CB_GETCURSEL, 0, 0);
+  }
+
+  wchar_t itemBuf[256] = {};
+  if (combo && sel >= 0)
+  {
+    SendMessageW(combo, CB_GETLBTEXT, sel, reinterpret_cast<LPARAM>(itemBuf));
+  }
+
+  std::wstring itemToken = itemBuf;
+  if (itemToken.empty())
+  {
+    MessageBoxW(dlgHwnd, L"No item selected.", L"Give", MB_OK | MB_ICONERROR);
+    return;
+  }
+  if (targetUnit <= 0)
+  {
+    MessageBoxW(dlgHwnd, L"Invalid receiving unit number.", L"Give", MB_OK | MB_ICONERROR);
+    return;
+  }
+
+  const std::wstring giveLine = OrderBusinessLogic::buildGiveCommand(
+    *appData_, selectedUnitNumber_, targetUnit, isNewRef, itemToken);
+  appendOrderLineToOrdersEditor(giveLine);
+  return;
 }
 
 

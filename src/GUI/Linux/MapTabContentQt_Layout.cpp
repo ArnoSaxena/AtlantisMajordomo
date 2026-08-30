@@ -34,14 +34,62 @@
 #include <QListWidget>
 #include <QPlainTextEdit>
 #include <QPushButton>
+#include <QPainter>
 #include <QSizePolicy>
 #include <QSplitter>
+#include <QStyle>
+#include <QStyledItemDelegate>
 #include <QTabWidget>
 #include <QTableWidget>
 #include <QTreeWidget>
 #include <QVBoxLayout>
 #include <QWidget>
 #include <QStringList>
+
+namespace
+{
+class NegativeSilverDelegate final : public QStyledItemDelegate
+{
+public:
+    using QStyledItemDelegate::QStyledItemDelegate;
+
+    void paint(QPainter* painter,
+               const QStyleOptionViewItem& option,
+               const QModelIndex& index) const override
+    {
+        const QString text = index.data(Qt::DisplayRole).toString();
+        const int bracketStart = text.lastIndexOf(" (");
+        if (bracketStart == -1 || bracketStart + 2 >= text.size() || text[bracketStart + 2] != QLatin1Char('-'))
+        {
+            QStyledItemDelegate::paint(painter, option, index);
+            return;
+        }
+
+        QStyleOptionViewItem backgroundOption(option);
+        initStyleOption(&backgroundOption, index);
+        backgroundOption.text.clear();
+        QStyle* style = backgroundOption.widget ? backgroundOption.widget->style() : QApplication::style();
+        style->drawControl(QStyle::CE_ItemViewItem, &backgroundOption, painter, backgroundOption.widget);
+
+        const QRect textRect = style->subElementRect(
+            QStyle::SE_ItemViewItemText, &backgroundOption, backgroundOption.widget);
+        const QString currentSilverText = text.left(bracketStart + 1);
+        const QString afterCommandsText = text.mid(bracketStart + 1);
+        const QPalette::ColorRole textRole =
+            (backgroundOption.state & QStyle::State_Selected) ? QPalette::HighlightedText : QPalette::Text;
+
+        painter->save();
+        painter->setPen(backgroundOption.palette.color(textRole));
+        painter->drawText(textRect, Qt::AlignLeft | Qt::AlignVCenter, currentSilverText);
+
+        QRect afterCommandsRect = textRect;
+        afterCommandsRect.setLeft(textRect.left() + painter->fontMetrics().horizontalAdvance(currentSilverText));
+        painter->setPen(QColor(200, 0, 0));
+        painter->drawText(afterCommandsRect, Qt::AlignLeft | Qt::AlignVCenter, afterCommandsText);
+        painter->restore();
+    }
+};
+} // namespace
 
 // ---------------------------------------------------------------------------
 // Constructor
@@ -193,9 +241,9 @@ MapTabContentQt::MapTabContentQt(AppData&   appData,
     // -----------------------------------------------------------------------
     // Units list (QTableWidget — filled by MapTabContentQt_UnitDetails.cpp, step 7.3)
     // Columns mirror the Win32 LVS_REPORT: #, Name, Faction, Faction Name,
-    // Structure, Men, Silver, Flags, Skills, ! (errors), D (warnings).
+    // Structure, Men, Silver, Flags, Skills, Month Order, !, B, D.
     // -----------------------------------------------------------------------
-    unitsList_ = new QTableWidget(0, 11, leftContainer);
+    unitsList_ = new QTableWidget(0, 13, leftContainer);
     unitsList_->setSelectionBehavior(QAbstractItemView::SelectRows);
     unitsList_->setSelectionMode(QAbstractItemView::SingleSelection);
     unitsList_->setEditTriggers(QAbstractItemView::NoEditTriggers);
@@ -204,12 +252,13 @@ MapTabContentQt::MapTabContentQt(AppData&   appData,
     unitsList_->setHorizontalScrollMode(QAbstractItemView::ScrollPerPixel);
     unitsListBaseHeaderLabels_ = QStringList({
         "#", "Name", "Faction", "Faction Name",
-        "Structure", "Men", "Silver", "Flags", "Skills", "!", "D"
+        "Structure", "Men", "Silver", "Flags", "Skills", "Month Order", "!", "B", "D"
     });
     unitsList_->setHorizontalHeaderLabels(unitsListBaseHeaderLabels_);
     unitsList_->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
     unitsList_->horizontalHeader()->setSortIndicatorShown(true);
     unitsList_->horizontalHeader()->setSortIndicator(-1, Qt::AscendingOrder);
+    unitsList_->setItemDelegateForColumn(6, new NegativeSilverDelegate(unitsList_));
     unitsList_->setColumnWidth(0, 50);
     unitsList_->setColumnWidth(1, 180);
     unitsList_->setColumnWidth(2, 50);
@@ -219,8 +268,10 @@ MapTabContentQt::MapTabContentQt(AppData&   appData,
     unitsList_->setColumnWidth(6, 70);
     unitsList_->setColumnWidth(7, 200);
     unitsList_->setColumnWidth(8, 200);
-    unitsList_->setColumnWidth(9, 28);
+    unitsList_->setColumnWidth(9, 180);
     unitsList_->setColumnWidth(10, 28);
+    unitsList_->setColumnWidth(11, 28);
+    unitsList_->setColumnWidth(12, 28);
     unitsList_->setMinimumHeight(80);
     leftLayout->addWidget(unitsList_, 1);
 
@@ -274,17 +325,18 @@ MapTabContentQt::MapTabContentQt(AppData&   appData,
     auto* itemsHeaderLabel = new QLabel("Items:", upperDetailsWidget);
     upperDetailsLayout->addWidget(itemsHeaderLabel);
 
-    unitItemsList_ = new QTableWidget(0, 4, upperDetailsWidget);
+    unitItemsList_ = new QTableWidget(0, 5, upperDetailsWidget);
     unitItemsList_->setSelectionBehavior(QAbstractItemView::SelectRows);
     unitItemsList_->setSelectionMode(QAbstractItemView::SingleSelection);
     unitItemsList_->setEditTriggers(QAbstractItemView::NoEditTriggers);
     unitItemsList_->verticalHeader()->setVisible(false);
-    unitItemsList_->setHorizontalHeaderLabels({"Token", "Name", "Amount", "after com."});
+    unitItemsList_->setHorizontalHeaderLabels({"Token", "Name", "Amount", "after give", "after com."});
     unitItemsList_->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
     unitItemsList_->setColumnWidth(0, 70);
     unitItemsList_->setColumnWidth(1, 100);
     unitItemsList_->setColumnWidth(2, 60);
     unitItemsList_->setColumnWidth(3, 70);
+    unitItemsList_->setColumnWidth(4, 70);
     upperDetailsLayout->addWidget(unitItemsList_, 1);
 
     // Skills list — mirrors Win32 unitSkillsList_

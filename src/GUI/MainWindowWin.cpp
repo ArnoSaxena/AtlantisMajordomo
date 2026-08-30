@@ -26,6 +26,7 @@
 #include "Data/Commands.hpp"
 #include "Data/DataSerializer.hpp"
 #include "Data/Faction.hpp"
+#include "Data/ReportRepository.hpp"
 #include "Data/Unit.hpp"
 #include "GUI/EventsTabContent.hpp"
 #include "GUI/BattlesTabContent.hpp"
@@ -38,9 +39,13 @@
 #include "GUI/SkillsTabContent.hpp"
 #include "GUI/SettingsDialog.hpp"
 #include "GUI/WinSizingUtils.hpp"
+#include "Function/OrderWarningService.hpp"
 #include "GUI/WinTabView.hpp"
 #include "Function/StartupAutoLoadUtils.hpp"
 #include "Function/TabRefreshUtils.hpp"
+#include "Function/OrderBusinessLogic.hpp"
+#include "Function/OrderParsingUtils.hpp"
+#include "Function/CommandSimulationService.hpp"
 
 #include <commctrl.h>
 #include <commdlg.h>
@@ -347,6 +352,8 @@ namespace
   {
     int factionNumber { 0 };
     std::wstring password;
+    int currentMonth { 0 };
+    int currentYear { 0 };
     int nextMonth { 0 };
     int nextYear { 0 };
   };
@@ -390,11 +397,12 @@ namespace
     int latestMonth = 0;
     bool hasPeriod = false;
 
-    for (std::size_t index = 0; index < factionRepository.size(); ++index)
+    const auto& reportRepository = appData.reportRepository();
+    for (std::size_t index = 0; index < reportRepository.size(); ++index)
     {
-      const Faction& faction = factionRepository.at(index);
-      const int month = faction.getMonth();
-      const int year = faction.getYear();
+      const Report& report = reportRepository.at(index);
+      const int month = report.getMonth();
+      const int year = report.getYear();
       if (month < 1 || month > 12)
       {
         continue;
@@ -410,9 +418,12 @@ namespace
 
     if (!hasPeriod)
     {
-      errorMessage = L"Cannot export orders: no valid month/year was found in loaded faction data.";
+      errorMessage = L"Cannot export orders: no valid month/year was found in loaded reports.";
       return false;
     }
+
+    exportContext.currentMonth = latestMonth;
+    exportContext.currentYear = latestYear;
 
     ++latestMonth;
     if (latestMonth > 12)
@@ -505,6 +516,35 @@ namespace
           {
             unit->setOrders(currentOrders);
             ++unitsUpdated;
+
+            // Synchronize the order repository from the saved Unit (but defer global recompute)
+            OrderBusinessLogic::syncOrderRepositoryForSavedUnit(appData, currentUnitNumber, false);
+
+            // Rebuild UnitNew snapshots originating from this unit based on FORM blocks
+            appData.unitNewRepository().removeByOriginUnit(currentUnitNumber);
+            const std::vector<int> formUnitNumbers =
+              OrderParsingUtils::extractFormNewUnitNumbers(currentOrders);
+            for (int formUnitNumber : formUnitNumbers)
+            {
+              const int x = unit->getXCoordinate();
+              const int y = unit->getYCoordinate();
+              const int z = unit->getZCoordinate();
+              const std::wstring formUnitName = L"New Unit";
+
+              appData.unitNewRepository().add(
+                formUnitNumber,
+                formUnitName,
+                unit->getStructureId(),
+                x, y, z,
+                unit->getFlags(),
+                std::map<std::wstring, int>(),
+                0, 0, 0, 0, 0,
+                std::map<std::wstring, int>(),
+                unit->getMonth(),
+                unit->getYear(),
+                currentUnitNumber
+              );
+            }
           }
         }
 
@@ -527,7 +567,7 @@ namespace
       }
     }
 
-    // Save the last unit's orders if any
+    // Save the last unit's orders if any (same handling as above)
     if (currentUnitNumber != -1 && !currentOrders.empty())
     {
       Unit* unit = appData.unitRepository().findByNumber(currentUnitNumber);
@@ -535,22 +575,57 @@ namespace
       {
         unit->setOrders(currentOrders);
         ++unitsUpdated;
+
+        OrderBusinessLogic::syncOrderRepositoryForSavedUnit(appData, currentUnitNumber, false);
+
+        appData.unitNewRepository().removeByOriginUnit(currentUnitNumber);
+        const std::vector<int> formUnitNumbers =
+          OrderParsingUtils::extractFormNewUnitNumbers(currentOrders);
+        for (int formUnitNumber : formUnitNumbers)
+        {
+          const int x = unit->getXCoordinate();
+          const int y = unit->getYCoordinate();
+          const int z = unit->getZCoordinate();
+          const std::wstring formUnitName = L"New Unit";
+
+          appData.unitNewRepository().add(
+            formUnitNumber,
+            formUnitName,
+            unit->getStructureId(),
+            x, y, z,
+            unit->getFlags(),
+            std::map<std::wstring, int>(),
+            0, 0, 0, 0, 0,
+            std::map<std::wstring, int>(),
+            unit->getMonth(),
+            unit->getYear(),
+            currentUnitNumber
+          );
+        }
       }
     }
+
+    // One global recompute after all imports
+    CommandSimulationService::recalculateAfterOrdersValues(appData);
+    OrderWarningService::runForMainFaction(appData);
 
     return unitsUpdated;
   }
 
   std::wstring buildOrdersExportContent(const AppData& appData,
                                         int mainFactionNumber,
-                                        const std::wstring& factionPassword)
+                                        const std::wstring& factionPassword,
+                                        int currentMonth,
+                                        int currentYear)
   {
     std::vector<const Unit*> mainFactionUnits;
     const auto& unitRepository = appData.unitRepository();
     for (std::size_t index = 0; index < unitRepository.size(); ++index)
     {
       const Unit& unit = unitRepository.at(index);
-      if (unit.getFactionNumber() == mainFactionNumber)
+        if (unit.getFactionNumber() == mainFactionNumber
+          && unit.getMonth() == currentMonth
+          && unit.getYear() == currentYear)
       {
         mainFactionUnits.push_back(&unit);
       }
@@ -1298,6 +1373,23 @@ LRESULT MainWindow::handleMessage(UINT msg, WPARAM wp, LPARAM lp)
           }
         });
 
+      battlesTabContent_->setMapNavigationCallback(
+        [this](int x, int y, int z)
+        {
+          HWND tabCtrl = tabView_->getTabControl();
+          if (tabCtrl && mapTabIndex_ >= 0)
+          {
+            TabCtrl_SetCurSel(tabCtrl, mapTabIndex_);
+            tabView_->onSelectionChange();
+            updateReportsTabVisibility();
+          }
+          if (mapTabContent_)
+          {
+            mapTabContent_->focusRegion(x, y, z);
+          }
+        }
+      );
+
       // Force a layout pass so all newly created child panels are sized correctly.
       refreshUiScaleFromWindow(true);
       SendMessageW(hwnd_, WM_SIZE, SIZE_RESTORED, 0);
@@ -1680,7 +1772,9 @@ LRESULT MainWindow::handleMessage(UINT msg, WPARAM wp, LPARAM lp)
 
           const std::wstring content = buildOrdersExportContent(*appData_,
                                                                 exportContext.factionNumber,
-                                                                exportContext.password);
+                                                                exportContext.password,
+                                                                exportContext.currentMonth,
+                                                                exportContext.currentYear);
 
           std::wstring saveError;
           if (!saveTextFile(outputFilePath, content, saveError))
@@ -1735,6 +1829,9 @@ LRESULT MainWindow::handleMessage(UINT msg, WPARAM wp, LPARAM lp)
             MessageBoxW(hwnd_, importError.c_str(), L"Import Orders", MB_ICONERROR | MB_OK);
             return 0;
           }
+
+          // Recalculate warnings now that new orders are in place.
+          OrderWarningService::runForMainFaction(*appData_);
 
           refreshAllTabContents();
           std::wstring successMessage = L"Orders imported successfully for " + std::to_wstring(unitsUpdated) + L" unit(s).";

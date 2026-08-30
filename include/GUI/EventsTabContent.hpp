@@ -55,8 +55,11 @@ public:
 private:
   AppData* appData_ { nullptr };
   HWND     dateCombo_ { nullptr };
+  HWND     subTab_ { nullptr };
   HWND     eventsList_ { nullptr };
+  HWND     warningsList_ { nullptr };
   LRESULT  notifyResult_ { 0 };
+  bool     visible_ { false };
   std::vector<std::pair<int, int>> availablePeriods_;
   int selectedMonth_ { 0 };
   int selectedYear_ { 0 };
@@ -64,4 +67,6 @@ private:
   void updateDateDropdown();
   void updateSelectedPeriodFromDropdown();
   void updateEventsList();
+  void updateWarningsList();
+  void updateVisibleSubTab();
 };

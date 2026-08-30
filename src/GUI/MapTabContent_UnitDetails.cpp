@@ -227,6 +227,7 @@ std::set<std::wstring> collectTouchedItemTokensForUnit(const AppData& appData,
 
   return touchedTokens;
 }
+
 }
 
 void MapTabContent::populateUnitsForSelectedRegion()
@@ -368,6 +369,7 @@ void MapTabContent::populateUnitsForSelectedRegion()
 
     std::wstring flags = StringUtils::joinLines(unit.getFlags(), L", ");
     std::wstring skills = SkillFormattingUtils::formatSkills(unit.getSkills());
+    const std::wstring monthLongOrder = OrderParsingUtils::findMonthLongOrderText(unit.getOrders());
     const std::wstring warningIndicator = unit.getWarnings().empty() ? L"" : L"!";
     const bool isDamagedInLatestBattle = hasLatestBattlePeriod &&
       appData_->battleRepository().isUnitDamagedInAnyBattleForPeriod(
@@ -375,13 +377,32 @@ void MapTabContent::populateUnitsForSelectedRegion()
         latestBattleMonth,
         latestBattleYear
       );
+    const bool isParticipantInLatestBattle = hasLatestBattlePeriod && appData_->battleRepository().isParticipantInAnyBattleForPeriod(
+        unit.getUnitNumber(),
+        latestBattleMonth,
+        latestBattleYear
+      );
     const std::wstring damagedIndicator = isDamagedInLatestBattle ? L"x" : L"";
+    const std::wstring battleIndicator = isParticipantInLatestBattle ? L"x" : L"";
+
+    // Units-list column maintenance:
+    // 1. Add the title and width to kUnitsListColumns in MapTabContent_private.hpp.
+    //    MapTabContent.cpp then creates and resizes the Win32 column automatically.
+    // 2. Add the normal-unit value here. Update the UnitNew and empty-structure rows
+    //    below when they need a value or an explicit blank cell.
+    // 3. Update column-specific Win32 behavior and indexes in MapTabContent_Events.cpp,
+    //    including custom drawing and tooltips.
+    // 4. Keep Qt in sync: update the column count, header labels, and widths in
+    //    MapTabContentQt_Layout.cpp; then update appendUnitRow, each appendUnitRow call,
+    //    and setItem indexes in MapTabContentQt_UnitDetails.cpp.
     ListView_SetItemText(unitsList_, row, 5, const_cast<LPWSTR>(menText.c_str()));
     ListView_SetItemText(unitsList_, row, 6, const_cast<LPWSTR>(silverText.c_str()));
     ListView_SetItemText(unitsList_, row, 7, const_cast<LPWSTR>(flags.c_str()));
     ListView_SetItemText(unitsList_, row, 8, const_cast<LPWSTR>(skills.c_str()));
-    ListView_SetItemText(unitsList_, row, 9, const_cast<LPWSTR>(warningIndicator.c_str()));
-    ListView_SetItemText(unitsList_, row, 10, const_cast<LPWSTR>(damagedIndicator.c_str()));
+    ListView_SetItemText(unitsList_, row, 9, const_cast<LPWSTR>(monthLongOrder.c_str()));
+    ListView_SetItemText(unitsList_, row, 10, const_cast<LPWSTR>(warningIndicator.c_str()));
+    ListView_SetItemText(unitsList_, row, 11, const_cast<LPWSTR>(battleIndicator.c_str()));
+    ListView_SetItemText(unitsList_, row, 12, const_cast<LPWSTR>(damagedIndicator.c_str()));
 
     if (previousSelectedUnitNumber != 0 && unit.getUnitNumber() == previousSelectedUnitNumber)
     {
@@ -493,13 +514,18 @@ void MapTabContent::populateUnitsForSelectedRegion()
 
       std::wstring newFlags = StringUtils::joinLines(unitNew.getFlags(), L", ");
       std::wstring newSkills = SkillFormattingUtils::formatSkills(unitNew.getSkills());
+      const Unit* originUnit = appData_->unitRepository().findByNumber(unitNew.getOriginUnit());
+      const std::wstring newMonthLongOrder = originUnit
+        ? OrderParsingUtils::findMonthLongOrderText(OrderParsingUtils::extractFormNewUnitBlock(originUnit->getOrders(), unitNew.getUnitNumber()))
+        : L"";
       const std::wstring newWarningIndicator = unitNew.getWarnings().empty() ? L"" : L"!";
 
       ListView_SetItemText(unitsList_, row, 5, const_cast<LPWSTR>(newMenText.c_str()));
       ListView_SetItemText(unitsList_, row, 6, const_cast<LPWSTR>(newSilverText.c_str()));
       ListView_SetItemText(unitsList_, row, 7, const_cast<LPWSTR>(newFlags.c_str()));
       ListView_SetItemText(unitsList_, row, 8, const_cast<LPWSTR>(newSkills.c_str()));
-      ListView_SetItemText(unitsList_, row, 9, const_cast<LPWSTR>(newWarningIndicator.c_str()));
+      ListView_SetItemText(unitsList_, row, 9, const_cast<LPWSTR>(newMonthLongOrder.c_str()));
+      ListView_SetItemText(unitsList_, row, 10, const_cast<LPWSTR>(newWarningIndicator.c_str()));
 
       if (previousSelectedUnitNumber != 0 && unitNew.getUnitNumber() == previousSelectedUnitNumber)
       {
@@ -738,6 +764,11 @@ void MapTabContent::populateItemsForSelectedUnit(const Unit* unit)
     const auto afterIt = normalizedAfterCounts.find(itemToken);
     const int amountAfterCommands = afterIt != normalizedAfterCounts.end() ? afterIt->second : 0;
 
+    const std::map<std::wstring, int> afterGiveCounts =
+      Commands::calculateAfterGiveTransfersForUnit(*appData_, *unit);
+    const auto afterGiveIt = afterGiveCounts.find(itemToken);
+    const int amountAfterGive = afterGiveIt != afterGiveCounts.end() ? afterGiveIt->second : amount;
+
     std::wstring itemName;
     if (const Item* item = appData_->itemRepository().findByIdentifierToken(itemToken))
     {
@@ -745,6 +776,7 @@ void MapTabContent::populateItemsForSelectedUnit(const Unit* unit)
     }
 
     std::wstring amountText = std::to_wstring(amount);
+    std::wstring amountAfterGiveText = std::to_wstring(amountAfterGive);
     std::wstring amountAfterCommandsText = std::to_wstring(amountAfterCommands);
     LVITEMW listItem {};
     listItem.mask = LVIF_TEXT;
@@ -754,7 +786,8 @@ void MapTabContent::populateItemsForSelectedUnit(const Unit* unit)
     ListView_InsertItem(unitItemsList_, &listItem);
     ListView_SetItemText(unitItemsList_, row, 1, const_cast<LPWSTR>(itemName.c_str()));
     ListView_SetItemText(unitItemsList_, row, 2, const_cast<LPWSTR>(amountText.c_str()));
-    ListView_SetItemText(unitItemsList_, row, 3, const_cast<LPWSTR>(amountAfterCommandsText.c_str()));
+    ListView_SetItemText(unitItemsList_, row, 3, const_cast<LPWSTR>(amountAfterGiveText.c_str()));
+    ListView_SetItemText(unitItemsList_, row, 4, const_cast<LPWSTR>(amountAfterCommandsText.c_str()));
     ++row;
   }
 }
@@ -864,6 +897,11 @@ void MapTabContent::populateItemsForSelectedUnit(const UnitNew* unitNew)
     const auto afterIt = normalizedAfterCounts.find(itemToken);
     const int amountAfterCommands = afterIt != normalizedAfterCounts.end() ? afterIt->second : 0;
 
+    const std::map<std::wstring, int> afterGiveCounts =
+      Commands::calculateAfterGiveTransfersForUnitNew(*appData_, *unitNew);
+    const auto afterGiveIt = afterGiveCounts.find(itemToken);
+    const int amountAfterGive = afterGiveIt != afterGiveCounts.end() ? afterGiveIt->second : amount;
+
     std::wstring itemName;
     if (const Item* item = appData_->itemRepository().findByIdentifierToken(itemToken))
     {
@@ -871,6 +909,7 @@ void MapTabContent::populateItemsForSelectedUnit(const UnitNew* unitNew)
     }
 
     std::wstring amountText = std::to_wstring(amount);
+    std::wstring amountAfterGiveText = std::to_wstring(amountAfterGive);
     std::wstring amountAfterCommandsText = std::to_wstring(amountAfterCommands);
     LVITEMW listItem {};
     listItem.mask = LVIF_TEXT;
@@ -880,7 +919,8 @@ void MapTabContent::populateItemsForSelectedUnit(const UnitNew* unitNew)
     ListView_InsertItem(unitItemsList_, &listItem);
     ListView_SetItemText(unitItemsList_, row, 1, const_cast<LPWSTR>(itemName.c_str()));
     ListView_SetItemText(unitItemsList_, row, 2, const_cast<LPWSTR>(amountText.c_str()));
-    ListView_SetItemText(unitItemsList_, row, 3, const_cast<LPWSTR>(amountAfterCommandsText.c_str()));
+    ListView_SetItemText(unitItemsList_, row, 3, const_cast<LPWSTR>(amountAfterGiveText.c_str()));
+    ListView_SetItemText(unitItemsList_, row, 4, const_cast<LPWSTR>(amountAfterCommandsText.c_str()));
     ++row;
   }
 }

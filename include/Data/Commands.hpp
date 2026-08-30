@@ -40,6 +40,21 @@ class UnitNew;
 class Commands
 {
 public:
+  struct ClaimIssuer
+  {
+    int unitNumber { 0 };
+    bool isNewUnit { false };
+    int xCoordinate { 0 };
+    int yCoordinate { 0 };
+    int zCoordinate { 0 };
+  };
+
+  struct ClaimSummary
+  {
+    int totalClaimAmount { 0 };
+    std::vector<ClaimIssuer> issuers;
+  };
+
   /**
   * @brief Aggregated regional economy values after command simulation.
   */
@@ -59,12 +74,36 @@ public:
                                                                             const Unit& unit);
 
   /**
+  * @brief Calculates item amounts for a unit after applying supported commands
+  *        but excluding STUDY command effects.
+  *
+  * This is used by warning logic that needs the post-GIVE/TAKE state but before
+  * STUDY deductions are applied.
+  */
+  static std::map<std::wstring, int> calculateAfterCommandItemCountsForUnitExcludingStudy(const AppData& appData,
+                                                                                         const Unit& unit);
+
+  /**
+  * @brief Calculates item amounts for a unit after applying only GIVE/TAKE phase effects.
+  *
+  * Used to show per-unit item totals after GIVE/TAKE transfers (before tax, study, produce, etc.).
+  */
+  static std::map<std::wstring, int> calculateAfterGiveTransfersForUnit(const AppData& appData,
+                                                                        const Unit& unit);
+
+  static std::map<std::wstring, int> calculateAfterGiveTransfersForUnitNew(const AppData& appData,
+                                                                           const UnitNew& unitNew);
+
+  /**
   * @brief Calculates item amounts for a UnitNew after applying supported commands.
   *
   * Only commands issued by units in the same region (x, y, z) are considered.
   */
   static std::map<std::wstring, int> calculateAfterCommandItemCountsForUnitNew(const AppData& appData,
                                                                                const class UnitNew& unitNew);
+
+  static std::map<std::wstring, int> calculateAfterCommandItemCountsForUnitNewExcludingStudy(const AppData& appData,
+                                                                                              const class UnitNew& unitNew);
 
   /**
   * @brief Calculates skill amounts (in days) for a unit after applying supported commands.
@@ -125,6 +164,9 @@ public:
   */
   static RegionEconomyAfterCommands calculateAfterCommandRegionEconomy(const AppData& appData,
                                                                         const Region& region);
+
+  // Aggregates valid CLAIM orders across units and UnitNew entries.
+  static ClaimSummary summarizeClaims(const AppData& appData);
 
   /**
   * @brief Gets full-month command keywords as comma-separated text.

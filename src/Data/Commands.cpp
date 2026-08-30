@@ -291,7 +291,9 @@ namespace
     Sell, /**< Resolve SELL market operations. */
     Buy, /**< Resolve BUY market operations. */
     Move, /**< Reserved for movement-only sequencing. */
-    Produce, /**< Resolve PRODUCE and STUDY costs. */
+    Teach, /**< Resolve TEACH effects. */
+    Study, /**< Resolve STUDY silver-consumption and advancement. */
+    Produce, /**< Resolve PRODUCE effects. */
     Entertain, /**< Resolve ENTERTAIN income. */
     Name, /**< Resolve NAME UNIT updates. */
     Work, /**< Resolve WORK wages. */
@@ -677,7 +679,7 @@ namespace
   /**
   * @brief Returns true when an order keyword is configured as month-long.
   */
-  bool isFullMonthOrderLine(const std::wstring& orderLine)
+  [[maybe_unused]] bool isFullMonthOrderLine(const std::wstring& orderLine)
   {
     std::wstring commandKeyword;
     if (!tryExtractCommandKeyword(orderLine, commandKeyword))
@@ -1474,7 +1476,7 @@ namespace
                               targetUnit.getYCoordinate()) <= 2;
   }
 
-  bool isWithinTransportRange(const UnitNew& sourceUnit, const Unit& targetUnit)
+  [[maybe_unused]] bool isWithinTransportRange(const UnitNew& sourceUnit, const Unit& targetUnit)
   {
     if (sourceUnit.getZCoordinate() != targetUnit.getZCoordinate())
     {
@@ -1487,7 +1489,7 @@ namespace
                               targetUnit.getYCoordinate()) <= 2;
   }
 
-  bool isWithinTransportRange(const UnitNew& sourceUnit, const UnitNew& targetUnit)
+  [[maybe_unused]] bool isWithinTransportRange(const UnitNew& sourceUnit, const UnitNew& targetUnit)
   {
     if (sourceUnit.getZCoordinate() != targetUnit.getZCoordinate())
     {
@@ -2254,7 +2256,7 @@ namespace
     return bestQualifiedLevel;
   }
 
-  int getBestQualifiedProductionSkillLevel(const AppData& appData, const Unit& unit, const Item& item)
+  [[maybe_unused]] int getBestQualifiedProductionSkillLevel(const AppData& appData, const Unit& unit, const Item& item)
   {
     return getBestQualifiedProductionSkillLevel(appData, unit.getSkills(), item);
   }
@@ -2290,8 +2292,11 @@ namespace
       case SimulatedCommandKind::Claim:
         return CommandPhase::Tax;
 
+      case SimulatedCommandKind::Teach:
+        return CommandPhase::Teach;
+
       case SimulatedCommandKind::Study:
-        return CommandPhase::Produce;
+        return CommandPhase::Study;
 
       case SimulatedCommandKind::NameUnit:
         return CommandPhase::Name;
@@ -2557,9 +2562,22 @@ namespace
 
           const int desiredAmount =
             (tradeCommand.mode == GiveMode::All) ? availableAmount : std::min(availableAmount, tradeCommand.quantity);
-          const int silverAvailable = std::max(0, originCounts[L"SILV"]);
-          const int affordableAmount = (price > 0) ? (silverAvailable / price) : desiredAmount;
+          const int silverBalance = originCounts[L"SILV"];
+          const int affordableAmount = (price > 0) ? ((std::max)(0, silverBalance) / price) : desiredAmount;
           const int boughtAmount = std::min(desiredAmount, affordableAmount);
+          if (price > 0)
+          {
+            const int remainingSilver = silverBalance - (desiredAmount * price);
+            if (remainingSilver != 0)
+            {
+              originCounts[L"SILV"] = remainingSilver;
+            }
+            else
+            {
+              originCounts.erase(L"SILV");
+            }
+          }
+
           if (boughtAmount <= 0)
           {
             return;
@@ -2601,19 +2619,6 @@ namespace
                   originSkillsPtr->erase(skillToken);
                 }
               }
-            }
-          }
-
-          if (price > 0)
-          {
-            const int remainingSilver = silverAvailable - (boughtAmount * price);
-            if (remainingSilver > 0)
-            {
-              originCounts[L"SILV"] = remainingSilver;
-            }
-            else
-            {
-              originCounts.erase(L"SILV");
             }
           }
 
@@ -2808,6 +2813,24 @@ namespace
         {
           sourceIsNewUnit = isNewUnit;
           destinationIsNewUnit = giveCommand.receiverIsNewUnit;
+
+          // GIVE is region-local: the destination must be in the exact simulated region.
+          if (destinationIsNewUnit)
+          {
+            const auto destinationNewUnitIter = simulation.regionNewUnits.find(destinationUnitNumber);
+            if (destinationNewUnitIter == simulation.regionNewUnits.end() || destinationNewUnitIter->second == nullptr)
+            {
+              return;
+            }
+          }
+          else
+          {
+            const auto destinationUnitIter = simulation.regionUnits.find(destinationUnitNumber);
+            if (destinationUnitIter == simulation.regionUnits.end() || destinationUnitIter->second == nullptr)
+            {
+              return;
+            }
+          }
         }
 
         std::map<std::wstring, int>* sourceCounts = nullptr;
@@ -3408,6 +3431,7 @@ namespace
           }
           else
           {
+            originCounts[L"SILV"] = silverAfterStudy;
             return;
           }
         }
@@ -3716,7 +3740,9 @@ namespace
   RegionCommandSimulation simulateRegionCommands(const AppData& appData,
                                                 int regionX,
                                                 int regionY,
-                                                int regionZ)
+                                                int regionZ,
+                                                bool includeStudy = true,
+                                                CommandPhase maxPhase = CommandPhase::Transport)
   {
     RegionCommandSimulation simulation;
     std::vector<ScheduledCommand> scheduledCommands;
@@ -3756,7 +3782,11 @@ namespace
           candidate.getYCoordinate() == regionY &&
           candidate.getZCoordinate() == regionZ)
       {
-        simulation.regionNewUnits[unitNumber] = &candidate;
+        const auto existingLocalIter = simulation.regionNewUnits.find(unitNumber);
+        if (existingLocalIter == simulation.regionNewUnits.end() || existingLocalIter->second == nullptr)
+        {
+          simulation.regionNewUnits[unitNumber] = &candidate;
+        }
       }
 
       if (candidate.getZCoordinate() != regionZ)
@@ -3767,17 +3797,18 @@ namespace
       if (doubledHexDistance(candidate.getXCoordinate(), candidate.getYCoordinate(), regionX, regionY) <= 2)
       {
         const auto existingNearbyIter = simulation.nearbyNewUnits.find(unitNumber);
+        bool candidateIsLocal =
+          candidate.getXCoordinate() == regionX &&
+          candidate.getYCoordinate() == regionY &&
+          candidate.getZCoordinate() == regionZ;
+        bool existingIsLocal = false;
         if (existingNearbyIter != simulation.nearbyNewUnits.end() && existingNearbyIter->second)
         {
           const UnitNew* existing = existingNearbyIter->second;
-          const bool existingIsLocal =
+          existingIsLocal =
             existing->getXCoordinate() == regionX &&
             existing->getYCoordinate() == regionY &&
             existing->getZCoordinate() == regionZ;
-          const bool candidateIsLocal =
-            candidate.getXCoordinate() == regionX &&
-            candidate.getYCoordinate() == regionY &&
-            candidate.getZCoordinate() == regionZ;
 
           // UnitNew numbers can repeat across coordinates. Keep the local-region
           // snapshot when collisions happen so local BUY/SELL effects are simulated
@@ -3786,6 +3817,18 @@ namespace
           {
             continue;
           }
+        }
+
+        // Keep all state maps aligned with the selected snapshot. UnitNew numbers
+        // may repeat at different coordinates, but the local snapshot must win.
+        const bool shouldReplaceExisting =
+          existingNearbyIter == simulation.nearbyNewUnits.end()
+          || existingNearbyIter->second == nullptr
+          || candidateIsLocal
+          || !existingIsLocal;
+        if (!shouldReplaceExisting)
+        {
+          continue;
         }
 
         simulation.nearbyNewUnits[unitNumber] = &candidate;
@@ -3864,6 +3907,11 @@ namespace
           continue;
         }
 
+        if (!includeStudy && parsedCommand.kind == SimulatedCommandKind::Study)
+        {
+          continue;
+        }
+
         scheduledCommands.push_back({ originUnitNumber, originUnit, originIsLocal, parsedCommand, false });
       }
     }
@@ -3900,15 +3948,22 @@ namespace
           continue;
         }
 
+        if (!includeStudy && parsedCommand.kind == SimulatedCommandKind::Study)
+        {
+          continue;
+        }
+
         scheduledCommands.push_back({ originUnitNumber, nullptr, originIsLocal, parsedCommand, true });
       }
     }
 
-    constexpr std::array<CommandPhase, 9> kCommandPhases = {
+    constexpr std::array<CommandPhase, 11> kCommandPhases = {
       CommandPhase::GiveTake,
       CommandPhase::Tax,
       CommandPhase::Sell,
       CommandPhase::Buy,
+      CommandPhase::Teach,
+      CommandPhase::Study,
       CommandPhase::Produce,
       CommandPhase::Entertain,
       CommandPhase::Name,
@@ -3926,6 +3981,11 @@ namespace
         }
 
         executeScheduledCommand(appData, region, simulation, scheduledCommand);
+      }
+
+      if (phase == maxPhase)
+      {
+        break;
       }
     }
 
@@ -3954,6 +4014,166 @@ std::map<std::wstring, int> Commands::calculateAfterCommandItemCountsForUnit(con
   return targetIter->second;
 }
 
+std::map<std::wstring, int> Commands::calculateAfterGiveTransfersForUnit(const AppData& appData,
+                                                                          const Unit& unit)
+{
+  // Start from the unit's normalized current inventory
+  std::map<std::wstring, int> remaining = normalizeItemCountsMap(unit.getItems());
+
+  const std::vector<Order>* orders = appData.orderRepository().getOrdersForUnit(unit.getUnitNumber(), false);
+  if (!orders)
+  {
+    return remaining;
+  }
+
+  for (const Order& order : *orders)
+  {
+    // Consider both GIVE and TRANSPORT/DISTRIBUTE as outgoing transfers
+    GiveCommand giveParsed;
+    if (tryParseGiveCommand(order.getFullOrderText(), giveParsed))
+    {
+      // Only consider outgoing GIVE commands (not TAKE)
+      if (!giveParsed.isTake && giveParsed.kind == GiveKind::ItemTransfer)
+      {
+        std::wstring token;
+        if (tryResolveItemToken(appData, giveParsed.itemOperand, giveParsed.itemOperandWasQuoted, token))
+        {
+          switch (giveParsed.mode)
+          {
+            case GiveMode::Quantity:
+              remaining[token] -= giveParsed.quantity;
+              break;
+            case GiveMode::All:
+              remaining[token] = 0;
+              break;
+            case GiveMode::AllExcept:
+              remaining[token] = giveParsed.exceptQuantity;
+              break;
+          }
+        }
+      }
+      continue;
+    }
+
+    TransportCommand transportParsed;
+    if (tryParseTransportCommand(order.getFullOrderText(), transportParsed))
+    {
+      std::wstring token;
+      if (tryResolveItemToken(appData, transportParsed.itemOperand, transportParsed.itemOperandWasQuoted, token))
+      {
+        switch (transportParsed.mode)
+        {
+          case GiveMode::Quantity:
+            remaining[token] -= transportParsed.quantity;
+            break;
+          case GiveMode::All:
+            remaining[token] = 0;
+            break;
+          case GiveMode::AllExcept:
+            remaining[token] = transportParsed.exceptQuantity;
+            break;
+        }
+      }
+      continue;
+    }
+  }
+
+  return remaining;
+}
+
+std::map<std::wstring, int> Commands::calculateAfterGiveTransfersForUnitNew(const AppData& appData,
+                                                                             const UnitNew& unitNew)
+{
+  std::map<std::wstring, int> remaining = normalizeItemCountsMap(unitNew.getItems());
+
+  const std::vector<Order>* orders = appData.orderRepository().getOrdersForUnit(unitNew.getUnitNumber(), true);
+  if (!orders)
+  {
+    return remaining;
+  }
+
+  for (const Order& order : *orders)
+  {
+    // Ensure orders correspond to this UnitNew snapshot coordinates
+    if (order.getXCoordinate() != unitNew.getXCoordinate() ||
+        order.getYCoordinate() != unitNew.getYCoordinate() ||
+        order.getZCoordinate() != unitNew.getZCoordinate())
+    {
+      continue;
+    }
+    // Handle GIVE first
+    GiveCommand giveParsed;
+    if (tryParseGiveCommand(order.getFullOrderText(), giveParsed))
+    {
+      if (!giveParsed.isTake && giveParsed.kind == GiveKind::ItemTransfer)
+      {
+        std::wstring token;
+        if (tryResolveItemToken(appData, giveParsed.itemOperand, giveParsed.itemOperandWasQuoted, token))
+        {
+          switch (giveParsed.mode)
+          {
+            case GiveMode::Quantity:
+              remaining[token] -= giveParsed.quantity;
+              break;
+            case GiveMode::All:
+              remaining[token] = 0;
+              break;
+            case GiveMode::AllExcept:
+              remaining[token] = giveParsed.exceptQuantity;
+              break;
+          }
+        }
+      }
+      continue;
+    }
+
+    // Then handle TRANSPORT/DISTRIBUTE
+    TransportCommand transportParsed;
+    if (tryParseTransportCommand(order.getFullOrderText(), transportParsed))
+    {
+      std::wstring token;
+      if (tryResolveItemToken(appData, transportParsed.itemOperand, transportParsed.itemOperandWasQuoted, token))
+      {
+        switch (transportParsed.mode)
+        {
+          case GiveMode::Quantity:
+            remaining[token] -= transportParsed.quantity;
+            break;
+          case GiveMode::All:
+            remaining[token] = 0;
+            break;
+          case GiveMode::AllExcept:
+            remaining[token] = transportParsed.exceptQuantity;
+            break;
+        }
+      }
+      continue;
+    }
+  }
+
+  return remaining;
+}
+
+std::map<std::wstring, int> Commands::calculateAfterCommandItemCountsForUnitExcludingStudy(const AppData& appData,
+                                                                                           const Unit& unit)
+{
+  const RegionCommandSimulation simulation = simulateRegionCommands(
+    appData,
+    unit.getXCoordinate(),
+    unit.getYCoordinate(),
+    unit.getZCoordinate(),
+    /*includeStudy=*/false,
+    /*maxPhase=*/CommandPhase::Transport);
+
+  const auto targetIter = simulation.itemCountsByUnit.find(unit.getUnitNumber());
+  if (targetIter == simulation.itemCountsByUnit.end())
+  {
+    return unit.getItems();
+  }
+
+  return targetIter->second;
+}
+
 /**
 * @brief Calculates post-command item counts for a specific UnitNew.
 */
@@ -3965,6 +4185,26 @@ std::map<std::wstring, int> Commands::calculateAfterCommandItemCountsForUnitNew(
     unitNew.getXCoordinate(),
     unitNew.getYCoordinate(),
     unitNew.getZCoordinate());
+
+  const auto targetIter = simulation.itemCountsByNewUnit.find(unitNew.getUnitNumber());
+  if (targetIter == simulation.itemCountsByNewUnit.end())
+  {
+    return unitNew.getItems();
+  }
+
+  return targetIter->second;
+}
+
+std::map<std::wstring, int> Commands::calculateAfterCommandItemCountsForUnitNewExcludingStudy(const AppData& appData,
+                                                                                              const UnitNew& unitNew)
+{
+  const RegionCommandSimulation simulation = simulateRegionCommands(
+    appData,
+    unitNew.getXCoordinate(),
+    unitNew.getYCoordinate(),
+    unitNew.getZCoordinate(),
+    /*includeStudy=*/false,
+    /*maxPhase=*/CommandPhase::Transport);
 
   const auto targetIter = simulation.itemCountsByNewUnit.find(unitNew.getUnitNumber());
   if (targetIter == simulation.itemCountsByNewUnit.end())
@@ -4112,6 +4352,77 @@ Commands::RegionEconomyAfterCommands Commands::calculateAfterCommandRegionEconom
   economy.remainingEntertainment = simulation.remainingEntertainment;
   economy.remainingWorkWages = simulation.remainingWorkWages;
   return economy;
+}
+
+Commands::ClaimSummary Commands::summarizeClaims(const AppData& appData)
+{
+  ClaimSummary summary;
+  const auto& orderRepository = appData.orderRepository();
+
+  const auto collectForOrders = [&](const std::vector<Order>* orders,
+                                    int unitNumber,
+                                    bool isNewUnit,
+                                    int xCoordinate,
+                                    int yCoordinate,
+                                    int zCoordinate)
+  {
+    if (!orders)
+    {
+      return;
+    }
+
+    bool hasClaimOrder = false;
+    for (const Order& order : *orders)
+    {
+      ClaimCommand parsedClaim;
+      if (!tryParseClaimCommand(order.getFullOrderText(), parsedClaim))
+      {
+        continue;
+      }
+
+      summary.totalClaimAmount += parsedClaim.amount;
+      hasClaimOrder = true;
+    }
+
+    if (!hasClaimOrder)
+    {
+      return;
+    }
+
+    summary.issuers.push_back({
+      unitNumber,
+      isNewUnit,
+      xCoordinate,
+      yCoordinate,
+      zCoordinate,
+    });
+  };
+
+  const auto& unitRepository = appData.unitRepository();
+  for (std::size_t index = 0; index < unitRepository.size(); ++index)
+  {
+    const Unit& unit = unitRepository.at(index);
+    collectForOrders(orderRepository.getOrdersForUnit(unit.getUnitNumber(), false),
+                     unit.getUnitNumber(),
+                     false,
+                     unit.getXCoordinate(),
+                     unit.getYCoordinate(),
+                     unit.getZCoordinate());
+  }
+
+  const auto& unitNewRepository = appData.unitNewRepository();
+  for (std::size_t index = 0; index < unitNewRepository.size(); ++index)
+  {
+    const UnitNew& unitNew = unitNewRepository.at(index);
+    collectForOrders(orderRepository.getOrdersForUnit(unitNew.getUnitNumber(), true),
+                     unitNew.getUnitNumber(),
+                     true,
+                     unitNew.getXCoordinate(),
+                     unitNew.getYCoordinate(),
+                     unitNew.getZCoordinate());
+  }
+
+  return summary;
 }
 
 /**

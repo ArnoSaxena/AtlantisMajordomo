@@ -40,6 +40,7 @@ struct WarningGiveTakeOrder
 {
   bool isTake { false };
   int otherUnitNumber { 0 };
+  bool otherUnitIsNew { false };
   WarningGiveMode mode { WarningGiveMode::Quantity };
   int quantity { 0 };
   int exceptQuantity { 0 };
@@ -57,6 +58,7 @@ std::wstring normalizeItemTokenForWarning(std::wstring token);
 
 bool tryExtractOrderKeywordUpper(const std::wstring& orderLine, std::wstring& keyword);
 bool isMonthLongOrderLine(const std::wstring& orderLine);
+std::wstring findMonthLongOrderText(const std::vector<std::wstring>& orders);
 
 bool tryParseGiveTakeOrder(const std::wstring& orderLine, WarningGiveTakeOrder& parsedOrder);
 

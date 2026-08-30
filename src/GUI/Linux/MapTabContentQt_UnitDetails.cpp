@@ -58,6 +58,7 @@
 #include <QHeaderView>
 
 #include <algorithm>
+#include <array>
 #include <cwctype>
 #include <map>
 #include <set>
@@ -211,134 +212,134 @@ bool tryResolveOrderItemToken(const AppData& appData,
             resolvedToken = item.getIdentifierToken();
             return true;
         }
-
-        int resolveSingleMainFactionNumber(const AppData* appData)
-        {
-            if (!appData)
-            {
-                return 0;
-            }
-
-            const auto& factionRepository = appData->factionRepository();
-            int mainFactionNumber = 0;
-            int mainFactionCount = 0;
-            for (std::size_t index = 0; index < factionRepository.size(); ++index)
-            {
-                const Faction& faction = factionRepository.at(index);
-                if (!faction.isMainFaction())
-                {
-                    continue;
-                }
-
-                ++mainFactionCount;
-                mainFactionNumber = faction.getFactionNumber();
-            }
-
-            return (mainFactionCount == 1) ? mainFactionNumber : 0;
-        }
-
-        int resolveRowFactionNumber(const AppData* appData,
-                                   int rowUnitRoleValue,
-                                   int selectedRegionX,
-                                   int selectedRegionY,
-                                   int selectedZ)
-        {
-            if (!appData)
-            {
-                return 0;
-            }
-
-            if (rowUnitRoleValue > 0)
-            {
-                const Unit* unit = appData->unitRepository().findByNumber(rowUnitRoleValue);
-                return unit ? unit->getFactionNumber() : 0;
-            }
-
-            if (rowUnitRoleValue < 0)
-            {
-                const int unitNewNumber = -rowUnitRoleValue;
-                const UnitNew* unitNew = appData->unitNewRepository().findByNumberAndCoordinates(
-                    unitNewNumber,
-                    selectedRegionX,
-                    selectedRegionY,
-                    selectedZ);
-                if (!unitNew)
-                {
-                    return 0;
-                }
-
-                int factionNumber = unitNew->getFactionNumber();
-                if (factionNumber <= 0)
-                {
-                    const Unit* originUnit = appData->unitRepository().findByNumber(unitNew->getOriginUnit());
-                    if (originUnit)
-                    {
-                        factionNumber = originUnit->getFactionNumber();
-                    }
-                }
-
-                return factionNumber;
-            }
-
-            return 0;
-        }
-
-        void applyUnitsListFactionTextColors(QTableWidget* unitsList,
-                                             const AppData* appData,
-                                             const AppConfig* appConfig,
-                                             int selectedRegionX,
-                                             int selectedRegionY,
-                                             int selectedZ)
-        {
-            if (!unitsList || !appData || !appConfig)
-            {
-                return;
-            }
-
-            const int mainFactionNumber = resolveSingleMainFactionNumber(appData);
-            if (mainFactionNumber <= 0)
-            {
-                return;
-            }
-
-            const int rowCount = unitsList->rowCount();
-            const int columnCount = unitsList->columnCount();
-            for (int row = 0; row < rowCount; ++row)
-            {
-                const QTableWidgetItem* numberItem = unitsList->item(row, 0);
-                const int rowUnitRoleValue = numberItem ? numberItem->data(kUnitNumberRole).toInt() : 0;
-                const int rowFactionNumber = resolveRowFactionNumber(
-                    appData,
-                    rowUnitRoleValue,
-                    selectedRegionX,
-                    selectedRegionY,
-                    selectedZ);
-                if (rowFactionNumber <= 0)
-                {
-                    continue;
-                }
-
-                const std::array<int, 3> rgb = (rowFactionNumber == mainFactionNumber)
-                    ? appConfig->getMainFactionUnitTextColor()
-                    : appConfig->getOtherFactionUnitTextColor();
-                const QBrush brush(QColor(
-                    std::clamp(rgb[0], 0, 255),
-                    std::clamp(rgb[1], 0, 255),
-                    std::clamp(rgb[2], 0, 255)));
-
-                for (int column = 0; column < columnCount; ++column)
-                {
-                    QTableWidgetItem* item = unitsList->item(row, column);
-                    if (item)
-                    {
-                        item->setForeground(brush);
-                    }
-                }
-            }
-        }
     }
 
     return false;
+}
+
+int resolveSingleMainFactionNumber(const AppData* appData)
+{
+    if (!appData)
+    {
+        return 0;
+    }
+
+    const auto& factionRepository = appData->factionRepository();
+    int mainFactionNumber = 0;
+    int mainFactionCount = 0;
+    for (std::size_t index = 0; index < factionRepository.size(); ++index)
+    {
+        const Faction& faction = factionRepository.at(index);
+        if (!faction.isMainFaction())
+        {
+            continue;
+        }
+
+        ++mainFactionCount;
+        mainFactionNumber = faction.getFactionNumber();
+    }
+
+    return (mainFactionCount == 1) ? mainFactionNumber : 0;
+}
+
+int resolveRowFactionNumber(const AppData* appData,
+                           int rowUnitRoleValue,
+                           int selectedRegionX,
+                           int selectedRegionY,
+                           int selectedZ)
+{
+    if (!appData)
+    {
+        return 0;
+    }
+
+    if (rowUnitRoleValue > 0)
+    {
+        const Unit* unit = appData->unitRepository().findByNumber(rowUnitRoleValue);
+        return unit ? unit->getFactionNumber() : 0;
+    }
+
+    if (rowUnitRoleValue < 0)
+    {
+        const int unitNewNumber = -rowUnitRoleValue;
+        const UnitNew* unitNew = appData->unitNewRepository().findByNumberAndCoordinates(
+            unitNewNumber,
+            selectedRegionX,
+            selectedRegionY,
+            selectedZ);
+        if (!unitNew)
+        {
+            return 0;
+        }
+
+        int factionNumber = unitNew->getFactionNumber();
+        if (factionNumber <= 0)
+        {
+            const Unit* originUnit = appData->unitRepository().findByNumber(unitNew->getOriginUnit());
+            if (originUnit)
+            {
+                factionNumber = originUnit->getFactionNumber();
+            }
+        }
+
+        return factionNumber;
+    }
+
+    return 0;
+}
+
+void applyUnitsListFactionTextColors(QTableWidget* unitsList,
+                                     const AppData* appData,
+                                     const AppConfig* appConfig,
+                                     int selectedRegionX,
+                                     int selectedRegionY,
+                                     int selectedZ)
+{
+    if (!unitsList || !appData || !appConfig)
+    {
+        return;
+    }
+
+    const int mainFactionNumber = resolveSingleMainFactionNumber(appData);
+    if (mainFactionNumber <= 0)
+    {
+        return;
+    }
+
+    const int rowCount = unitsList->rowCount();
+    const int columnCount = unitsList->columnCount();
+    for (int row = 0; row < rowCount; ++row)
+    {
+        const QTableWidgetItem* numberItem = unitsList->item(row, 0);
+        const int rowUnitRoleValue = numberItem ? numberItem->data(kUnitNumberRole).toInt() : 0;
+        const int rowFactionNumber = resolveRowFactionNumber(
+            appData,
+            rowUnitRoleValue,
+            selectedRegionX,
+            selectedRegionY,
+            selectedZ);
+        if (rowFactionNumber <= 0)
+        {
+            continue;
+        }
+
+        const std::array<int, 3> rgb = (rowFactionNumber == mainFactionNumber)
+            ? appConfig->getMainFactionUnitTextColor()
+            : appConfig->getOtherFactionUnitTextColor();
+        const QBrush brush(QColor(
+            std::clamp(rgb[0], 0, 255),
+            std::clamp(rgb[1], 0, 255),
+            std::clamp(rgb[2], 0, 255)));
+
+        for (int column = 0; column < columnCount; ++column)
+        {
+            QTableWidgetItem* item = unitsList->item(row, column);
+            if (item)
+            {
+                item->setForeground(brush);
+            }
+        }
+    }
 }
 
 bool tryConsumeUnitReference(const std::vector<std::wstring>& tokens, std::size_t& tokenIndex)
@@ -610,7 +611,9 @@ void MapTabContentQt::populateUnitsForSelectedRegion()
                              const std::wstring& silverText,
                              const std::wstring& flagsText,
                              const std::wstring& skillsText,
+                             const std::wstring& monthLongOrderText,
                              const std::wstring& warningText,
+                             const std::wstring& battleText,
                              const std::wstring& damagedText)
     {
         const int row = unitsList_->rowCount();
@@ -628,8 +631,10 @@ void MapTabContentQt::populateUnitsForSelectedRegion()
         unitsList_->setItem(row, 6, makeReadOnlyItem(toQString(silverText)));
         unitsList_->setItem(row, 7, makeReadOnlyItem(toQString(flagsText)));
         unitsList_->setItem(row, 8, makeReadOnlyItem(toQString(skillsText)));
-        unitsList_->setItem(row, 9, makeReadOnlyItem(toQString(warningText)));
-        unitsList_->setItem(row, 10, makeReadOnlyItem(toQString(damagedText)));
+        unitsList_->setItem(row, 9, makeReadOnlyItem(toQString(monthLongOrderText)));
+        unitsList_->setItem(row, 10, makeReadOnlyItem(toQString(warningText)));
+        unitsList_->setItem(row, 11, makeReadOnlyItem(toQString(battleText)));
+        unitsList_->setItem(row, 12, makeReadOnlyItem(toQString(damagedText)));
 
         if (previousSelectedUnitNumber != 0)
         {
@@ -719,11 +724,16 @@ void MapTabContentQt::populateUnitsForSelectedRegion()
 
         const std::wstring flagsText = StringUtils::joinLines(unit.getFlags(), L", ");
         const std::wstring skillsText = SkillFormattingUtils::formatSkills(unit.getSkills());
+        const std::wstring monthLongOrderText = OrderParsingUtils::findMonthLongOrderText(unit.getOrders());
         const std::wstring warningIndicator = unit.getWarnings().empty() ? L"" : L"!";
 
         const bool isDamagedInLatestBattle = hasLatestBattlePeriod &&
             appData_->battleRepository().isUnitDamagedInAnyBattleForPeriod(
                 unit.getUnitNumber(), latestBattleMonth, latestBattleYear);
+        const bool isParticipantInLatestBattle = hasLatestBattlePeriod &&
+            appData_->battleRepository().isParticipantInAnyBattleForPeriod(
+                unit.getUnitNumber(), latestBattleMonth, latestBattleYear);
+        const std::wstring battleIndicator = isParticipantInLatestBattle ? L"x" : L"";
         const std::wstring damagedIndicator = isDamagedInLatestBattle ? L"x" : L"";
 
         appendUnitRow(unit.getUnitNumber(),
@@ -736,7 +746,9 @@ void MapTabContentQt::populateUnitsForSelectedRegion()
                       silverText,
                       flagsText,
                       skillsText,
+                      monthLongOrderText,
                       warningIndicator,
+                      battleIndicator,
                       damagedIndicator);
 
         for (std::size_t newIndex = 0; newIndex < unitNewRepository.size(); ++newIndex)
@@ -824,6 +836,8 @@ void MapTabContentQt::populateUnitsForSelectedRegion()
 
             const std::wstring newFlagsText = StringUtils::joinLines(unitNew.getFlags(), L", ");
             const std::wstring newSkillsText = SkillFormattingUtils::formatSkills(unitNew.getSkills());
+            const std::wstring newMonthLongOrderText = OrderParsingUtils::findMonthLongOrderText(
+                OrderParsingUtils::extractFormNewUnitBlock(unit.getOrders(), unitNew.getUnitNumber()));
             const std::wstring newWarningIndicator = unitNew.getWarnings().empty() ? L"" : L"!";
 
             appendUnitRow(-unitNew.getUnitNumber(),
@@ -836,7 +850,9 @@ void MapTabContentQt::populateUnitsForSelectedRegion()
                           newSilverText,
                           newFlagsText,
                           newSkillsText,
+                          newMonthLongOrderText,
                           newWarningIndicator,
+                          L"",
                           L"");
         }
     }
@@ -876,6 +892,8 @@ void MapTabContentQt::populateUnitsForSelectedRegion()
                       L"",
                       L"",
                       structureText,
+                      L"",
+                      L"",
                       L"",
                       L"",
                       L"",
@@ -1199,6 +1217,11 @@ void MapTabContentQt::populateItemsForSelectedUnit(const Unit* unit)
         const auto afterIt = normalizedAfterCounts.find(itemToken);
         const int amountAfterCommands = afterIt != normalizedAfterCounts.end() ? afterIt->second : 0;
 
+        const std::map<std::wstring, int> afterGiveCounts =
+            Commands::calculateAfterGiveTransfersForUnit(*appData_, *unit);
+        const auto afterGiveIt = afterGiveCounts.find(itemToken);
+        const int amountAfterGive = afterGiveIt != afterGiveCounts.end() ? afterGiveIt->second : amount;
+
         std::wstring itemName;
         if (const Item* item = appData_->itemRepository().findByIdentifierToken(itemToken))
         {
@@ -1210,7 +1233,8 @@ void MapTabContentQt::populateItemsForSelectedUnit(const Unit* unit)
         unitItemsList_->setItem(row, 0, makeReadOnlyItem(toQString(itemToken)));
         unitItemsList_->setItem(row, 1, makeReadOnlyItem(toQString(itemName)));
         unitItemsList_->setItem(row, 2, makeReadOnlyItem(QString::number(amount)));
-        unitItemsList_->setItem(row, 3, makeReadOnlyItem(QString::number(amountAfterCommands)));
+        unitItemsList_->setItem(row, 3, makeReadOnlyItem(QString::number(amountAfterGive)));
+        unitItemsList_->setItem(row, 4, makeReadOnlyItem(QString::number(amountAfterCommands)));
     }
 }
 
@@ -1317,6 +1341,11 @@ void MapTabContentQt::populateItemsForSelectedUnit(const UnitNew* unitNew)
         const auto afterIt = normalizedAfterCounts.find(itemToken);
         const int amountAfterCommands = afterIt != normalizedAfterCounts.end() ? afterIt->second : 0;
 
+        const std::map<std::wstring, int> afterGiveCounts =
+            Commands::calculateAfterGiveTransfersForUnitNew(*appData_, *unitNew);
+        const auto afterGiveIt = afterGiveCounts.find(itemToken);
+        const int amountAfterGive = afterGiveIt != afterGiveCounts.end() ? afterGiveIt->second : amount;
+
         std::wstring itemName;
         if (const Item* item = appData_->itemRepository().findByIdentifierToken(itemToken))
         {
@@ -1328,7 +1357,8 @@ void MapTabContentQt::populateItemsForSelectedUnit(const UnitNew* unitNew)
         unitItemsList_->setItem(row, 0, makeReadOnlyItem(toQString(itemToken)));
         unitItemsList_->setItem(row, 1, makeReadOnlyItem(toQString(itemName)));
         unitItemsList_->setItem(row, 2, makeReadOnlyItem(QString::number(amount)));
-        unitItemsList_->setItem(row, 3, makeReadOnlyItem(QString::number(amountAfterCommands)));
+        unitItemsList_->setItem(row, 3, makeReadOnlyItem(QString::number(amountAfterGive)));
+        unitItemsList_->setItem(row, 4, makeReadOnlyItem(QString::number(amountAfterCommands)));
     }
 }
 

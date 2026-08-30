@@ -40,6 +40,7 @@ namespace OrdersEditorUtils
   constexpr UINT kOrdersDeleteCmd = 7005;
   constexpr UINT kOrdersSelectAllCmd = 7006;
   constexpr UINT kOrdersFormNewUnitCmd = 7007;
+  constexpr UINT kOrdersGiveCmd = 7008;
 
   // Show the standard orders editor context menu. Returns selected command id or 0.
   UINT showOrdersEditorMenu(HWND ownerHwnd, LPARAM lp);

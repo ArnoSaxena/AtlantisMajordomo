@@ -25,6 +25,7 @@
 #include "Data/AppData.hpp"
 #include "Data/Region.hpp"
 #include "Data/Unit.hpp"
+#include "Data/UnitNew.hpp"
 #include "Function/StringUtils.hpp"
 
 #include <cstddef>
@@ -98,6 +99,28 @@ UnitSearchResult resolveUnitSearch(const AppData& appData, const std::wstring& u
 
 bool tryBuildUnitSelectionContext(const AppData& appData, int unitNumber, UnitSelectionContext& context)
 {
+  if (unitNumber < 0)
+  {
+    const int unitNewNumber = -unitNumber;
+    for (std::size_t index = 0; index < appData.unitNewRepository().size(); ++index)
+    {
+      const UnitNew& unitNew = appData.unitNewRepository().at(index);
+      if (unitNew.getUnitNumber() != unitNewNumber || unitNew.getWarnings().empty())
+      {
+        continue;
+      }
+
+      context.unitNumber = unitNewNumber;
+      context.xCoordinate = unitNew.getXCoordinate();
+      context.yCoordinate = unitNew.getYCoordinate();
+      context.zCoordinate = unitNew.getZCoordinate();
+      context.region = appData.regionRepository().findByCoordinates(
+        context.xCoordinate, context.yCoordinate, context.zCoordinate);
+      return true;
+    }
+    return false;
+  }
+
   const Unit* unit = appData.unitRepository().findByNumber(unitNumber);
   if (unit == nullptr)
   {

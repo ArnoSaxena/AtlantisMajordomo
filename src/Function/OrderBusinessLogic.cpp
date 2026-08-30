@@ -24,7 +24,10 @@
 
 #include "Data/AppData.hpp"
 #include "Data/Faction.hpp"
+#include "Data/Item.hpp"
 #include "Data/OrderRepository.hpp"
+#include "Data/Region.hpp"
+#include "Data/Skill.hpp"
 #include "Data/Unit.hpp"
 #include "Data/UnitNew.hpp"
 #include "Data/UnitRepository.hpp"
@@ -32,6 +35,7 @@
 #include "Function/FactionAttitudeUtils.hpp"
 #include "Function/OrderParsingUtils.hpp"
 #include "Function/StringUtils.hpp"
+#include "Function/OrderWarningService.hpp"
 #include "AppConfig.hpp"
 
 #include <algorithm>
@@ -54,6 +58,162 @@ bool isDeclareOrder(const std::wstring& order)
 }
 
 namespace OrderBusinessLogic {
+
+std::wstring buildGiveCommand(AppData& appData,
+                              int originUnitNumber,
+                              int targetUnitNumber,
+                              bool isNewRef,
+                              const std::wstring& itemToken)
+{
+    const Unit* originUnit = appData.unitRepository().findByNumber(originUnitNumber);
+    if (!originUnit || targetUnitNumber <= 0 || itemToken.empty())
+    {
+        return {};
+    }
+
+    const int originX = originUnit->getXCoordinate();
+    const int originY = originUnit->getYCoordinate();
+    const int originZ = originUnit->getZCoordinate();
+    const std::wstring normalizedItemToken = StringUtils::toUpper(itemToken);
+    int needed = 0;
+    std::map<std::wstring, int> simulatedItems;
+
+    if (isNewRef)
+    {
+        const UnitNew* unit = appData.unitNewRepository().findByNumberAndCoordinates(
+            targetUnitNumber, originX, originY, originZ);
+        if (unit)
+        {
+            simulatedItems = unit->getItems();
+        }
+    }
+    else
+    {
+        const Unit* unit = appData.unitRepository().findByNumber(targetUnitNumber);
+        if (unit)
+        {
+            simulatedItems = unit->getItems();
+        }
+    }
+
+    const std::vector<Order>* receiverOrders =
+        appData.orderRepository().getOrdersForUnit(targetUnitNumber, isNewRef);
+    if (receiverOrders)
+    {
+        for (const Order& order : *receiverOrders)
+        {
+            if (isNewRef && (order.getXCoordinate() != originX ||
+                             order.getYCoordinate() != originY ||
+                             order.getZCoordinate() != originZ))
+            {
+                continue;
+            }
+
+            std::vector<std::wstring> tokens;
+            std::vector<bool> quoted;
+            if (!OrderParsingUtils::tokenizeOrderLine(order.getFullOrderText(), tokens, quoted) || tokens.empty())
+            {
+                continue;
+            }
+
+            std::size_t index = 0;
+            if (!tokens.front().empty() && tokens.front().front() == L'@')
+            {
+                if (tokens.front().size() == 1) index = 1;
+                else tokens.front().erase(tokens.front().begin());
+            }
+            if (index >= tokens.size()) continue;
+
+            const std::wstring verb = StringUtils::toUpper(tokens[index]);
+            if (verb == L"BUY")
+            {
+                ++index;
+                if (index >= tokens.size()) continue;
+                int quantity = 0;
+                if (OrderParsingUtils::tryParseIntStrict(tokens[index], quantity) && quantity > 0)
+                {
+                    ++index;
+                    if (index < tokens.size())
+                    {
+                        const std::wstring boughtItem =
+                            StringUtils::toUpper(StringUtils::trimWhitespace(tokens[index]));
+                        if (boughtItem == normalizedItemToken)
+                        {
+                            needed += quantity;
+                        }
+                        else
+                        {
+                            int price = 0;
+                            const Region* region = appData.regionRepository().findByCoordinates(originX, originY, originZ);
+                            if (region)
+                            {
+                                for (const auto& [saleToken, amountPrice] : region->getForSale())
+                                {
+                                    if (StringUtils::toUpper(StringUtils::trimWhitespace(saleToken)) == boughtItem)
+                                    {
+                                        price = (std::max)(0, amountPrice.second);
+                                        break;
+                                    }
+                                }
+                            }
+                            needed += price > 0 ? quantity * price : 0;
+                        }
+
+                        const Item* boughtDefinition = appData.itemRepository().findByIdentifierToken(boughtItem);
+                        if (boughtDefinition && boughtDefinition->isMan())
+                        {
+                            simulatedItems[boughtItem] += quantity;
+                        }
+                    }
+                }
+            }
+            else if (verb == L"PRODUCE")
+            {
+                bool hasRequestedAmount = false;
+                int requestedAmount = 0;
+                std::wstring producedItem;
+                if (tryParseProduceOrderForWarning(order.getFullOrderText(), producedItem,
+                                                   hasRequestedAmount, requestedAmount) &&
+                    hasRequestedAmount &&
+                    StringUtils::toUpper(StringUtils::trimWhitespace(producedItem)) == normalizedItemToken)
+                {
+                    needed += requestedAmount;
+                }
+            }
+            else if (verb == L"STUDY" && normalizedItemToken == L"SILV" && index + 1 < tokens.size())
+            {
+                const std::wstring skillToken = StringUtils::toUpper(
+                    StringUtils::trimWhitespace(tokens[index + 1]));
+                const Skill* skill = appData.skillRepository().findByIdentifier(skillToken);
+                if (skill)
+                {
+                    const int studyCost = (std::max)(0, skill->getStudyCost());
+                    if (studyCost > 0)
+                    {
+                        int manCount = appData.itemRepository().calculateManItemCount(simulatedItems);
+                        if (manCount <= 0 && !simulatedItems.empty()) manCount = 1;
+                        needed += manCount * studyCost;
+                    }
+                }
+            }
+        }
+    }
+
+    int available = 0;
+    for (const auto& [availableToken, amount] : originUnit->getItems())
+    {
+        if (StringUtils::toUpper(availableToken) == normalizedItemToken)
+        {
+            available = amount;
+            break;
+        }
+    }
+    needed = (std::max)(0, (std::min)(needed, available));
+
+    const std::wstring prefix = isNewRef ? L"GIVE NEW " : L"GIVE ";
+    return prefix + std::to_wstring(targetUnitNumber) + L" " +
+           std::to_wstring(needed) + L" " + itemToken;
+}
 
 bool updateDeclareDefaultOrder(AppData& appData, int commandUnitNumber, const std::wstring& attitudeText, bool addOrder)
 {

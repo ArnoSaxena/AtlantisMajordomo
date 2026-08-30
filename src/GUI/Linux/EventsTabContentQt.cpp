@@ -25,6 +25,7 @@
 #include "Data/AppData.hpp"
 #include "Data/Event.hpp"
 #include "Data/EventRepository.hpp"
+#include "Function/AppDataUtils.hpp"
 #include "Function/MonthUtils.hpp"
 
 #include <QBrush>
@@ -33,6 +34,7 @@
 #include <QHeaderView>
 #include <QTableWidget>
 #include <QTableWidgetItem>
+#include <QTabWidget>
 #include <QVBoxLayout>
 
 #include <cstddef>
@@ -49,6 +51,11 @@ EventsTabContentQt::EventsTabContentQt(AppData& appData, QWidget* parent)
     dateCombo_ = new QComboBox(this);
     dateCombo_->setSizeAdjustPolicy(QComboBox::AdjustToContents);
 
+    QWidget* eventsPage = new QWidget(this);
+    QVBoxLayout* eventsLayout = new QVBoxLayout(eventsPage);
+    eventsLayout->setContentsMargins(0, 0, 0, 0);
+    eventsLayout->setSpacing(4);
+
     eventsList_ = new QTableWidget(this);
     eventsList_->setColumnCount(2);
     eventsList_->setHorizontalHeaderLabels({ "Unit Id", "Message" });
@@ -60,11 +67,31 @@ EventsTabContentQt::EventsTabContentQt(AppData& appData, QWidget* parent)
     eventsList_->horizontalHeader()->setStretchLastSection(true);
     eventsList_->setColumnWidth(0, 90);
 
+    eventsLayout->addWidget(dateCombo_, 0);
+    eventsLayout->addWidget(eventsList_, 1);
+
+    QWidget* warningsPage = new QWidget(this);
+    QVBoxLayout* warningsLayout = new QVBoxLayout(warningsPage);
+    warningsLayout->setContentsMargins(0, 0, 0, 0);
+    warningsList_ = new QTableWidget(warningsPage);
+    warningsList_->setColumnCount(2);
+    warningsList_->setHorizontalHeaderLabels({ "Unit Id", "Message" });
+    warningsList_->setSelectionBehavior(QAbstractItemView::SelectRows);
+    warningsList_->setSelectionMode(QAbstractItemView::SingleSelection);
+    warningsList_->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    warningsList_->setAlternatingRowColors(true);
+    warningsList_->verticalHeader()->setVisible(false);
+    warningsList_->horizontalHeader()->setStretchLastSection(true);
+    warningsList_->setColumnWidth(0, 90);
+    warningsLayout->addWidget(warningsList_);
+
+    subTabs_ = new QTabWidget(this);
+    subTabs_->addTab(eventsPage, "Events");
+    subTabs_->addTab(warningsPage, "Warnings");
+
     QVBoxLayout* layout = new QVBoxLayout(this);
     layout->setContentsMargins(8, 8, 8, 8);
-    layout->setSpacing(4);
-    layout->addWidget(dateCombo_, 0);
-    layout->addWidget(eventsList_, 1);
+    layout->addWidget(subTabs_);
     setLayout(layout);
 
     connect(dateCombo_, QOverload<int>::of(&QComboBox::currentIndexChanged),
@@ -79,6 +106,7 @@ void EventsTabContentQt::refresh()
 {
     updateDateCombo();
     updateEventsList();
+    updateWarningsList();
 }
 
 // ---------------------------------------------------------------------------
@@ -186,5 +214,31 @@ void EventsTabContentQt::updateEventsList()
         eventsList_->setItem(row, 0, unitIdItem);
         eventsList_->setItem(row, 1, messageItem);
         ++row;
+    }
+}
+
+void EventsTabContentQt::updateWarningsList()
+{
+    warningsList_->setRowCount(0);
+
+    if (!appData_)
+        return;
+
+    const std::vector<AppDataUtils::WarningRow> warnings =
+        AppDataUtils::getWarningsForLatestPeriod(*appData_);
+    warningsList_->setRowCount(static_cast<int>(warnings.size()));
+
+    for (int row = 0; row < static_cast<int>(warnings.size()); ++row)
+    {
+        const auto& warning = warnings[static_cast<std::size_t>(row)];
+        const QString unitIdText = warning.isNewUnit
+            ? QString("New %1, %2 %3 %4")
+                  .arg(warning.unitNumber)
+                  .arg(warning.xCoordinate)
+                  .arg(warning.yCoordinate)
+                  .arg(warning.zCoordinate)
+            : QString::number(warning.unitNumber);
+        warningsList_->setItem(row, 0, new QTableWidgetItem(unitIdText));
+        warningsList_->setItem(row, 1, new QTableWidgetItem(QString::fromStdWString(warning.text)));
     }
 }

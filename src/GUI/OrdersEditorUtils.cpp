@@ -48,6 +48,7 @@ UINT showOrdersEditorMenu(HWND ownerHwnd, LPARAM lp)
   AppendMenuW(menu, MF_STRING, kOrdersSelectAllCmd, L"Select All");
   AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
   AppendMenuW(menu, MF_STRING, kOrdersFormNewUnitCmd, L"Form new unit");
+  AppendMenuW(menu, MF_STRING, kOrdersGiveCmd, L"Give...");
 
   POINT pt;
   if (lp == -1)

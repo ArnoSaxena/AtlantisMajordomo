@@ -100,6 +100,9 @@ public:
      *  rebuilding the whole view (called after item data changes). */
     void refreshItemsForCurrentUnit();
 
+    /** Selects, displays, and centers the specified map region. */
+    void focusRegion(int x, int y, int z);
+
 signals:
     /**
      * @brief Emitted when the user chooses "Show Battle Report" from the map
@@ -121,6 +124,11 @@ signals:
      *        ItemsTabContentQt::focusItemByToken().
      */
     void navigateToItem(const QString& itemToken);
+
+    /** Emitted when the user chooses Map for a selected battle. */
+    void navigateToMap(int x, int y, int z);
+
+    void warningsChanged();
 
 private slots:
     // -----------------------------------------------------------------------
@@ -305,6 +313,7 @@ private:
     // 7.4 — Orders editor
     void appendOrderLineToOrdersEditor(const std::wstring& orderLine);
     void saveOrdersToSelectedUnit();
+    void showGiveToUnitDialog();
     bool canEditOrdersForUnit(const Unit* unit) const;
     void setOrdersEditingEnabled(bool enabled);
 

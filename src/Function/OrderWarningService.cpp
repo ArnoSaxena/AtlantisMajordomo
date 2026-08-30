@@ -30,6 +30,7 @@
 #include "Data/Skill.hpp"
 #include "Data/Structure.hpp"
 #include "Data/Unit.hpp"
+#include "Data/UnitNew.hpp"
 #include "Function/CommandSimulationService.hpp"
 #include "Function/CoordinateUtils.hpp"
 #include "Function/OrderParsingUtils.hpp"
@@ -37,6 +38,7 @@
 #include "Function/UnitCapacityUtils.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <cwctype>
 #include <limits>
 #include <map>
@@ -60,6 +62,17 @@ using OrderParsingUtils::tryParseIntStrict;
 using OrderParsingUtils::tryResolveItemTokenForWarning;
 using WarningGiveMode = OrderParsingUtils::WarningGiveMode;
 using WarningGiveTakeOrder = OrderParsingUtils::WarningGiveTakeOrder;
+
+struct WarningTransportOrder
+{
+  int targetUnitNumber { 0 };
+  bool targetIsNewUnit { false };
+  WarningGiveMode mode { WarningGiveMode::Quantity };
+  int quantity { 0 };
+  int exceptQuantity { 0 };
+  std::wstring itemOperand;
+  bool itemOperandWasQuoted { false };
+};
 
 
 const Item* findItemByTokenNormalizedForWarning(const AppData& appData, const std::wstring& itemToken)
@@ -425,10 +438,10 @@ bool tryParseStudyOrder(const std::wstring& orderLine, std::wstring& skillOperan
   return !skillOperand.empty();
 }
 
-bool tryParseProduceOrderForWarning(const std::wstring& orderLine,
-                                    std::wstring& itemOperand,
-                                    bool& hasRequestedAmount,
-                                    int& requestedAmount)
+bool tryParseProduceOrderForWarningImpl(const std::wstring& orderLine,
+                                        std::wstring& itemOperand,
+                                        bool& hasRequestedAmount,
+                                        int& requestedAmount)
 {
   itemOperand.clear();
   hasRequestedAmount = false;
@@ -480,6 +493,277 @@ bool tryParseProduceOrderForWarning(const std::wstring& orderLine,
 
   itemOperand = StringUtils::trimWhitespace(tokens[tokenIndex]);
   return !itemOperand.empty();
+}
+
+int doubledHexDistanceForWarning(int x1, int y1, int x2, int y2)
+{
+  const int dx = std::abs(x1 - x2);
+  const int dy = std::abs(y1 - y2);
+  if (dy <= dx)
+  {
+    return dx;
+  }
+
+  return dx + ((dy - dx) / 2);
+}
+
+bool isWithinTransportRangeForWarning(const Unit& sourceUnit, const Unit& targetUnit)
+{
+  if (sourceUnit.getZCoordinate() != targetUnit.getZCoordinate())
+  {
+    return false;
+  }
+
+  return doubledHexDistanceForWarning(sourceUnit.getXCoordinate(),
+                                      sourceUnit.getYCoordinate(),
+                                      targetUnit.getXCoordinate(),
+                                      targetUnit.getYCoordinate()) <= 2;
+}
+
+bool isWithinTransportRangeForWarning(const Unit& sourceUnit, const UnitNew& targetUnit)
+{
+  if (sourceUnit.getZCoordinate() != targetUnit.getZCoordinate())
+  {
+    return false;
+  }
+
+  return doubledHexDistanceForWarning(sourceUnit.getXCoordinate(),
+                                      sourceUnit.getYCoordinate(),
+                                      targetUnit.getXCoordinate(),
+                                      targetUnit.getYCoordinate()) <= 2;
+}
+
+bool tryParseTransportOrderForWarning(const std::wstring& orderLine, WarningTransportOrder& parsedOrder)
+{
+  std::vector<std::wstring> tokens;
+  std::vector<bool> tokenWasQuoted;
+  if (!tokenizeOrderLine(orderLine, tokens, tokenWasQuoted) || tokens.empty())
+  {
+    return false;
+  }
+
+  std::size_t tokenIndex = 0;
+  if (!tokens.front().empty() && tokens.front().front() == L'@')
+  {
+    if (tokens.front().size() == 1)
+    {
+      tokenIndex = 1;
+    }
+    else
+    {
+      tokens.front().erase(tokens.front().begin());
+    }
+  }
+
+  if (tokenIndex >= tokens.size())
+  {
+    return false;
+  }
+
+  const std::wstring keyword = StringUtils::toUpper(tokens[tokenIndex]);
+  if (keyword != L"TRANSPORT" && keyword != L"DISTRIBUTE")
+  {
+    return false;
+  }
+  ++tokenIndex;
+
+  parsedOrder.targetIsNewUnit = false;
+  if (tokenIndex < tokens.size() && StringUtils::toUpper(tokens[tokenIndex]) == L"NEW")
+  {
+    parsedOrder.targetIsNewUnit = true;
+    ++tokenIndex;
+  }
+
+  if (tokenIndex >= tokens.size() || !tryParseIntStrict(tokens[tokenIndex], parsedOrder.targetUnitNumber)
+      || parsedOrder.targetUnitNumber <= 0)
+  {
+    return false;
+  }
+  ++tokenIndex;
+
+  if (tokenIndex >= tokens.size())
+  {
+    return false;
+  }
+
+  const std::wstring amountToken = StringUtils::toUpper(tokens[tokenIndex]);
+  if (amountToken == L"ALL")
+  {
+    parsedOrder.mode = WarningGiveMode::All;
+    ++tokenIndex;
+    if (tokenIndex >= tokens.size())
+    {
+      return false;
+    }
+
+    parsedOrder.itemOperand = tokens[tokenIndex];
+    parsedOrder.itemOperandWasQuoted = tokenWasQuoted[tokenIndex];
+    ++tokenIndex;
+
+    if (tokenIndex < tokens.size())
+    {
+      if (StringUtils::toUpper(tokens[tokenIndex]) != L"EXCEPT")
+      {
+        return false;
+      }
+      ++tokenIndex;
+
+      if (tokenIndex >= tokens.size() || !tryParseIntStrict(tokens[tokenIndex], parsedOrder.exceptQuantity)
+          || parsedOrder.exceptQuantity < 0)
+      {
+        return false;
+      }
+      parsedOrder.mode = WarningGiveMode::AllExcept;
+      ++tokenIndex;
+    }
+
+    return tokenIndex == tokens.size();
+  }
+
+  parsedOrder.mode = WarningGiveMode::Quantity;
+  if (!tryParseIntStrict(tokens[tokenIndex], parsedOrder.quantity) || parsedOrder.quantity <= 0)
+  {
+    return false;
+  }
+  ++tokenIndex;
+
+  if (tokenIndex >= tokens.size())
+  {
+    return false;
+  }
+
+  parsedOrder.itemOperand = tokens[tokenIndex];
+  parsedOrder.itemOperandWasQuoted = tokenWasQuoted[tokenIndex];
+  ++tokenIndex;
+
+  parsedOrder.exceptQuantity = 0;
+  return tokenIndex == tokens.size();
+}
+
+} // anonymous namespace
+
+// External wrapper with external linkage forwarding to internal implementation.
+bool tryParseProduceOrderForWarning(const std::wstring& orderLine,
+                                    std::wstring& itemOperand,
+                                    bool& hasRequestedAmount,
+                                    int& requestedAmount)
+{
+  return tryParseProduceOrderForWarningImpl(orderLine, itemOperand, hasRequestedAmount, requestedAmount);
+}
+
+bool isKnownCastSpell(const AppData& appData,
+                      const std::wstring& spellOperand,
+                      bool spellOperandWasQuoted)
+{
+  const std::wstring trimmedOperand = StringUtils::trimWhitespace(spellOperand);
+  if (trimmedOperand.empty())
+  {
+    return false;
+  }
+
+  if (!spellOperandWasQuoted)
+  {
+    return appData.skillRepository().findByIdentifier(trimmedOperand) != nullptr;
+  }
+
+  const std::wstring normalizedName = StringUtils::toUpper(trimmedOperand);
+  for (std::size_t index = 0; index < appData.skillRepository().size(); ++index)
+  {
+    const Skill& skill = appData.skillRepository().at(index);
+    if (StringUtils::toUpper(StringUtils::trimWhitespace(skill.getName())) == normalizedName)
+    {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+template <typename UnitType>
+void checkCastWarnings(const AppData& appData, UnitType& unit, const std::vector<std::wstring>& orders)
+{
+  for (const std::wstring& orderLine : orders)
+  {
+    std::vector<std::wstring> tokens;
+    std::vector<bool> tokenWasQuoted;
+    if (!tokenizeOrderLine(orderLine, tokens, tokenWasQuoted) || tokens.empty())
+    {
+      continue;
+    }
+
+    std::size_t tokenIndex = 0;
+    if (!tokens[tokenIndex].empty() && tokens[tokenIndex][0] == L'@')
+    {
+      if (tokens[tokenIndex].size() == 1)
+      {
+        ++tokenIndex;
+      }
+      else
+      {
+        tokens[tokenIndex].erase(tokens[tokenIndex].begin());
+      }
+    }
+
+    if (tokenIndex >= tokens.size() || StringUtils::toUpper(tokens[tokenIndex]) != L"CAST")
+    {
+      continue;
+    }
+
+    ++tokenIndex;
+    if (tokenIndex >= tokens.size())
+    {
+      unit.addWarning(L"CAST: unknown spell");
+      continue;
+    }
+
+    if (!isKnownCastSpell(appData, tokens[tokenIndex], tokenWasQuoted[tokenIndex]))
+    {
+      unit.addWarning(L"CAST: unknown spell: " + tokens[tokenIndex]);
+    }
+  }
+}
+
+void checkCastWarningsForMainFaction(AppData& appData, int mainFactionNumber)
+{
+  auto& unitRepository = appData.unitRepository();
+  auto& unitNewRepository = appData.unitNewRepository();
+
+  for (std::size_t index = 0; index < unitRepository.size(); ++index)
+  {
+    const Unit& view = unitRepository.at(index);
+    if (view.getFactionNumber() != mainFactionNumber)
+    {
+      continue;
+    }
+
+    Unit* unit = unitRepository.findByNumber(view.getUnitNumber());
+    if (!unit)
+    {
+      continue;
+    }
+
+    checkCastWarnings(appData, *unit, filterOrdersIgnoringFormBlocks(unit->getOrders()));
+
+    for (const int formUnitNumber : extractFormNewUnitNumbers(unit->getOrders()))
+    {
+      for (std::size_t newIndex = 0; newIndex < unitNewRepository.size(); ++newIndex)
+      {
+        const UnitNew& newView = unitNewRepository.at(newIndex);
+        if (newView.getOriginUnit() != unit->getUnitNumber() || newView.getUnitNumber() != formUnitNumber)
+        {
+          continue;
+        }
+
+        UnitNew* formUnit = unitNewRepository.findByNumberAndCoordinates(
+          newView.getUnitNumber(), newView.getXCoordinate(), newView.getYCoordinate(), newView.getZCoordinate());
+        if (formUnit)
+        {
+          checkCastWarnings(appData, *formUnit, extractFormNewUnitBlock(unit->getOrders(), formUnitNumber));
+        }
+        break;
+      }
+    }
+  }
 }
 
 int resolveBestQualifiedProductionSkillLevelForWarning(const Unit& unit, const Item& producedItem)
@@ -553,6 +837,11 @@ bool tryResolveRegionalProduceDemandForWarning(const AppData& appData,
 
   const Item* producedItem = findItemByTokenNormalizedForWarning(appData, resolvedToken);
   if (!producedItem)
+  {
+    return false;
+  }
+
+  if (!producedItem->isResource())
   {
     return false;
   }
@@ -638,7 +927,7 @@ bool tryResolveRegionalProduceDemandForWarning(const AppData& appData,
   return true;
 }
 
-void checkProduceOverproductionWarningsForMainFaction(AppData& appData, int mainFactionNumber)
+void checkProduceOverproductionWarnings(AppData& appData, int mainFactionNumber)
 {
   struct OverproductionBucket
   {
@@ -664,7 +953,7 @@ void checkProduceOverproductionWarningsForMainFaction(AppData& appData, int main
       continue;
     }
 
-    for (const std::wstring& orderLine : unit->getOrders())
+    for (const std::wstring& orderLine : filterOrdersIgnoringFormBlocks(unit->getOrders()))
     {
       std::wstring producedItemToken;
       int demandAmount = 0;
@@ -833,7 +1122,7 @@ void checkGiveTakeWarningsForMainFaction(AppData& appData, int mainFactionNumber
       continue;
     }
 
-    for (const std::wstring& orderLine : unit->getOrders())
+    for (const std::wstring& orderLine : filterOrdersIgnoringFormBlocks(unit->getOrders()))
     {
       WarningGiveTakeOrder parsedOrder;
       if (!tryParseGiveTakeOrder(orderLine, parsedOrder))
@@ -850,6 +1139,33 @@ void checkGiveTakeWarningsForMainFaction(AppData& appData, int mainFactionNumber
                                          resolvedToken))
       {
         continue;
+      }
+
+      // GIVE is region-local: warn when target unit is outside issuer's region.
+      if (!parsedOrder.isTake)
+      {
+        if (parsedOrder.otherUnitIsNew)
+        {
+          UnitNew* targetNewUnit = appData.unitNewRepository().findByNumberAndCoordinates(
+            parsedOrder.otherUnitNumber,
+            unit->getXCoordinate(),
+            unit->getYCoordinate(),
+            unit->getZCoordinate());
+          if (!targetNewUnit)
+          {
+            unit->addWarning(L"GIVE: target NEW unit does not exist in the same region");
+            continue;
+          }
+        }
+
+        const Unit* targetUnit = unitRepository.findByNumber(parsedOrder.otherUnitNumber);
+        if (!parsedOrder.otherUnitIsNew && targetUnit &&
+            (targetUnit->getXCoordinate() != unit->getXCoordinate()
+             || targetUnit->getYCoordinate() != unit->getYCoordinate()
+             || targetUnit->getZCoordinate() != unit->getZCoordinate()))
+        {
+          unit->addWarning(L"GIVE: target unit is not in the same region");
+        }
       }
 
       int sourceUnitNumber = unitNumber;
@@ -950,6 +1266,86 @@ void checkGiveTakeWarningsForMainFaction(AppData& appData, int mainFactionNumber
   }
 }
 
+void checkTransportWarningsForMainFaction(AppData& appData, int mainFactionNumber)
+{
+  auto& unitRepository = appData.unitRepository();
+  auto& unitNewRepository = appData.unitNewRepository();
+
+  for (std::size_t index = 0; index < unitRepository.size(); ++index)
+  {
+    const Unit& view = unitRepository.at(index);
+    if (view.getFactionNumber() != mainFactionNumber)
+    {
+      continue;
+    }
+
+    Unit* unit = unitRepository.findByNumber(view.getUnitNumber());
+    if (!unit)
+    {
+      continue;
+    }
+
+    for (const std::wstring& orderLine : filterOrdersIgnoringFormBlocks(unit->getOrders()))
+    {
+      WarningTransportOrder parsedOrder;
+      if (!tryParseTransportOrderForWarning(orderLine, parsedOrder))
+      {
+        continue;
+      }
+
+      if (parsedOrder.targetIsNewUnit)
+      {
+        std::vector<const UnitNew*> candidateTargets;
+        for (std::size_t newIndex = 0; newIndex < unitNewRepository.size(); ++newIndex)
+        {
+          const UnitNew& candidate = unitNewRepository.at(newIndex);
+          if (candidate.getUnitNumber() != parsedOrder.targetUnitNumber)
+          {
+            continue;
+          }
+
+          candidateTargets.push_back(&candidate);
+        }
+
+        if (candidateTargets.empty())
+        {
+          unit->addWarning(L"TRANSPORT: target NEW unit does not exist");
+          continue;
+        }
+
+        bool anyTargetInRange = false;
+        for (const UnitNew* candidate : candidateTargets)
+        {
+          if (candidate && isWithinTransportRangeForWarning(*unit, *candidate))
+          {
+            anyTargetInRange = true;
+            break;
+          }
+        }
+
+        if (!anyTargetInRange)
+        {
+          unit->addWarning(L"TRANSPORT: target NEW unit is out of range");
+        }
+
+        continue;
+      }
+
+      const Unit* targetUnit = unitRepository.findByNumber(parsedOrder.targetUnitNumber);
+      if (!targetUnit)
+      {
+        unit->addWarning(L"TRANSPORT: target unit does not exist");
+        continue;
+      }
+
+      if (!isWithinTransportRangeForWarning(*unit, *targetUnit))
+      {
+        unit->addWarning(L"TRANSPORT: target unit is out of range");
+      }
+    }
+  }
+}
+
 void checkStudyWarningsForMainFaction(AppData& appData, int mainFactionNumber)
 {
   auto& unitRepository = appData.unitRepository();
@@ -968,7 +1364,7 @@ void checkStudyWarningsForMainFaction(AppData& appData, int mainFactionNumber)
     }
 
     std::map<std::wstring, int> estimatedCounts =
-      Commands::calculateAfterCommandItemCountsForUnit(appData, *unit);
+      Commands::calculateAfterCommandItemCountsForUnitExcludingStudy(appData, *unit);
 
     int estimatedSilver = 0;
     const auto estimatedSilverIt = estimatedCounts.find(L"SILV");
@@ -993,7 +1389,7 @@ void checkStudyWarningsForMainFaction(AppData& appData, int mainFactionNumber)
 
     std::map<std::wstring, int> estimatedSkillDays = unit->getSkills();
 
-    for (const std::wstring& orderLine : unit->getOrders())
+    for (const std::wstring& orderLine : filterOrdersIgnoringFormBlocks(unit->getOrders()))
     {
       std::wstring skillOperand;
       if (!tryParseStudyOrder(orderLine, skillOperand))
@@ -1105,6 +1501,97 @@ void checkStudyWarningsForMainFaction(AppData& appData, int mainFactionNumber)
       }
     }
   }
+
+  auto& unitNewRepository = appData.unitNewRepository();
+  for (std::size_t index = 0; index < unitNewRepository.size(); ++index)
+  {
+    const UnitNew& unitNewView = unitNewRepository.at(index);
+    UnitNew* unitNew = unitNewRepository.findByNumberAndCoordinates(
+      unitNewView.getUnitNumber(),
+      unitNewView.getXCoordinate(),
+      unitNewView.getYCoordinate(),
+      unitNewView.getZCoordinate());
+    if (!unitNew)
+    {
+      continue;
+    }
+
+    if (unitNew->getFactionNumber() != mainFactionNumber)
+    {
+      continue;
+    }
+
+    const std::map<std::wstring, int> estimatedCounts =
+      Commands::calculateAfterCommandItemCountsForUnitNewExcludingStudy(appData, *unitNew);
+
+    int estimatedSilver = 0;
+    const auto estimatedSilverIt = estimatedCounts.find(L"SILV");
+    if (estimatedSilverIt != estimatedCounts.end())
+    {
+      estimatedSilver = estimatedSilverIt->second;
+    }
+
+    int manCount = appData.itemRepository().calculateManItemCount(estimatedCounts);
+    if (manCount <= 0)
+    {
+      if (!estimatedCounts.empty())
+      {
+        manCount = 1;
+      }
+      else
+      {
+        continue;
+      }
+    }
+
+    const std::vector<Order>* orders =
+      appData.orderRepository().getOrdersForUnit(unitNew->getUnitNumber(), true);
+    if (!orders)
+    {
+      continue;
+    }
+
+    for (const Order& order : *orders)
+    {
+      if (order.getXCoordinate() != unitNew->getXCoordinate()
+          || order.getYCoordinate() != unitNew->getYCoordinate()
+          || order.getZCoordinate() != unitNew->getZCoordinate())
+      {
+        continue;
+      }
+
+      std::wstring skillOperand;
+      if (!tryParseStudyOrder(order.getFullOrderText(), skillOperand))
+      {
+        continue;
+      }
+
+      std::wstring resolvedSkillToken;
+      const Skill* skillObj = tryResolveStudySkill(appData, skillOperand, resolvedSkillToken);
+      if (!skillObj)
+      {
+        continue;
+      }
+
+      const int studyCost = resolveStudyCostPerManMonth(*skillObj);
+      if (studyCost <= 0)
+      {
+        continue;
+      }
+
+      const int totalStudyCost = manCount * studyCost;
+      const int silverAfterStudy = estimatedSilver - totalStudyCost;
+      if (silverAfterStudy < 0)
+      {
+        unitNew->addWarning(L"not enough silver for STUDY " + resolvedSkillToken);
+        estimatedSilver = 0;
+      }
+      else
+      {
+        estimatedSilver = silverAfterStudy;
+      }
+    }
+  }
 }
 
 void checkTeachWarningsForMainFaction(AppData& appData, int mainFactionNumber)
@@ -1125,7 +1612,7 @@ void checkTeachWarningsForMainFaction(AppData& appData, int mainFactionNumber)
     }
 
     // Check for TEACH commands
-    for (const std::wstring& orderLine : unit->getOrders())
+    for (const std::wstring& orderLine : filterOrdersIgnoringFormBlocks(unit->getOrders()))
     {
       std::vector<std::wstring> tokens;
       std::vector<bool> tokenWasQuoted;
@@ -1336,7 +1823,7 @@ void checkMoveCapacityWarningsForMainFaction(AppData& appData, int mainFactionNu
 
     bool hasMoveOrder = false;
     bool hasSailOrder = false;
-    for (const std::wstring& orderLine : unit->getOrders())
+    for (const std::wstring& orderLine : filterOrdersIgnoringFormBlocks(unit->getOrders()))
     {
       std::wstring keyword;
       if (!tryExtractOrderKeywordUpper(orderLine, keyword))
@@ -1399,7 +1886,7 @@ void updateFutureStructureIdsForMainFaction(AppData& appData, int mainFactionNum
 
     unit->setFutureStructureId(unit->getStructureId());
 
-    for (const std::wstring& orderLine : unit->getOrders())
+    for (const std::wstring& orderLine : filterOrdersIgnoringFormBlocks(unit->getOrders()))
     {
       std::wstring keyword;
       if (!tryExtractOrderKeywordUpper(orderLine, keyword))
@@ -1658,8 +2145,7 @@ void checkMonthLongOrderWarningsForMainFaction(AppData& appData, int mainFaction
       }
     }
   }
-}
-}
+  }
 
 void OrderWarningService::runForMainFaction(AppData& appData)
 {
@@ -1709,7 +2195,9 @@ void OrderWarningService::runForMainFaction(AppData& appData)
   checkMonthLongOrderWarningsForMainFaction(appData, mainFactionNumber);
 
   checkGiveTakeWarningsForMainFaction(appData, mainFactionNumber);
-  checkProduceOverproductionWarningsForMainFaction(appData, mainFactionNumber);
+  checkTransportWarningsForMainFaction(appData, mainFactionNumber);
+  checkProduceOverproductionWarnings(appData, mainFactionNumber);
+  checkCastWarningsForMainFaction(appData, mainFactionNumber);
   CommandSimulationService::processMainFactionClaimEffects(appData);
   checkStudyWarningsForMainFaction(appData, mainFactionNumber);
   checkTeachWarningsForMainFaction(appData, mainFactionNumber);

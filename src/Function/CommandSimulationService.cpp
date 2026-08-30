@@ -28,56 +28,6 @@
 #include "Data/Region.hpp"
 #include "Data/Unit.hpp"
 #include "Data/UnitNew.hpp"
-#include "Function/OrderParsingUtils.hpp"
-#include "Function/StringUtils.hpp"
-
-#include <set>
-#include <tuple>
-
-namespace
-{
-bool tryParseClaimAmount(const std::wstring& orderLine, int& claimAmount)
-{
-  std::vector<std::wstring> tokens;
-  std::vector<bool> tokenWasQuoted;
-  if (!OrderParsingUtils::tokenizeOrderLine(orderLine, tokens, tokenWasQuoted) || tokens.empty())
-  {
-    return false;
-  }
-
-  std::size_t tokenIndex = 0;
-  if (!tokens[0].empty() && tokens[0][0] == L'@')
-  {
-    if (tokens[0].size() > 1)
-    {
-      tokens[0] = tokens[0].substr(1);
-    }
-    else
-    {
-      ++tokenIndex;
-    }
-  }
-
-  if (tokenIndex >= tokens.size() ||  StringUtils::toUpper(tokens[tokenIndex]) != L"CLAIM")
-  {
-    return false;
-  }
-
-  if ((tokenIndex + 1) >= tokens.size())
-  {
-    return false;
-  }
-
-  int parsedAmount = 0;
-  if (!OrderParsingUtils::tryParseIntStrict(tokens[tokenIndex + 1], parsedAmount) || parsedAmount <= 0)
-  {
-    return false;
-  }
-
-  claimAmount = parsedAmount;
-  return true;
-}
-}
 
 int CommandSimulationService::calculateMainFactionUnclaimedSilverAfterCommands(const AppData& appData)
 {
@@ -98,95 +48,40 @@ void CommandSimulationService::processMainFactionClaimEffects(AppData& appData)
     return;
   }
 
-  int totalClaimAmount = 0;
-  std::set<int> claimingUnitNumbers;
-  std::set<std::tuple<int, int, int, int>> claimingNewUnitKeys;
-  const auto& orderRepository = appData.orderRepository();
-
-  const auto collectClaimsForOrders = [&](const std::vector<Order>* orders,
-                                          int unitNumber,
-                                          bool fromNewUnit,
-                                          int xCoordinate,
-                                          int yCoordinate,
-                                          int zCoordinate)
-  {
-    if (!orders)
-    {
-      return;
-    }
-
-    bool hasClaimOrder = false;
-    for (const Order& order : *orders)
-    {
-      int claimAmount = 0;
-      if (!tryParseClaimAmount(order.getFullOrderText(), claimAmount))
-      {
-        continue;
-      }
-
-      totalClaimAmount += claimAmount;
-      hasClaimOrder = true;
-    }
-
-    if (!hasClaimOrder)
-    {
-      return;
-    }
-
-    if (fromNewUnit)
-    {
-      claimingNewUnitKeys.insert(std::make_tuple(unitNumber, xCoordinate, yCoordinate, zCoordinate));
-    }
-    else
-    {
-      claimingUnitNumbers.insert(unitNumber);
-    }
-  };
-
   auto& unitRepository = appData.unitRepository();
-  for (std::size_t index = 0; index < unitRepository.size(); ++index)
-  {
-    const Unit& unit = unitRepository.at(index);
-    collectClaimsForOrders(orderRepository.getOrdersForUnit(unit.getUnitNumber(), false),
-                           unit.getUnitNumber(),
-                           false,
-                           unit.getXCoordinate(),
-                           unit.getYCoordinate(),
-                           unit.getZCoordinate());
-  }
-
   auto& unitNewRepository = appData.unitNewRepository();
-  for (std::size_t index = 0; index < unitNewRepository.size(); ++index)
-  {
-    const UnitNew& unitNew = unitNewRepository.at(index);
-    collectClaimsForOrders(orderRepository.getOrdersForUnit(unitNew.getUnitNumber(), true),
-                           unitNew.getUnitNumber(),
-                           true,
-                           unitNew.getXCoordinate(),
-                           unitNew.getYCoordinate(),
-                           unitNew.getZCoordinate());
-  }
+  // Reuse Commands-level CLAIM parsing/aggregation so there is one source of truth.
+  const Commands::ClaimSummary claimSummary = Commands::summarizeClaims(appData);
+  const int totalClaimAmount = claimSummary.totalClaimAmount;
 
+  // Apply post-order value even when insufficient, so UI can reflect deficit state.
   const int remainingUnclaimedSilver = mainFaction->getUnclaimedSilver() - totalClaimAmount;
   mainFaction->setUnclaimedSilverAfterOrders(remainingUnclaimedSilver);
 
+  // If claims fit within available unclaimed silver, no warnings are needed.
   if (totalClaimAmount <= mainFaction->getUnclaimedSilver())
   {
     return;
   }
 
-  for (const int unitNumber : claimingUnitNumbers)
+  // Otherwise, warn every participating issuer.
+  for (const Commands::ClaimIssuer& issuer : claimSummary.issuers)
   {
-    Unit* unit = unitRepository.findByNumber(unitNumber);
-    if (unit)
+    if (!issuer.isNewUnit)
     {
-      unit->addWarning(L"CLAIM: insufficient unclaimed silver");
+      Unit* unit = unitRepository.findByNumber(issuer.unitNumber);
+      if (unit)
+      {
+        unit->addWarning(L"CLAIM: insufficient unclaimed silver");
+      }
+      continue;
     }
-  }
 
-  for (const auto& [unitNumber, xCoordinate, yCoordinate, zCoordinate] : claimingNewUnitKeys)
-  {
-    UnitNew* unitNew = unitNewRepository.findByNumberAndCoordinates(unitNumber, xCoordinate, yCoordinate, zCoordinate);
+    UnitNew* unitNew = unitNewRepository.findByNumberAndCoordinates(
+      issuer.unitNumber,
+      issuer.xCoordinate,
+      issuer.yCoordinate,
+      issuer.zCoordinate);
     if (unitNew)
     {
       unitNew->addWarning(L"CLAIM: insufficient unclaimed silver");
@@ -196,8 +91,10 @@ void CommandSimulationService::processMainFactionClaimEffects(AppData& appData)
 
 void CommandSimulationService::recalculateAfterOrdersValues(AppData& appData)
 {
+  // CLAIM directly affects faction-level after-orders silver and warning state.
   processMainFactionClaimEffects(appData);
 
+  // Recompute unit-level derived fields from current data + parsed orders.
   for (std::size_t unitIndex = 0; unitIndex < appData.unitRepository().size(); ++unitIndex)
   {
     const int unitNumber = appData.unitRepository().at(unitIndex).getUnitNumber();
@@ -212,6 +109,7 @@ void CommandSimulationService::recalculateAfterOrdersValues(AppData& appData)
     unit->setSkillsAfterOrders(Commands::calculateAfterCommandSkillDaysForUnit(appData, *unit));
   }
 
+  // Recompute UnitNew derived fields; lookup by (number, coordinates) to avoid ambiguity.
   for (std::size_t unitNewIndex = 0; unitNewIndex < appData.unitNewRepository().size(); ++unitNewIndex)
   {
     const UnitNew& unitNewSnapshot = appData.unitNewRepository().at(unitNewIndex);
@@ -230,6 +128,7 @@ void CommandSimulationService::recalculateAfterOrdersValues(AppData& appData)
     unitNew->setSkillsAfterOrders(Commands::calculateAfterCommandSkillDaysForUnitNew(appData, *unitNew));
   }
 
+  // Recompute region-level resources, market, and economy after all commands.
   for (std::size_t regionIndex = 0; regionIndex < appData.regionRepository().size(); ++regionIndex)
   {
     const Region& regionSnapshot = appData.regionRepository().at(regionIndex);
@@ -248,6 +147,7 @@ void CommandSimulationService::recalculateAfterOrdersValues(AppData& appData)
 
     const Commands::RegionEconomyAfterCommands economy =
       Commands::calculateAfterCommandRegionEconomy(appData, *region);
+    // Write economy breakdown from one calculation pass to keep values consistent.
     region->setEntertainmentAfterOrders(economy.remainingEntertainment);
     region->setTaxableIncomeAfterOrders(economy.remainingTaxableIncome);
     region->setWagesAfterOrders(economy.remainingWorkWages);

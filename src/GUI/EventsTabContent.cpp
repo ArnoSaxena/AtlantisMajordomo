@@ -26,6 +26,7 @@
 #include "GUI/WinSizingUtils.hpp"
 
 #include "Data/AppData.hpp"
+#include "Function/AppDataUtils.hpp"
 #include "Function/MonthUtils.hpp"
 
 #include <commctrl.h>
@@ -52,6 +53,30 @@ bool EventsTabContent::create(HWND parentWindow, HINSTANCE instance, AppData& ap
 {
   appData_ = &appData;
   const UiSizeProfile::Metrics metrics = resolveUiMetrics(parentWindow);
+
+  subTab_ = CreateWindowExW(
+    0,
+    WC_TABCONTROLW,
+    nullptr,
+    WS_CHILD | WS_CLIPSIBLINGS,
+    0, 0, 100, 100,
+    parentWindow,
+    reinterpret_cast<HMENU>(static_cast<INT_PTR>(GUI::ControlIds::kEventsSubTab)),
+    instance,
+    nullptr
+  );
+
+  if (!subTab_)
+  {
+    return false;
+  }
+
+  TCITEMW tabItem {};
+  tabItem.mask = TCIF_TEXT;
+  tabItem.pszText = const_cast<LPWSTR>(L"Events");
+  TabCtrl_InsertItem(subTab_, 0, &tabItem);
+  tabItem.pszText = const_cast<LPWSTR>(L"Warnings");
+  TabCtrl_InsertItem(subTab_, 1, &tabItem);
 
   dateCombo_ = CreateWindowExW(
     0,
@@ -90,6 +115,29 @@ bool EventsTabContent::create(HWND parentWindow, HINSTANCE instance, AppData& ap
     return false;
   }
 
+  warningsList_ = CreateWindowExW(
+    WS_EX_CLIENTEDGE,
+    WC_LISTVIEWW,
+    nullptr,
+    WS_CHILD | LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS,
+    0, 0, 100, 100,
+    parentWindow,
+    reinterpret_cast<HMENU>(static_cast<INT_PTR>(GUI::ControlIds::kWarningsList)),
+    instance,
+    nullptr
+  );
+
+  if (!warningsList_)
+  {
+    return false;
+  }
+
+  ListView_SetExtendedListViewStyle(
+    warningsList_,
+    LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES | LVS_EX_DOUBLEBUFFER
+  );
+  WinSizingUtils::listViewApplyDensity(warningsList_, metrics, nullptr, nullptr);
+
   ListView_SetExtendedListViewStyle(
     eventsList_,
     LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES | LVS_EX_DOUBLEBUFFER
@@ -115,15 +163,17 @@ bool EventsTabContent::create(HWND parentWindow, HINSTANCE instance, AppData& ap
     column.cx = columns[index].width;
     column.iSubItem = index;
     ListView_InsertColumn(eventsList_, index, &column);
+    ListView_InsertColumn(warningsList_, index, &column);
   }
 
+  updateVisibleSubTab();
   refresh();
   return true;
 }
 
 void EventsTabContent::resize(const RECT& displayRect)
 {
-  if (!dateCombo_ || !eventsList_)
+  if (!dateCombo_ || !subTab_ || !eventsList_ || !warningsList_)
   {
     return;
   }
@@ -137,14 +187,26 @@ void EventsTabContent::resize(const RECT& displayRect)
   const int dateWidth = (std::min)(WinSizingUtils::scalePx(320, metrics), (std::max)(WinSizingUtils::scalePx(120, metrics), width));
   const int dateCollapsedHeight = (std::max)(metrics.buttonHeight, WinSizingUtils::scalePx(24, metrics));
   const int dateDropHeight = WinSizingUtils::scalePx(220, metrics);
-  const int listY = y + dateCollapsedHeight + dateToListGap;
-  const int listHeight = (displayRect.bottom - displayRect.top) - 2 * margin - dateCollapsedHeight - dateToListGap;
+  const int tabHeight = (std::max)(0, static_cast<int>(displayRect.bottom - displayRect.top) - 2 * margin);
+
+  SetWindowPos(
+    subTab_,
+    HWND_TOP,
+    x,
+    y,
+    width,
+    tabHeight,
+    SWP_NOACTIVATE
+  );
+
+  RECT tabDisplayRect { 0, 0, width, tabHeight };
+  TabCtrl_AdjustRect(subTab_, FALSE, &tabDisplayRect);
 
   SetWindowPos(
     dateCombo_,
     HWND_TOP,
-    x,
-    y,
+    x + tabDisplayRect.left,
+    y + tabDisplayRect.top,
     dateWidth,
     dateDropHeight,
     SWP_NOACTIVATE
@@ -153,25 +215,40 @@ void EventsTabContent::resize(const RECT& displayRect)
   SetWindowPos(
     eventsList_,
     HWND_TOP,
-    x,
-    listY,
-    width,
-    (std::max)(0, listHeight),
+    x + tabDisplayRect.left,
+    y + tabDisplayRect.top + dateCollapsedHeight + dateToListGap,
+    tabDisplayRect.right - tabDisplayRect.left,
+    (std::max)(0, static_cast<int>(tabDisplayRect.bottom - tabDisplayRect.top) - dateCollapsedHeight - dateToListGap),
     SWP_NOACTIVATE
   );
 
-  const int listClientWidth = (std::max)(0, width - 6);
+  SetWindowPos(
+    warningsList_,
+    HWND_TOP,
+    x + tabDisplayRect.left,
+    y + tabDisplayRect.top,
+    tabDisplayRect.right - tabDisplayRect.left,
+    (std::max)(0, static_cast<int>(tabDisplayRect.bottom - tabDisplayRect.top)),
+    SWP_NOACTIVATE
+  );
+
+  const int listClientWidth = (std::max)(0, static_cast<int>(tabDisplayRect.right - tabDisplayRect.left) - 6);
   const int unitIdWidth = (std::max)(WinSizingUtils::scalePx(80, metrics), listClientWidth / 5);
   ListView_SetColumnWidth(eventsList_, 0, unitIdWidth);
   ListView_SetColumnWidth(eventsList_, 1, (std::max)(WinSizingUtils::scalePx(120, metrics), listClientWidth - unitIdWidth));
+  ListView_SetColumnWidth(warningsList_, 0, unitIdWidth);
+  ListView_SetColumnWidth(warningsList_, 1, (std::max)(WinSizingUtils::scalePx(120, metrics), listClientWidth - unitIdWidth));
+  updateVisibleSubTab();
 }
 
 void EventsTabContent::setVisible(bool visible)
 {
-  if (!dateCombo_ || !eventsList_)
+  if (!dateCombo_ || !subTab_ || !eventsList_ || !warningsList_)
   {
     return;
   }
+
+  visible_ = visible;
 
   if (visible)
   {
@@ -180,17 +257,21 @@ void EventsTabContent::setVisible(bool visible)
 
   ShowWindow(dateCombo_, visible ? SW_SHOW : SW_HIDE);
   ShowWindow(eventsList_, visible ? SW_SHOW : SW_HIDE);
+  ShowWindow(warningsList_, visible ? SW_SHOW : SW_HIDE);
+  ShowWindow(subTab_, visible ? SW_SHOW : SW_HIDE);
+  updateVisibleSubTab();
 }
 
 void EventsTabContent::refresh()
 {
-  if (!dateCombo_ || !eventsList_ || !appData_)
+  if (!dateCombo_ || !eventsList_ || !warningsList_ || !appData_)
   {
     return;
   }
 
   updateDateDropdown();
   updateEventsList();
+  updateWarningsList();
 }
 
 bool EventsTabContent::handleCommand(int commandId, int notificationCode)
@@ -212,9 +293,15 @@ bool EventsTabContent::handleCommand(int commandId, int notificationCode)
 
 bool EventsTabContent::handleNotify(const NMHDR* hdr)
 {
-  if (!hdr || !eventsList_)
+  if (!hdr || !subTab_ || !eventsList_ || !warningsList_)
   {
     return false;
+  }
+
+  if (hdr->idFrom == static_cast<UINT>(GUI::ControlIds::kEventsSubTab) && hdr->code == TCN_SELCHANGE)
+  {
+    updateVisibleSubTab();
+    return true;
   }
 
   if (hdr->idFrom != static_cast<UINT>(GUI::ControlIds::kEventsList) || hdr->code != NM_CUSTOMDRAW)
@@ -355,4 +442,45 @@ void EventsTabContent::updateEventsList()
     ListView_SetItemText(eventsList_, rowIndex, 1, message.data());
     ++row;
   }
+}
+
+void EventsTabContent::updateWarningsList()
+{
+  ListView_DeleteAllItems(warningsList_);
+
+  const std::vector<AppDataUtils::WarningRow> warnings =
+    AppDataUtils::getWarningsForLatestPeriod(*appData_);
+  int row = 0;
+  for (const auto& warning : warnings)
+  {
+    std::wstring unitId = warning.isNewUnit
+      ? L"New " + std::to_wstring(warning.unitNumber) + L", "
+        + std::to_wstring(warning.xCoordinate) + L" "
+        + std::to_wstring(warning.yCoordinate) + L" "
+        + std::to_wstring(warning.zCoordinate)
+      : std::to_wstring(warning.unitNumber);
+    LVITEMW item {};
+    item.mask = LVIF_TEXT;
+    item.iItem = row;
+    item.pszText = unitId.data();
+    const int rowIndex = ListView_InsertItem(warningsList_, &item);
+    if (rowIndex >= 0)
+    {
+      ListView_SetItemText(warningsList_, rowIndex, 1, const_cast<LPWSTR>(warning.text.c_str()));
+      ++row;
+    }
+  }
+}
+
+void EventsTabContent::updateVisibleSubTab()
+{
+  if (!subTab_ || !dateCombo_ || !eventsList_ || !warningsList_)
+  {
+    return;
+  }
+
+  const bool showEvents = visible_ && TabCtrl_GetCurSel(subTab_) != 1;
+  ShowWindow(dateCombo_, visible_ && showEvents ? SW_SHOW : SW_HIDE);
+  ShowWindow(eventsList_, showEvents ? SW_SHOW : SW_HIDE);
+  ShowWindow(warningsList_, visible_ && !showEvents ? SW_SHOW : SW_HIDE);
 }

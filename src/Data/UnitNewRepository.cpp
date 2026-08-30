@@ -206,6 +206,16 @@ const UnitNew& UnitNewRepository::at(std::size_t index) const
   return units_.at(index);
 }
 
+int UnitNewRepository::countTotalWarnings() const
+{
+  int count = 0;
+  for (const UnitNew& unit : units_)
+  {
+    count += static_cast<int>(unit.getWarnings().size());
+  }
+  return count;
+}
+
 const std::wstring& UnitNewRepository::getLastError() const
 {
   return lastError_;

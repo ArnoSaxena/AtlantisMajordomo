@@ -66,6 +66,8 @@ constexpr int kBattlesList = 2702;
 
 constexpr int kEventsList = 2800;
 constexpr int kEventsDateCombo = 2801;
+constexpr int kEventsSubTab = 2802;
+constexpr int kWarningsList = 2803;
 
 constexpr int kSettingsOk = 5002;
 constexpr int kSettingsCancel = 5003;

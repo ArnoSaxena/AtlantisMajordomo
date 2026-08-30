@@ -86,6 +86,7 @@ public:
   const UnitNew& at(std::size_t index) const;
 
   const std::wstring& getLastError() const;
+  int countTotalWarnings() const;
 
 private:
   std::vector<UnitNew> units_;

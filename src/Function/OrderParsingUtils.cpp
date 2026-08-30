@@ -315,6 +315,19 @@ bool isMonthLongOrderLine(const std::wstring& orderLine)
   return std::find(monthLongOrders.begin(), monthLongOrders.end(), keyword) != monthLongOrders.end();
 }
 
+std::wstring findMonthLongOrderText(const std::vector<std::wstring>& orders)
+{
+  for (const std::wstring& orderLine : orders)
+  {
+    if (isMonthLongOrderLine(orderLine))
+    {
+      return StringUtils::trimWhitespace(orderLine);
+    }
+  }
+
+  return L"";
+}
+
 bool tryParseGiveTakeOrder(const std::wstring& orderLine, WarningGiveTakeOrder& parsedOrder)
 {
   std::vector<std::wstring> tokens;
@@ -364,6 +377,13 @@ bool tryParseGiveTakeOrder(const std::wstring& orderLine, WarningGiveTakeOrder& 
     {
       ++tokenIndex;
     }
+  }
+
+  parsedOrder.otherUnitIsNew = false;
+  if (tokenIndex < tokens.size() && StringUtils::toUpper(tokens[tokenIndex]) == L"NEW")
+  {
+    parsedOrder.otherUnitIsNew = true;
+    ++tokenIndex;
   }
 
   if (tokenIndex >= tokens.size() || !tryParseIntStrict(tokens[tokenIndex], parsedOrder.otherUnitNumber) || parsedOrder.otherUnitNumber <= 0)

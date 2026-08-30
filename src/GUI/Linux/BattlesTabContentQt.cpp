@@ -31,6 +31,7 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QListWidget>
+#include <QMenu>
 #include <QPlainTextEdit>
 #include <QSplitter>
 #include <QVBoxLayout>
@@ -61,6 +62,7 @@ BattlesTabContentQt::BattlesTabContentQt(AppData& appData, QWidget* parent)
 
     battlesList_ = new QListWidget(this);
     battlesList_->setSelectionMode(QAbstractItemView::SingleSelection);
+    battlesList_->setContextMenuPolicy(Qt::CustomContextMenu);
 
     QVBoxLayout* leftLayout = new QVBoxLayout;
     leftLayout->setContentsMargins(0, 0, 0, 0);
@@ -105,6 +107,8 @@ BattlesTabContentQt::BattlesTabContentQt(AppData& appData, QWidget* parent)
             this, &BattlesTabContentQt::onDateComboChanged);
     connect(battlesList_, &QListWidget::currentRowChanged,
             this, &BattlesTabContentQt::onBattleSelectionChanged);
+        connect(battlesList_, &QListWidget::customContextMenuRequested,
+            this, &BattlesTabContentQt::onBattleContextMenuRequested);
 }
 
 // ---------------------------------------------------------------------------
@@ -166,6 +170,31 @@ void BattlesTabContentQt::onDateComboChanged(int index)
 void BattlesTabContentQt::onBattleSelectionChanged()
 {
     updateBattleDetails(battlesList_->currentRow());
+}
+
+void BattlesTabContentQt::onBattleContextMenuRequested(const QPoint& pos)
+{
+    QListWidgetItem* item = battlesList_->itemAt(pos);
+    if (!item)
+        return;
+
+    const int row = battlesList_->row(item);
+    if (row < 0 || static_cast<std::size_t>(row) >= visibleBattles_.size())
+        return;
+
+    const Battle* battle = visibleBattles_[static_cast<std::size_t>(row)];
+    if (!battle)
+        return;
+
+    battlesList_->setCurrentRow(row);
+    QMenu menu(this);
+    QAction* mapAction = menu.addAction("Map");
+    if (menu.exec(battlesList_->viewport()->mapToGlobal(pos)) == mapAction)
+    {
+        emit navigateToMap(battle->getRegionXCoordinate(),
+                           battle->getRegionYCoordinate(),
+                           battle->getRegionZCoordinate());
+    }
 }
 
 // ---------------------------------------------------------------------------

@@ -795,26 +795,12 @@ bool MapTabContent::create(HWND parentWindow, HINSTANCE instance, AppData& appDa
     int width;
   };
 
-  const Column columns[] = {
-    { L"#", 50 },
-    { L"Name", 180 },
-    { L"Faction", 50 },
-    { L"Faction Name", 120 },
-    { L"Structure", 150 },
-    { L"Men", 90 },
-    { L"Silver", 96 },
-    { L"Flags", 240 },
-    { L"Skills", 260 },
-    { L"!", 28 },
-    { L"D", 28 }
-  };
-
-  for (int index = 0; index < static_cast<int>(std::size(columns)); ++index)
+  for (int index = 0; index < static_cast<int>(kUnitsListColumns.size()); ++index)
   {
     LVCOLUMNW column {};
     column.mask = LVCF_TEXT | LVCF_WIDTH | LVCF_SUBITEM;
-    column.pszText = const_cast<LPWSTR>(columns[index].title);
-    column.cx = columns[index].width;
+    column.pszText = const_cast<LPWSTR>(kUnitsListColumns[static_cast<std::size_t>(index)].title);
+    column.cx = kUnitsListColumns[static_cast<std::size_t>(index)].width;
     column.iSubItem = index;
     ListView_InsertColumn(unitsList_, index, &column);
   }
@@ -833,6 +819,7 @@ bool MapTabContent::create(HWND parentWindow, HINSTANCE instance, AppData& appDa
     { L"Token", 70 },
     { L"Name", 100 },
     { L"Amount", 60 },
+    { L"after give", 70 },
     { L"after com.", 60 }
   };
 
@@ -1077,31 +1064,11 @@ void MapTabContent::applyListColumnWidths(const UiSizeProfile::Metrics& metrics,
 
   if (unitsList_ != nullptr)
   {
-    struct UnitsColumnBase
-    {
-      int index;
-      int width;
-    };
-
-    const UnitsColumnBase unitColumns[] = {
-      { 0, 50 },
-      { 1, 180 },
-      { 2, 50 },
-      { 3, 120 },
-      { 4, 150 },
-      { 5, 90 },
-      { 6, 96 },
-      { 7, 240 },
-      { 8, 260 },
-      { 9, 28 },
-      { 10, 28 },
-    };
-
-    for (const UnitsColumnBase& column : unitColumns)
+    for (std::size_t index = 0; index < kUnitsListColumns.size(); ++index)
     {
       ListView_SetColumnWidth(unitsList_,
-                              column.index,
-                              WinSizingUtils::scalePx(column.width, metrics));
+                              static_cast<int>(index),
+                              WinSizingUtils::scalePx(kUnitsListColumns[index].width, metrics));
     }
   }
 
@@ -1109,12 +1076,14 @@ void MapTabContent::applyListColumnWidths(const UiSizeProfile::Metrics& metrics,
   {
     const int tokenCol = (std::max)(48, safeRightPanelWidth * 20 / 100);
     const int nameCol = (std::max)(80, safeRightPanelWidth * 42 / 100);
-    const int amountCol = (std::max)(56, safeRightPanelWidth * 16 / 100);
+    const int amountCol = (std::max)(56, safeRightPanelWidth * 14 / 100);
+    const int afterGiveCol = (std::max)(64, safeRightPanelWidth * 16 / 100);
     const int afterComCol = (std::max)(70, safeRightPanelWidth * 18 / 100);
     ListView_SetColumnWidth(unitItemsList_, 0, tokenCol);
     ListView_SetColumnWidth(unitItemsList_, 1, nameCol);
     ListView_SetColumnWidth(unitItemsList_, 2, amountCol);
-    ListView_SetColumnWidth(unitItemsList_, 3, afterComCol);
+    ListView_SetColumnWidth(unitItemsList_, 3, afterGiveCol);
+    ListView_SetColumnWidth(unitItemsList_, 4, afterComCol);
   }
 
   if (unitSkillsList_ != nullptr)

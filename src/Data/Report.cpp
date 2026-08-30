@@ -2034,10 +2034,22 @@ void Report::parseBattles(BattleRepository& battleRepository,
     static const std::wregex damagedUnitsPattern(L"^\\s*Damaged units:\\s*(.*?)\\.\\s*$");
     static const std::wregex spoilsPattern(L"^\\s*Spoils:\\s*(.*)\\.\\s*$");
     static const std::wregex spoilItemPattern(L"^(?:(\\d+)\\s+)?(.+?)\\s+\\[([^\\]]+)\\]$");
+    static const std::wregex participantUnitPattern(L"^\\s*.+?\\s*\\((\\d+)\\)");
 
     try
     {
-      const std::wstring headerLine = StringUtils::trimWhitespace(battleLines.front());
+      std::wstring headerLine = StringUtils::trimWhitespace(battleLines.front());
+      for (std::size_t index = 1;
+           headerLine.find(L'!') == std::wstring::npos && index < battleLines.size();
+           ++index)
+      {
+        const std::wstring continuation = StringUtils::trimWhitespace(battleLines[index]);
+        if (continuation.empty())
+        {
+          break;
+        }
+        headerLine += L" " + continuation;
+      }
       std::wsmatch headerMatch;
       if (!std::regex_match(headerLine, headerMatch, battleHeaderPattern))
       {
@@ -2067,16 +2079,47 @@ void Report::parseBattles(BattleRepository& battleRepository,
       ensureBattleUnit(battle.getDefenderUnitId(), battle.getDefenderUnitName(), month_, year_);
 
       int pendingDamagedSide = 0;
+      int participantSide = 0;
       for (std::size_t index = 1; index < battleLines.size(); ++index)
       {
         const std::wstring line = StringUtils::trimWhitespace(battleLines[index]);
+        if (startsWithIgnoreCase(line, L"Attackers:"))
+        {
+          participantSide = 1;
+          continue;
+        }
+        if (startsWithIgnoreCase(line, L"Defenders:"))
+        {
+          participantSide = 2;
+          continue;
+        }
         if (line.empty() || startsWithIgnoreCase(line, L"Round ") ||
             startsWithIgnoreCase(line, L"Battle statistics:") ||
-            startsWithIgnoreCase(line, L"Army ") ||
-            startsWithIgnoreCase(line, L"Attackers:") ||
-            startsWithIgnoreCase(line, L"Defenders:"))
+            startsWithIgnoreCase(line, L"Army "))
         {
+          if (!line.empty())
+          {
+            participantSide = 0;
+          }
           continue;
+        }
+
+        if (participantSide != 0)
+        {
+          std::wsmatch participantMatch;
+          if (std::regex_search(line, participantMatch, participantUnitPattern))
+          {
+            const int participantUnitId = std::stoi(participantMatch[1].str());
+            if (participantSide == 1)
+            {
+              battle.addAttackerParticipantUnitId(participantUnitId);
+            }
+            else
+            {
+              battle.addDefenderParticipantUnitId(participantUnitId);
+            }
+            continue;
+          }
         }
 
         std::wsmatch casualtyMatch;
@@ -2227,21 +2270,44 @@ void Report::parseBattles(BattleRepository& battleRepository,
       L"^\\s*(.+?)\\s*\\((\\d+)\\)\\s+attacks\\s+(.+?)\\s*\\((\\d+)\\)\\s+in\\s+(.+?)\\s+\\((\\d+),(\\d+)(?:,([^\\)]+))?\\)\\s+in\\s+(.+?)!\\s*$"
     );
 
-    if (!std::regex_match(topLevelLine, battleHeaderPattern))
+    std::wstring headerCandidate = topLevelLine;
+    std::size_t headerEnd = index;
+    while (headerCandidate.find(L'!') == std::wstring::npos &&
+           headerEnd + 1 < lines_.size())
+    {
+      const std::wstring& continuationLine = lines_[headerEnd + 1];
+      const std::size_t firstNonWhitespace = continuationLine.find_first_not_of(L" \t");
+      if (firstNonWhitespace == std::wstring::npos || firstNonWhitespace == 0)
+      {
+        break;
+      }
+
+      headerCandidate += L" " + StringUtils::trimWhitespace(continuationLine);
+      ++headerEnd;
+    }
+
+    if (!std::regex_match(headerCandidate, battleHeaderPattern))
     {
       ++index;
       continue;
     }
 
     std::vector<std::wstring> battleLines;
-    battleLines.push_back(lines_[index]);
-    ++index;
+    for (std::size_t headerLineIndex = index; headerLineIndex <= headerEnd; ++headerLineIndex)
+    {
+      battleLines.push_back(lines_[headerLineIndex]);
+    }
+    index = headerEnd + 1;
 
     while (index < lines_.size())
     {
-      battleLines.push_back(lines_[index]);
-
       const std::wstring currentTrim = StringUtils::trimWhitespace(lines_[index]);
+      if (std::regex_search(currentTrim, battleHeaderPattern))
+      {
+        break;
+      }
+
+      battleLines.push_back(lines_[index]);
       if (startsWithIgnoreCase(currentTrim, L"Spoils:"))
       {
         std::size_t continuationIndex = index + 1;

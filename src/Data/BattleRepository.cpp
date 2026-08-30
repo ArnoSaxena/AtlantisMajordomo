@@ -123,6 +123,29 @@ bool BattleRepository::hasBattleInRegionForPeriod(int xCoordinate,
   return it != battles_.cend();
 }
 
+bool BattleRepository::isParticipantInAnyBattleForPeriod(int unitId, int month, int year) const
+{
+  if (unitId <= 0)
+  {
+    return false;
+  }
+
+  for (const Battle& battle : battles_)
+  {
+    if (battle.getMonth() != month || battle.getYear() != year)
+    {
+      continue;
+    }
+
+    if (std::ranges::find(battle.getAttackerParticipantUnitIds(), unitId) != battle.getAttackerParticipantUnitIds().end()
+        || std::ranges::find(battle.getDefenderParticipantUnitIds(), unitId) != battle.getDefenderParticipantUnitIds().end())
+    {
+      return true;
+    }
+  }
+  return false;
+}
+
 bool BattleRepository::isUnitDamagedInAnyBattleForPeriod(int unitId, int month, int year) const
 {
   if (unitId <= 0)

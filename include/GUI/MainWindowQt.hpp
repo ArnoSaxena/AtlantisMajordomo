@@ -77,6 +77,7 @@ private slots:
     void onHelpDescription();
     void onHelpAbout();
     void onNavigateToBattle(int x, int y, int z, int month, int year);
+    void onNavigateToMap(int x, int y, int z);
     void onNavigateToSkill(const QString& skillToken);
     void onNavigateToItem(const QString& itemToken);
 

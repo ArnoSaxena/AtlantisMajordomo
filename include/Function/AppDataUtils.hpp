@@ -23,6 +23,7 @@
 #pragma once
 
 #include <string>
+#include <utility>
 #include <vector>
 
 class AppConfig;
@@ -30,6 +31,16 @@ class AppData;
 
 namespace AppDataUtils
 {
+struct WarningRow
+{
+    int unitNumber { 0 };
+    bool isNewUnit { false };
+    int xCoordinate { 0 };
+    int yCoordinate { 0 };
+    int zCoordinate { 1 };
+    std::wstring text;
+};
+
 std::wstring buildDateLabelText(const AppData* appData);
 
 // Imports a report from filePath into appData. Optionally updates appConfig with the
@@ -41,10 +52,12 @@ bool importReportFromFile(AppData& appData,
                           bool rememberReportImportFolder,
                           bool rememberDataFilePath);
 
-// Returns the unit numbers of all units that have at least one warning AND
-// belong to the latest report period.  The list is unsorted.
-// This is the period filter used by the units-list display; every unit
-// returned here is guaranteed to appear in that list when its region is
-// selected, making it safe to use for warning navigation.
+// Returns the unit/new-unit numbers that have at least one warning and belong to
+// the latest report period. The list is unsorted and de-duplicated by unit number
+// so navigation and clearing remain consistent across both unit types.
 std::vector<int> getWarningUnitNumbersForLatestPeriod(const AppData& appData);
+
+// Returns every warning belonging to a unit/new-unit in the latest report
+// period as warning rows, retaining the identity and coordinates of new units.
+std::vector<WarningRow> getWarningsForLatestPeriod(const AppData& appData);
 }

@@ -75,6 +75,13 @@ void syncOrderRepositoryForSavedUnit(AppData& appData,
 
 // Returns the next available unit number for a FORM order at the given coordinates.
 int computeNextNewUnitNumber(AppData* appData, int x, int y, int z);
+
+// Builds a GIVE command using the receiving unit's orders and the origin unit's inventory.
+std::wstring buildGiveCommand(AppData& appData,
+							  int originUnitNumber,
+							  int targetUnitNumber,
+							  bool isNewRef,
+							  const std::wstring& itemToken);
 }
 
 namespace FactionAttitudeUtils

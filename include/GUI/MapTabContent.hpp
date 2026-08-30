@@ -72,6 +72,8 @@ public:
   void refresh();
   void commitPendingEdits();
   void refreshItemsForCurrentUnit();
+  /** Selects, displays, and centers the specified map region. */
+  void focusRegion(int x, int y, int z);
   void showZSelectionContextMenu(HWND ownerWindow, POINT screenPoint);
   bool handleNotify(const NMHDR* hdr);
   bool handleDrawItem(const DRAWITEMSTRUCT* drawItem);
@@ -375,6 +377,8 @@ private:
   void onMapLeftClick(POINT pointInMapClient);
   void onMapDoubleClick(POINT pointInMapClient);
   void onMapRightClick(POINT pointInMapClient);
+  void showGiveToUnitDialog(HWND ownerWindow);
+  void handleGiveDialogAccept(HWND dlgHwnd);
   void updateRegionDetailsView(const Region* region);
   void populateResourcesList(const Region* region);
   void populateForSaleList(const Region* region);

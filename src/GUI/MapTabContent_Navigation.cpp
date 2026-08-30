@@ -115,6 +115,54 @@ void MapTabContent::navigateToItemList(const std::wstring& itemToken)
   });
 }
 
+void MapTabContent::focusRegion(int x, int y, int z)
+{
+  if (!appData_)
+  {
+    return;
+  }
+
+  const Region* region = appData_->regionRepository().findByCoordinates(x, y, z);
+  if (!region)
+  {
+    return;
+  }
+
+  selectedZ_ = z;
+  hasSelectedRegion_ = true;
+  selectedRegionX_ = x;
+  selectedRegionY_ = y;
+  refresh();
+  updateRegionDetailsView(region);
+
+  if (!mapCanvas_)
+  {
+    return;
+  }
+
+  RECT clientRect {};
+  GetClientRect(mapCanvas_, &clientRect);
+  const int clientWidth = clientRect.right - clientRect.left;
+  const int clientHeight = clientRect.bottom - clientRect.top;
+  for (const auto& visual : visibleRegions_)
+  {
+    if (!visual.region || visual.region->getXCoordinate() != x || visual.region->getYCoordinate() != y)
+    {
+      continue;
+    }
+
+    const int targetX = visual.center.x - clientWidth / 2;
+    const int targetY = visual.center.y - clientHeight / 2;
+    const int maxScrollX = (std::max)(0, contentWidth_ - clientWidth);
+    const int maxScrollY = (std::max)(0, contentHeight_ - clientHeight);
+    scrollX_ = (std::max)(0, (std::min)(targetX, maxScrollX));
+    scrollY_ = (std::max)(0, (std::min)(targetY, maxScrollY));
+    updateMapScrollbars();
+    InvalidateRect(mapCanvas_, nullptr, TRUE);
+    break;
+  }
+}
+
 
 void MapTabContent::selectUnitInMap(int unitNumber)
 {

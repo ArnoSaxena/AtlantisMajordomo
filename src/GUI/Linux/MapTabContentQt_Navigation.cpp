@@ -48,6 +48,37 @@ void MapTabContentQt::navigateToSkillList(const std::wstring& skillToken)
     emit navigateToSkill(QString::fromStdWString(skillToken));
 }
 
+void MapTabContentQt::focusRegion(int x, int y, int z)
+{
+    if (!appData_)
+    {
+        return;
+    }
+
+    const Region* region = appData_->regionRepository().findByCoordinates(x, y, z);
+    if (!region)
+    {
+        return;
+    }
+
+    selectedZ_ = z;
+    hasSelectedRegion_ = true;
+    selectedRegionX_ = x;
+    selectedRegionY_ = y;
+    if (mapCanvas_)
+    {
+        mapCanvas_->setSelectedZ(selectedZ_);
+        mapCanvas_->setSelectedRegion(true, selectedRegionX_, selectedRegionY_);
+    }
+
+    refresh();
+    updateRegionDetailsView(region);
+    if (mapCanvas_)
+    {
+        (void)mapCanvas_->centerOnRegion(selectedRegionX_, selectedRegionY_);
+    }
+}
+
 void MapTabContentQt::selectUnitInMap(int unitNumber)
 {
     if (!appData_)

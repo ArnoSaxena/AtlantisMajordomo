@@ -106,6 +106,15 @@ public:
   */
   bool isUnitDamagedInAnyBattleForPeriod(int unitId, int month, int year) const;
 
+  /**
+  * @brief Checks whether unit id appears in any participant list for a period.
+  * @param[in] unitId Unit identifier to check.
+  * @param[in] month Report month.
+  * @param[in] year Report year.
+  * @return true when unit is a participant in at least one battle for that period.
+  */
+  bool isParticipantInAnyBattleForPeriod(int unitId, int month, int year) const;
+
   /** @brief Removes all stored battles. */
   void clear();
 

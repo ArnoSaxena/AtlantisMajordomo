@@ -29,6 +29,7 @@
 
 class AppData;
 class QComboBox;
+class QTabWidget;
 class QTableWidget;
 
 /**
@@ -59,10 +60,13 @@ private slots:
 private:
     void updateDateCombo();
     void updateEventsList();
+    void updateWarningsList();
 
     AppData*      appData_    { nullptr };
+    QTabWidget*   subTabs_    { nullptr };
     QComboBox*    dateCombo_  { nullptr };
     QTableWidget* eventsList_ { nullptr };
+    QTableWidget* warningsList_ { nullptr };
 
     std::vector<std::pair<int, int>> availablePeriods_;
     int selectedMonth_ { 0 };

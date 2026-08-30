@@ -63,30 +63,6 @@ using OrderParsingUtils::tryExtractOrderKeywordUpper;
 
 namespace
 {
-const wchar_t* getUnitsListBaseColumnTitle(int columnIndex)
-{
-  static constexpr const wchar_t* kTitles[] = {
-    L"#",
-    L"Name",
-    L"Faction",
-    L"Faction Name",
-    L"Structure",
-    L"Men",
-    L"Silver",
-    L"Flags",
-    L"Skills",
-    L"!",
-    L"D"
-  };
-
-  if (columnIndex < 0 || columnIndex >= static_cast<int>(std::size(kTitles)))
-  {
-    return L"";
-  }
-
-  return kTitles[columnIndex];
-}
-
 struct UnitsListRowSnapshot
 {
   std::vector<std::wstring> columns;
@@ -397,8 +373,9 @@ bool MapTabContent::handleNotify(const NMHDR* hdr)
       constexpr int kUnitNumberSubItem = 0;
       constexpr int kUnitNameSubItem = 1;
       constexpr int kStructureSubItem = 4;
-      constexpr int kWarningsSubItem = 9;
-      constexpr int kDamagedSubItem = 10;
+      constexpr int kSilverSubItem = 6;
+      constexpr int kWarningsSubItem = 10;
+      constexpr int kDamagedSubItem = 12;
 
       customDraw->clrText = CLR_DEFAULT;
       customDraw->clrTextBk = CLR_DEFAULT;
@@ -505,6 +482,53 @@ bool MapTabContent::handleNotify(const NMHDR* hdr)
       if (hasFactionRowTextColor)
       {
         customDraw->clrText = factionRowTextColor;
+      }
+
+      if (customDraw->iSubItem == kSilverSubItem)
+      {
+        wchar_t cellText[128] {};
+        ListView_GetItemText(unitsList_, row, kSilverSubItem, cellText, static_cast<int>(std::size(cellText)));
+        const std::wstring silverText(cellText);
+        const std::size_t bracketStart = silverText.rfind(L" (");
+        if (bracketStart != std::wstring::npos && bracketStart + 2 < silverText.size() && silverText[bracketStart + 2] == L'-')
+        {
+          RECT cellRect {};
+          ListView_GetSubItemRect(unitsList_, row, kSilverSubItem, LVIR_LABEL, &cellRect);
+
+          const bool isSelected =
+            (ListView_GetItemState(unitsList_, row, LVIS_SELECTED) & LVIS_SELECTED) != 0;
+          FillRect(customDraw->nmcd.hdc,
+                   &cellRect,
+                   GetSysColorBrush(isSelected ? COLOR_HIGHLIGHT : COLOR_WINDOW));
+          SetBkMode(customDraw->nmcd.hdc, TRANSPARENT);
+          SetTextColor(customDraw->nmcd.hdc,
+                       hasFactionRowTextColor ? factionRowTextColor : GetSysColor(COLOR_WINDOWTEXT));
+
+          RECT textRect = cellRect;
+          textRect.left += 4;
+          const std::wstring currentSilverText = silverText.substr(0, bracketStart + 1);
+          DrawTextW(customDraw->nmcd.hdc,
+                    currentSilverText.c_str(),
+                    static_cast<int>(currentSilverText.size()),
+                    &textRect,
+                    DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
+
+          SIZE currentSilverSize {};
+          GetTextExtentPoint32W(customDraw->nmcd.hdc,
+                                currentSilverText.c_str(),
+                                static_cast<int>(currentSilverText.size()),
+                                &currentSilverSize);
+          textRect.left += currentSilverSize.cx;
+          SetTextColor(customDraw->nmcd.hdc, RGB(200, 0, 0));
+          const std::wstring afterCommandsText = silverText.substr(bracketStart + 1);
+          DrawTextW(customDraw->nmcd.hdc,
+                    afterCommandsText.c_str(),
+                    static_cast<int>(afterCommandsText.size()),
+                    &textRect,
+                    DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
+          notifyResult_ = CDRF_SKIPDEFAULT;
+          return true;
+        }
       }
 
       const int unitNumber = static_cast<int>(rowItem.lParam);
@@ -644,7 +668,7 @@ bool MapTabContent::handleNotify(const NMHDR* hdr)
     hitInfo.pt = clientPos;
     ListView_SubItemHitTest(unitsList_, &hitInfo);
 
-    constexpr int kWarningsSubItem = 6;
+    constexpr int kWarningsSubItem = 10;
     if (hitInfo.iItem < 0 || hitInfo.iSubItem != kWarningsSubItem)
     {
       infoTip->pszText[0] = L'\0';
@@ -999,7 +1023,7 @@ void MapTabContent::updateUnitsListSortHeaderMarkers()
   for (int columnIndex = 0; columnIndex < columnCount; ++columnIndex)
   {
     const bool isActive = (columnIndex == unitsListSortColumn_);
-    const wchar_t* baseTitle = getUnitsListBaseColumnTitle(columnIndex);
+    const wchar_t* baseTitle = getUnitsListColumnTitle(columnIndex);
     std::wstring displayTitle = baseTitle;
     if (isActive)
     {

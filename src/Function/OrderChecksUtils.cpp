@@ -32,6 +32,28 @@
 namespace OrderChecksUtils
 {
 
+namespace
+{
+int encodeWarningUnitNumber(const AppData& appData, int unitNumber)
+{
+  if (appData.unitRepository().findByNumber(unitNumber) != nullptr)
+  {
+    return unitNumber;
+  }
+
+  for (std::size_t index = 0; index < appData.unitNewRepository().size(); ++index)
+  {
+    const UnitNew& unitNew = appData.unitNewRepository().at(index);
+    if (unitNew.getUnitNumber() == unitNumber && !unitNew.getWarnings().empty())
+    {
+      return -unitNumber;
+    }
+  }
+
+  return unitNumber;
+}
+}
+
 void runOrderChecksForMainFaction(AppData& appData,
                                   int selectedUnitNumber,
                                   const std::function<void()>& saveOrders,
@@ -62,7 +84,7 @@ void runOrderChecksForMainFaction(AppData& appData,
   }
 }
 
-int selectPreviousWarningUnitNumber(const AppData& appData, int selectedUnitNumber)
+int selectPreviousWarningUnitNumber(const AppData& appData, int selectedUnitNumber, bool selectedUnitIsNew)
 {
   std::vector<int> warningUnits = AppDataUtils::getWarningUnitNumbersForLatestPeriod(appData);
   if (warningUnits.empty())
@@ -72,10 +94,11 @@ int selectPreviousWarningUnitNumber(const AppData& appData, int selectedUnitNumb
 
   std::sort(warningUnits.begin(), warningUnits.end());
 
+  const int selectedReference = selectedUnitIsNew ? -selectedUnitNumber : selectedUnitNumber;
   int selectedIndex = -1;
   for (int index = 0; index < static_cast<int>(warningUnits.size()); ++index)
   {
-    if (warningUnits[static_cast<std::size_t>(index)] == selectedUnitNumber)
+    if (encodeWarningUnitNumber(appData, warningUnits[static_cast<std::size_t>(index)]) == selectedReference)
     {
       selectedIndex = index;
       break;
@@ -88,10 +111,10 @@ int selectPreviousWarningUnitNumber(const AppData& appData, int selectedUnitNumb
     targetIndex = static_cast<int>(warningUnits.size()) - 1;
   }
 
-  return warningUnits[static_cast<std::size_t>(targetIndex)];
+  return encodeWarningUnitNumber(appData, warningUnits[static_cast<std::size_t>(targetIndex)]);
 }
 
-int selectNextWarningUnitNumber(const AppData& appData, int selectedUnitNumber)
+int selectNextWarningUnitNumber(const AppData& appData, int selectedUnitNumber, bool selectedUnitIsNew)
 {
   std::vector<int> warningUnits = AppDataUtils::getWarningUnitNumbersForLatestPeriod(appData);
   if (warningUnits.empty())
@@ -101,10 +124,11 @@ int selectNextWarningUnitNumber(const AppData& appData, int selectedUnitNumber)
 
   std::sort(warningUnits.begin(), warningUnits.end());
 
+  const int selectedReference = selectedUnitIsNew ? -selectedUnitNumber : selectedUnitNumber;
   int selectedIndex = -1;
   for (int index = 0; index < static_cast<int>(warningUnits.size()); ++index)
   {
-    if (warningUnits[static_cast<std::size_t>(index)] == selectedUnitNumber)
+    if (encodeWarningUnitNumber(appData, warningUnits[static_cast<std::size_t>(index)]) == selectedReference)
     {
       selectedIndex = index;
       break;
@@ -117,7 +141,7 @@ int selectNextWarningUnitNumber(const AppData& appData, int selectedUnitNumber)
     targetIndex = 0;
   }
 
-  return warningUnits[static_cast<std::size_t>(targetIndex)];
+  return encodeWarningUnitNumber(appData, warningUnits[static_cast<std::size_t>(targetIndex)]);
 }
 
 } // namespace OrderChecksUtils

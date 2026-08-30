@@ -28,8 +28,10 @@
 #include "Data/ReportRepository.hpp"
 #include "Function/MonthUtils.hpp"
 
+#include <algorithm>
 #include <filesystem>
 #include <string>
+#include <utility>
 
 namespace AppDataUtils
 {
@@ -132,7 +134,7 @@ bool importReportFromFile(AppData& appData,
   );
 }
 
-std::vector<int> getWarningUnitNumbersForLatestPeriod(const AppData& appData)
+std::vector<WarningRow> getWarningsForLatestPeriod(const AppData& appData)
 {
   int latestMonth = 0;
   int latestYear  = 0;
@@ -153,16 +155,60 @@ std::vector<int> getWarningUnitNumbersForLatestPeriod(const AppData& appData)
   }
   const bool hasLatestPeriod = (latestMonth >= 1 && latestMonth <= 12 && latestYear > 0);
 
-  std::vector<int> result;
+  std::vector<WarningRow> result;
+
+  const auto appendWarnings = [&result, hasLatestPeriod, latestMonth, latestYear](int unitNumber,
+                                                                                    bool isNewUnit,
+                                                                                    int xCoordinate,
+                                                                                    int yCoordinate,
+                                                                                    int zCoordinate,
+                                                                                    int month,
+                                                                                    int year,
+                                                                                    const std::vector<std::wstring>& warnings)
+  {
+    if (unitNumber <= 0 || warnings.empty())
+    {
+      return;
+    }
+    if (hasLatestPeriod && (month != latestMonth || year != latestYear))
+    {
+      return;
+    }
+
+    for (const std::wstring& warning : warnings)
+    {
+      result.push_back({ unitNumber, isNewUnit, xCoordinate, yCoordinate, zCoordinate, warning });
+    }
+  };
+
   const auto& unitRepo = appData.unitRepository();
   for (std::size_t i = 0; i < unitRepo.size(); ++i)
   {
     const Unit& unit = unitRepo.at(i);
-    if (unit.getWarnings().empty())
-      continue;
-    if (hasLatestPeriod && (unit.getMonth() != latestMonth || unit.getYear() != latestYear))
-      continue;
-    result.push_back(unit.getUnitNumber());
+    appendWarnings(unit.getUnitNumber(), false, unit.getXCoordinate(), unit.getYCoordinate(), unit.getZCoordinate(),
+             unit.getMonth(), unit.getYear(), unit.getWarnings());
+  }
+
+  const auto& unitNewRepo = appData.unitNewRepository();
+  for (std::size_t i = 0; i < unitNewRepo.size(); ++i)
+  {
+    const UnitNew& unitNew = unitNewRepo.at(i);
+    appendWarnings(unitNew.getUnitNumber(), true, unitNew.getXCoordinate(), unitNew.getYCoordinate(), unitNew.getZCoordinate(),
+             unitNew.getMonth(), unitNew.getYear(), unitNew.getWarnings());
+  }
+
+  return result;
+}
+
+std::vector<int> getWarningUnitNumbersForLatestPeriod(const AppData& appData)
+{
+  std::vector<int> result;
+  for (const auto& warning : getWarningsForLatestPeriod(appData))
+  {
+    if (std::find(result.begin(), result.end(), warning.unitNumber) == result.end())
+    {
+      result.push_back(warning.unitNumber);
+    }
   }
   return result;
 }

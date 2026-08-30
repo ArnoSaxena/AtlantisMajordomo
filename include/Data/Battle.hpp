@@ -90,6 +90,12 @@ public:
   const std::vector<int>& getAttackerDamagedUnitIds() const;
   /** @brief Gets defender side damaged unit ids. */
   const std::vector<int>& getDefenderDamagedUnitIds() const;
+
+  /** @brief Gets attacker side participant unit ids. */
+  const std::vector<int>& getAttackerParticipantUnitIds() const;
+  /** @brief Gets defender side participant unit ids. */
+  const std::vector<int>& getDefenderParticipantUnitIds() const;
+
   /** @brief Gets parsed spoils list (amount + token). */
   const std::vector<BattleSpoil>& getSpoils() const;
 
@@ -136,6 +142,10 @@ public:
   void clearAttackerDamagedUnitIds();
   /** @brief Clears defender damaged-unit id list. */
   void clearDefenderDamagedUnitIds();
+  /** @brief Adds a participant unit id to attacker side. */
+  void addAttackerParticipantUnitId(int unitId);
+  /** @brief Adds a participant unit id to defender side. */
+  void addDefenderParticipantUnitId(int unitId);
   /** @brief Appends one spoil entry (amount + token). */
   void addSpoil(BattleSpoil spoil);
   /** @brief Clears all spoil entries. */
@@ -160,5 +170,7 @@ private:
   int defenderLosses_ { 0 };
   std::vector<int> attackerDamagedUnitIds_;
   std::vector<int> defenderDamagedUnitIds_;
+  std::vector<int> attackerParticipantUnitIds_;
+  std::vector<int> defenderParticipantUnitIds_;
   std::vector<BattleSpoil> spoils_;
 };

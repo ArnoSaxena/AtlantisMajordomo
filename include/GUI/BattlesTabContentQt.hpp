@@ -64,9 +64,14 @@ public:
      */
     void focusBattleByRegion(int x, int y, int z, int month, int year);
 
+signals:
+    /** Emitted when the user chooses Map for a selected battle. */
+    void navigateToMap(int x, int y, int z);
+
 private slots:
     void onDateComboChanged(int index);
     void onBattleSelectionChanged();
+    void onBattleContextMenuRequested(const QPoint& pos);
 
 private:
     void updateDateSelector();

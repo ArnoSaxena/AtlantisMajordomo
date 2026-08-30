@@ -34,9 +34,15 @@
 #include "Data/Commands.hpp"
 #include "Data/DataSerializer.hpp"
 #include "Data/Faction.hpp"
+#include "Data/ReportRepository.hpp"
 #include "Data/Unit.hpp"
 #include "Function/StartupAutoLoadUtils.hpp"
 #include "Function/TabRefreshUtils.hpp"
+#include "Function/OrderWarningService.hpp"
+
+#include "Function/OrderBusinessLogic.hpp"
+#include "Function/OrderParsingUtils.hpp"
+#include "Function/CommandSimulationService.hpp"
 
 #include <QCloseEvent>
 #include <QFileDialog>
@@ -222,11 +228,12 @@ bool tryBuildMainFactionExportContext(const AppData& appData,
     int latestYear = 0, latestMonth = 0;
     bool hasPeriod = false;
 
-    for (std::size_t i = 0; i < factionRepo.size(); ++i)
+    const auto& reportRepository = appData.reportRepository();
+    for (std::size_t i = 0; i < reportRepository.size(); ++i)
     {
-        const Faction& faction = factionRepo.at(i);
-        const int month = faction.getMonth();
-        const int year  = faction.getYear();
+        const Report& report = reportRepository.at(i);
+        const int month = report.getMonth();
+        const int year  = report.getYear();
         if (month < 1 || month > 12) continue;
         if (!hasPeriod || isLaterPeriod(year, month, latestYear, latestMonth))
         {
@@ -238,7 +245,7 @@ bool tryBuildMainFactionExportContext(const AppData& appData,
 
     if (!hasPeriod)
     {
-        errorMessage = L"Cannot export orders: no valid month/year was found in loaded faction data.";
+        errorMessage = L"Cannot export orders: no valid month/year was found in loaded reports.";
         return false;
     }
 
@@ -324,6 +331,35 @@ int importOrdersFromContent(AppData& appData, const std::wstring& fileContent, s
                 {
                     unit->setOrders(currentOrders);
                     ++unitsUpdated;
+
+                    // Synchronize the order repository from the saved Unit (defer global recompute)
+                    OrderBusinessLogic::syncOrderRepositoryForSavedUnit(appData, currentUnitNumber, false);
+
+                    // Rebuild UnitNew snapshots originating from this unit based on FORM blocks
+                    appData.unitNewRepository().removeByOriginUnit(currentUnitNumber);
+                    const std::vector<int> formUnitNumbers =
+                        OrderParsingUtils::extractFormNewUnitNumbers(currentOrders);
+                    for (int formUnitNumber : formUnitNumbers)
+                    {
+                        const int x = unit->getXCoordinate();
+                        const int y = unit->getYCoordinate();
+                        const int z = unit->getZCoordinate();
+                        const std::wstring formUnitName = L"New Unit";
+
+                        appData.unitNewRepository().add(
+                            formUnitNumber,
+                            formUnitName,
+                            unit->getStructureId(),
+                            x, y, z,
+                            unit->getFlags(),
+                            std::map<std::wstring, int>(),
+                            0, 0, 0, 0, 0,
+                            std::map<std::wstring, int>(),
+                            unit->getMonth(),
+                            unit->getYear(),
+                            currentUnitNumber
+                        );
+                    }
                 }
             }
 
@@ -346,7 +382,7 @@ int importOrdersFromContent(AppData& appData, const std::wstring& fileContent, s
         }
     }
 
-    // Save the last unit's orders if any
+    // Save the last unit's orders if any (same handling as above)
     if (currentUnitNumber != -1 && !currentOrders.empty())
     {
         Unit* unit = appData.unitRepository().findByNumber(currentUnitNumber);
@@ -354,8 +390,39 @@ int importOrdersFromContent(AppData& appData, const std::wstring& fileContent, s
         {
             unit->setOrders(currentOrders);
             ++unitsUpdated;
+
+            OrderBusinessLogic::syncOrderRepositoryForSavedUnit(appData, currentUnitNumber, false);
+
+            appData.unitNewRepository().removeByOriginUnit(currentUnitNumber);
+            const std::vector<int> formUnitNumbers =
+                OrderParsingUtils::extractFormNewUnitNumbers(currentOrders);
+            for (int formUnitNumber : formUnitNumbers)
+            {
+                const int x = unit->getXCoordinate();
+                const int y = unit->getYCoordinate();
+                const int z = unit->getZCoordinate();
+                const std::wstring formUnitName = L"New Unit";
+
+                appData.unitNewRepository().add(
+                    formUnitNumber,
+                    formUnitName,
+                    unit->getStructureId(),
+                    x, y, z,
+                    unit->getFlags(),
+                    std::map<std::wstring, int>(),
+                    0, 0, 0, 0, 0,
+                    std::map<std::wstring, int>(),
+                    unit->getMonth(),
+                    unit->getYear(),
+                    currentUnitNumber
+                );
+            }
         }
     }
+
+    // One global recompute after all imports
+    CommandSimulationService::recalculateAfterOrdersValues(appData);
+    OrderWarningService::runForMainFaction(appData);
 
     return unitsUpdated;
 }
@@ -577,6 +644,8 @@ void MainWindow::deferredInit()
     QVBoxLayout* battlesLayout = new QVBoxLayout(battlesTab_);
     battlesLayout->setContentsMargins(0, 0, 0, 0);
     battlesLayout->addWidget(battlesTabContent_);
+        connect(battlesTabContent_, &BattlesTabContentQt::navigateToMap,
+            this, &MainWindow::onNavigateToMap);
 
     // Items tab
     itemsTabContent_ = new ItemsTabContentQt(appData_, itemsTab_);
@@ -605,8 +674,14 @@ void MainWindow::deferredInit()
             this, &MainWindow::onNavigateToBattle);
     connect(mapTabContent_, &MapTabContentQt::navigateToSkill,
             this, &MainWindow::onNavigateToSkill);
-        connect(mapTabContent_, &MapTabContentQt::navigateToItem,
+    connect(mapTabContent_, &MapTabContentQt::navigateToItem,
             this, &MainWindow::onNavigateToItem);
+    connect(mapTabContent_, &MapTabContentQt::warningsChanged,
+            this, [this]() {
+                if (eventsTabContent_) {
+                    eventsTabContent_->refresh();
+                }
+            });
 
     // TODO: Create remaining Qt tab content widgets here as they are implemented.
 
@@ -912,10 +987,14 @@ void MainWindow::onFileImportOrders()
     appConfig_.setExportOrdersFolder(
         std::filesystem::path(filePath.toStdWString()).parent_path().wstring());
     appConfig_.save();
+
+    // Recalculate warnings now that new orders are in place.
+    OrderWarningService::runForMainFaction(appData_);
+
     refreshAllTabs();
 
     QMessageBox::information(this, "Import Orders",
-        QString("Orders imported successfully for %1 unit(s).").arg(unitsUpdated));
+        QString("Orders imported successfully for %1 unit(s).\n").arg(unitsUpdated));
 }
 
 // ---------------------------------------------------------------------------
@@ -943,6 +1022,14 @@ void MainWindow::onNavigateToBattle(int x, int y, int z, int month, int year)
         tabWidget_->setCurrentWidget(battlesTab_);
     if (battlesTabContent_)
         battlesTabContent_->focusBattleByRegion(x, y, z, month, year);
+}
+
+void MainWindow::onNavigateToMap(int x, int y, int z)
+{
+    if (tabWidget_ && mapTab_)
+        tabWidget_->setCurrentWidget(mapTab_);
+    if (mapTabContent_)
+        mapTabContent_->focusRegion(x, y, z);
 }
 
 void MainWindow::onNavigateToSkill(const QString& skillToken)

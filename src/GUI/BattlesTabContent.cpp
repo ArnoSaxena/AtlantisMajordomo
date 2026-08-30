@@ -37,6 +37,7 @@ namespace
 constexpr int kMargin = 8;
 constexpr int kPaneGap = 10;
 constexpr int kDateComboWidth = 180;
+constexpr UINT kMapBattleContextCommandId = 1;
 
 UiSizeProfile::Metrics resolveUiMetrics(HWND referenceWindow)
 {
@@ -282,6 +283,11 @@ void BattlesTabContent::focusBattleByRegion(int x, int y, int z, int month, int 
   updateBattleDetailsFromSelection();
 }
 
+void BattlesTabContent::setMapNavigationCallback(std::function<void(int, int, int)> callback)
+{
+  mapNavigationCallback_ = std::move(callback);
+}
+
 bool BattlesTabContent::handleNotify(const NMHDR* hdr)
 {
   if (!hdr)
@@ -295,6 +301,51 @@ bool BattlesTabContent::handleNotify(const NMHDR* hdr)
     if ((listView->uChanged & LVIF_STATE) != 0 && (listView->uNewState & LVIS_SELECTED) != 0)
     {
       updateBattleDetailsFromSelection();
+    }
+    return true;
+  }
+
+  if (hdr->idFrom == static_cast<UINT>(kBattleListControlId) && hdr->code == NM_RCLICK)
+  {
+    const auto* activation = reinterpret_cast<const NMITEMACTIVATE*>(hdr);
+    if (!activation || activation->iItem < 0 || activation->iItem >= static_cast<int>(visibleBattles_.size()))
+    {
+      return true;
+    }
+
+    const Battle* battle = visibleBattles_[static_cast<std::size_t>(activation->iItem)];
+    if (!battle || !mapNavigationCallback_)
+    {
+      return true;
+    }
+
+    ListView_SetItemState(battlesList_, activation->iItem, LVIS_SELECTED | LVIS_FOCUSED, LVIS_SELECTED | LVIS_FOCUSED);
+    updateBattleDetailsFromSelection();
+
+    POINT screenPoint {};
+    GetCursorPos(&screenPoint);
+    HMENU menu = CreatePopupMenu();
+    if (!menu)
+    {
+      return true;
+    }
+
+    AppendMenuW(menu, MF_STRING, kMapBattleContextCommandId, L"Map");
+    const UINT command = TrackPopupMenu(
+      menu,
+      TPM_RETURNCMD | TPM_NONOTIFY | TPM_RIGHTBUTTON,
+      screenPoint.x,
+      screenPoint.y,
+      0,
+      battlesList_,
+      nullptr);
+    DestroyMenu(menu);
+
+    if (command == kMapBattleContextCommandId)
+    {
+      mapNavigationCallback_(battle->getRegionXCoordinate(),
+                             battle->getRegionYCoordinate(),
+                             battle->getRegionZCoordinate());
     }
     return true;
   }

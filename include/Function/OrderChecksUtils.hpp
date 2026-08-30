@@ -35,6 +35,6 @@ void runOrderChecksForMainFaction(AppData& appData,
                                   const std::function<void()>& updateWarningsSummary,
                                   const std::function<void(int)>& updateSelectedUnitDetails);
 
-int selectPreviousWarningUnitNumber(const AppData& appData, int selectedUnitNumber);
-int selectNextWarningUnitNumber(const AppData& appData, int selectedUnitNumber);
+int selectPreviousWarningUnitNumber(const AppData& appData, int selectedUnitNumber, bool selectedUnitIsNew);
+int selectNextWarningUnitNumber(const AppData& appData, int selectedUnitNumber, bool selectedUnitIsNew);
 }

@@ -37,9 +37,9 @@ Event::Event(int unitId, int eventId, std::wstring message, int month, int year)
   : unitId_(unitId)
   , eventId_(eventId)
   , message_(std::move(message))
+  , identifier_(calculateIdentifier(unitId_, message_, month, year))
   , month_(month)
   , year_(year)
-  , identifier_(calculateIdentifier(unitId_, message_, month_, year_))
 {
 }
 

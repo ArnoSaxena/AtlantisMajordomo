@@ -28,6 +28,7 @@
 #include <windows.h>
 #include "GUI/ControlIds.hpp"
 
+#include <functional>
 #include <utility>
 #include <vector>
 
@@ -60,6 +61,9 @@ public:
   */
   void focusBattleByRegion(int x, int y, int z, int month, int year);
 
+  /** Sets the action invoked when a battle is opened on the map. */
+  void setMapNavigationCallback(std::function<void(int, int, int)> callback);
+
   bool handleNotify(const NMHDR* hdr);
   bool handleCommand(int commandId, int notificationCode = 0);
 
@@ -75,6 +79,7 @@ private:
   std::vector<const Battle*> visibleBattles_;
   int selectedMonth_ { 0 };
   int selectedYear_ { 0 };
+  std::function<void(int, int, int)> mapNavigationCallback_;
 
   void updateDateSelector();
   void updateBattleList();

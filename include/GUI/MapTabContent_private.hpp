@@ -31,6 +31,7 @@
 #endif
 
 #include <algorithm>
+#include <array>
 #include <windows.h>
 
 // ---------------------------------------------------------------------------
@@ -72,6 +73,41 @@ constexpr int kOrdersTabIndex   = 0;
 constexpr int kEventsTabIndex   = 1;
 constexpr int kErrorsTabIndex   = 2;
 constexpr int kWarningsTabIndex = 3;
+
+// ---------------------------------------------------------------------------
+// Units list columns
+// ---------------------------------------------------------------------------
+struct UnitsListColumnDefinition
+{
+  const wchar_t* title;
+  int width;
+};
+
+inline constexpr std::array<UnitsListColumnDefinition, 13> kUnitsListColumns {{
+  { L"#", 50 },
+  { L"Name", 180 },
+  { L"Faction", 50 },
+  { L"Faction Name", 120 },
+  { L"Structure", 150 },
+  { L"Men", 90 },
+  { L"Silver", 96 },
+  { L"Flags", 240 },
+  { L"Skills", 260 },
+  { L"Month Order", 180 },
+  { L"!", 28 },
+  { L"B", 28 },
+  { L"D", 28 }
+}};
+
+inline const wchar_t* getUnitsListColumnTitle(int columnIndex)
+{
+  if (columnIndex < 0 || columnIndex >= static_cast<int>(kUnitsListColumns.size()))
+  {
+    return L"";
+  }
+
+  return kUnitsListColumns[static_cast<std::size_t>(columnIndex)].title;
+}
 
 // ---------------------------------------------------------------------------
 // Skill list context menu command IDs
