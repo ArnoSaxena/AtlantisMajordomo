@@ -246,45 +246,6 @@ std::wstring getReportFolderPath(HWND hwnd)
   return folder;
 }
 
-std::wstring formatRgbColor(const std::array<int, 3>& rgb)
-{
-  return std::to_wstring(rgb[0]) + L", " + std::to_wstring(rgb[1]) + L", " + std::to_wstring(rgb[2]);
-}
-
-bool tryParseRgbColorText(const std::wstring& text, std::array<int, 3>& rgb)
-{
-  const std::vector<std::wstring> tokens = StringUtils::splitByComma(text);
-  if (tokens.size() != 3)
-  {
-    return false;
-  }
-
-  for (std::size_t index = 0; index < 3; ++index)
-  {
-    const std::wstring token = StringUtils::trimWhitespace(tokens[index]);
-    if (token.empty())
-    {
-      return false;
-    }
-
-    try
-    {
-      const int value = std::stoi(token);
-      if (value < 0 || value > 255)
-      {
-        return false;
-      }
-      rgb[index] = value;
-    }
-    catch (const std::exception&)
-    {
-      return false;
-    }
-  }
-
-  return true;
-}
-
 } // namespace
 
 SettingsDialog::SettingsDialog() = default;
@@ -376,7 +337,7 @@ bool SettingsDialog::applySettingsFromControls(HWND hwnd, bool closeOnSuccess)
   {
     wchar_t colorBuffer[64] = {};
     GetWindowTextW(mainFactionUnitColorEdit_, colorBuffer, static_cast<int>(std::size(colorBuffer)));
-    if (!tryParseRgbColorText(colorBuffer, mainFactionUnitTextColor))
+    if (!StringUtils::tryParseRgbColor(colorBuffer, mainFactionUnitTextColor))
     {
       MessageBoxW(hwnd,
                   L"Main faction unit text color must be in format R, G, B with values from 0 to 255.",
@@ -391,7 +352,7 @@ bool SettingsDialog::applySettingsFromControls(HWND hwnd, bool closeOnSuccess)
   {
     wchar_t colorBuffer[64] = {};
     GetWindowTextW(otherFactionUnitColorEdit_, colorBuffer, static_cast<int>(std::size(colorBuffer)));
-    if (!tryParseRgbColorText(colorBuffer, otherFactionUnitTextColor))
+    if (!StringUtils::tryParseRgbColor(colorBuffer, otherFactionUnitTextColor))
     {
       MessageBoxW(hwnd,
                   L"Other faction unit text color must be in format R, G, B with values from 0 to 255.",
@@ -1314,12 +1275,12 @@ int SettingsDialog::showDialog(HWND parentHwnd, AppData& appData, AppConfig& app
   }
   if (mainFactionUnitColorEdit_)
   {
-    const std::wstring value = formatRgbColor(appConfig_->getMainFactionUnitTextColor());
+    const std::wstring value = StringUtils::formatRgbColor(appConfig_->getMainFactionUnitTextColor());
     SetWindowTextW(mainFactionUnitColorEdit_, value.c_str());
   }
   if (otherFactionUnitColorEdit_)
   {
-    const std::wstring value = formatRgbColor(appConfig_->getOtherFactionUnitTextColor());
+    const std::wstring value = StringUtils::formatRgbColor(appConfig_->getOtherFactionUnitTextColor());
     SetWindowTextW(otherFactionUnitColorEdit_, value.c_str());
   }
   if (leaderMagesCheck_)

@@ -118,6 +118,17 @@ void MapTabContentQt::saveOrdersToSelectedUnit()
 
     updateSelectedUnitDetailsByNumber(selectedUnitNumber_);
     populateUnitsForSelectedRegion();
+    if (hasSelectedRegion_)
+    {
+        const Region* selectedRegion = appData_->regionRepository().findByCoordinates(
+            selectedRegionX_, selectedRegionY_, selectedZ_);
+        if (!selectedRegion)
+        {
+            selectedRegion = appData_->regionRepository().findByCoordinates(
+                selectedRegionX_, selectedRegionY_);
+        }
+        updateRegionDetailsView(selectedRegion);
+    }
     updateWarningsSummaryLabel();
 }
 

@@ -95,6 +95,11 @@ bool Item::isResource() const
   return resource_;
 }
 
+bool Item::isProvisional() const
+{
+  return provisional_;
+}
+
 bool Item::isMount() const
 {
   return mount_;
@@ -227,6 +232,11 @@ void Item::setArmour(bool armour)
 void Item::setResource(bool resource)
 {
   resource_ = resource;
+}
+
+void Item::setProvisional(bool provisional)
+{
+  provisional_ = provisional;
 }
 
 void Item::setMount(bool mount)

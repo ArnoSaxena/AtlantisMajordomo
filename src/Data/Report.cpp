@@ -1548,19 +1548,20 @@ void Report::parseRegions(RegionRepository& regionRepository,
                 const std::wstring afterColon = StringUtils::trimWhitespace(StringUtils::trimBom(structureText.substr(colonPos + 1)));
                 const std::size_t commaPos = afterColon.find(L',');
                 const std::size_t periodPos = afterColon.find(L'.');
+                const std::size_t semicolonPos = afterColon.find(L';');
 
                 std::size_t nameEndPos = std::wstring::npos;
-                if (commaPos != std::wstring::npos && periodPos != std::wstring::npos)
-                {
-                  nameEndPos = std::min(commaPos, periodPos);
-                }
-                else if (commaPos != std::wstring::npos)
+                if (commaPos != std::wstring::npos)
                 {
                   nameEndPos = commaPos;
                 }
-                else
+                if (periodPos != std::wstring::npos && (nameEndPos == std::wstring::npos || periodPos < nameEndPos))
                 {
                   nameEndPos = periodPos;
+                }
+                if (semicolonPos != std::wstring::npos && (nameEndPos == std::wstring::npos || semicolonPos < nameEndPos))
+                {
+                  nameEndPos = semicolonPos;
                 }
 
                 if (nameEndPos == std::wstring::npos)
@@ -2886,6 +2887,8 @@ void Report::parseItems(ItemRepository& itemRepository)
         Item* existingItem = itemRepository.findByIdentifierToken(identifierToken);
         if (existingItem)
         {
+          // Fill in the real item definition without clearing fields (like
+          // resources) already populated from a skill description.
           existingItem->setItemName(itemName);
           existingItem->setItemNamePlural(Item::pluralizeName(itemName));
           existingItem->setWeight(weight);
@@ -2903,6 +2906,7 @@ void Report::parseItems(ItemRepository& itemRepository)
           existingItem->setSkillsMax(skillsMax);
           existingItem->setFullText(fullText);
           existingItem->setProductionHelp(productionHelp);
+          existingItem->setProvisional(false);
         }
       }
       else
@@ -3138,6 +3142,29 @@ void Report::parseSkills(SkillRepository& skillRepository,
     }
   }
 
+  // Skill descriptions can reference item tokens (produced items or their
+  // resources) before that item's own "Item reports:" entry is parsed.
+  // Create a placeholder so the reference is not silently dropped; when the
+  // real item is later parsed, parseItems() fills it in without clearing
+  // fields (like resources) already set here.
+  auto getOrCreateProvisionalItem = [&itemRepository](const std::wstring& token,
+                                                       const std::wstring& name) -> Item*
+  {
+    if (Item* existing = itemRepository.findByIdentifierToken(token))
+    {
+      return existing;
+    }
+
+    itemRepository.add(token, name.empty() ? token : name,
+                       0, false, false, false, false, false, 0, 0, 0, 0, 0, false);
+    Item* created = itemRepository.findByIdentifierToken(token);
+    if (created)
+    {
+      created->setProvisional(true);
+    }
+    return created;
+  };
+
   // Parse each skill entry
   for (std::size_t index = skillReportsIndex + 1; index < lines_.size(); ++index)
   {
@@ -3193,6 +3220,7 @@ void Report::parseSkills(SkillRepository& skillRepository,
     // Check if this is a production skill
     bool isProduction = fullDescription.find(L"A unit with this skill may PRODUCE") != std::wstring::npos;
     std::map<std::wstring, int> productionItems;
+    std::map<std::wstring, std::wstring> productionItemNames;
 
     if (isProduction)
     {
@@ -3213,65 +3241,46 @@ void Report::parseSkills(SkillRepository& skillRepository,
           produceText = produceText.substr(0, endPos);
         }
 
-        // Parse multiple items separated by commas or "and"
-        std::wregex itemPattern(L"([^,]+?)\\s*\\[([\\w]{3,})\\]");
-        for (std::wsregex_iterator it(produceText.begin(), produceText.end(), itemPattern),
-             end; it != end; ++it)
+        // Parse each comma-separated entry as its own segment so a resource's
+        // "from ... [TOKEN]" clause is never mistaken for another produced item.
+        static const std::wregex productionSegmentPattern(
+          L"^\\s*(?:and\\s+)?([^\\[]+?)\\s*\\[(\\w{3,})\\]"
+          L"(?:\\s+from\\s+(\\d+)?\\s*([^\\[]+?)\\s*\\[(\\w{3,})\\])?"
+          L"\\s+at a rate of\\s+(\\d+)\\s+per\\s+man-month");
+
+        std::vector<std::wstring> productionSegments = StringUtils::splitByComma(produceText);
+        for (const std::wstring& segment : productionSegments)
         {
-          std::wstring itemName = StringUtils::trimWhitespace(StringUtils::trimBom((*it)[1].str()));
-          std::wstring itemToken = (*it)[2].str();
-
-          // Check if this item has a "from" clause for resources
-          size_t itemStartPos = produceText.find(itemName);
-          if (itemStartPos != std::wstring::npos)
+          std::wsmatch segmentMatch;
+          if (!std::regex_search(segment, segmentMatch, productionSegmentPattern))
           {
-            size_t fromPos = produceText.find(L"from", itemStartPos);
-            size_t nextItemPos = produceText.find(L"[", itemStartPos + itemName.length());
-
-            // Check if there's a "from" clause before the next item
-            if (fromPos != std::wstring::npos && (nextItemPos == std::wstring::npos || fromPos < nextItemPos))
-            {
-              size_t ratePos = produceText.find(L"at a rate", fromPos);
-              if (ratePos != std::wstring::npos)
-              {
-                std::wstring fromText = produceText.substr(fromPos + 4, ratePos - fromPos - 4);
-
-                // Parse resource items: "amount item_name [TOKEN]"
-                std::wregex resourcePattern(L"(\\d+)?\\s*([^\\[]+?)\\s*\\[([\\w]{3,})\\]");
-                std::wsmatch resourceMatch;
-                if (std::regex_search(fromText, resourceMatch, resourcePattern))
-                {
-                  int resourceAmount = 1;
-                  if (resourceMatch[1].matched)
-                  {
-                    resourceAmount = std::stoi(resourceMatch[1].str());
-                  }
-                  std::wstring resourceToken = resourceMatch[3].str();
-
-                  // Set the resource in the produced item
-                  Item* producedItem = itemRepository.findByIdentifierToken(itemToken);
-                  if (producedItem)
-                  {
-                    std::map<std::wstring, int> resources = producedItem->getResources();
-                    resources[resourceToken] = resourceAmount;
-                    producedItem->setResources(resources);
-                  }
-                }
-              }
-            }
+            continue;
           }
 
-          // Parse the rate: "at a rate of N per man-month"
-          size_t ratePos = produceText.find(L"at a rate of", itemStartPos);
-          if (ratePos != std::wstring::npos)
+          const std::wstring itemName = StringUtils::trimWhitespace(StringUtils::trimBom(segmentMatch[1].str()));
+          const std::wstring itemToken = segmentMatch[2].str();
+          const int rate = std::stoi(segmentMatch[6].str());
+          productionItems[itemToken] = rate;
+          productionItemNames[itemToken] = itemName;
+
+          if (segmentMatch[5].matched)
           {
-            std::wstring rateText = produceText.substr(ratePos + 12);
-            std::wregex ratePattern(L"(\\d+)\\s+per");
-            std::wsmatch rateMatch;
-            if (std::regex_search(rateText, rateMatch, ratePattern))
+            int resourceAmount = 1;
+            if (segmentMatch[3].matched)
             {
-              int rate = std::stoi(rateMatch[1].str());
-              productionItems[itemToken] = rate;
+              resourceAmount = std::stoi(segmentMatch[3].str());
+            }
+            const std::wstring resourceName = StringUtils::trimWhitespace(StringUtils::trimBom(segmentMatch[4].str()));
+            const std::wstring resourceToken = segmentMatch[5].str();
+
+            getOrCreateProvisionalItem(resourceToken, resourceName);
+
+            Item* producedItem = getOrCreateProvisionalItem(itemToken, itemName);
+            if (producedItem)
+            {
+              std::map<std::wstring, int> resources = producedItem->getResources();
+              resources[resourceToken] = resourceAmount;
+              producedItem->setResources(resources);
             }
           }
         }
@@ -3401,7 +3410,9 @@ void Report::parseSkills(SkillRepository& skillRepository,
     {
       for (const auto& [itemToken, _] : productionItems)
       {
-        Item* producedItem = itemRepository.findByIdentifierToken(itemToken);
+        const auto nameIt = productionItemNames.find(itemToken);
+        const std::wstring& itemName = nameIt != productionItemNames.end() ? nameIt->second : itemToken;
+        Item* producedItem = getOrCreateProvisionalItem(itemToken, itemName);
         if (producedItem)
         {
           producedItem->setProductionSkillLevel(skillToken, skillLevel);

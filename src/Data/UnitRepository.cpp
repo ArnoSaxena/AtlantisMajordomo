@@ -145,6 +145,7 @@ bool UnitRepository::addOrUpdateIfLater(int unitNumber,
   existing->setUnitName(std::move(unitName));
   existing->setFactionNumber(factionNumber);
   existing->setStructureId(structureId);
+  existing->setFutureStructureId(structureId);
   existing->setCoordinates(xCoordinate, yCoordinate, zCoordinate);
   existing->setFlags(std::move(flags));
   existing->setItems(std::move(itemCounts));

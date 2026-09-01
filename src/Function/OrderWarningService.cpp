@@ -54,7 +54,6 @@ using OrderParsingUtils::isMonthLongOrderLine;
 using OrderParsingUtils::extractFormNewUnitBlock;
 using OrderParsingUtils::extractFormNewUnitNumbers;
 using OrderParsingUtils::filterOrdersIgnoringFormBlocks;
-using OrderParsingUtils::normalizeItemTokenForWarning;
 using OrderParsingUtils::tokenizeOrderLine;
 using OrderParsingUtils::tryExtractOrderKeywordUpper;
 using OrderParsingUtils::tryParseGiveTakeOrder;
@@ -77,7 +76,7 @@ struct WarningTransportOrder
 
 const Item* findItemByTokenNormalizedForWarning(const AppData& appData, const std::wstring& itemToken)
 {
-  const std::wstring normalizedToken = normalizeItemTokenForWarning(itemToken);
+  const std::wstring normalizedToken = StringUtils::normalizeToken(itemToken);
   if (normalizedToken.empty())
   {
     return nullptr;
@@ -91,7 +90,7 @@ const Item* findItemByTokenNormalizedForWarning(const AppData& appData, const st
   for (std::size_t index = 0; index < appData.itemRepository().size(); ++index)
   {
     const Item& candidate = appData.itemRepository().at(index);
-    if (normalizeItemTokenForWarning(candidate.getIdentifierToken()) == normalizedToken)
+    if (StringUtils::normalizeToken(candidate.getIdentifierToken()) == normalizedToken)
     {
       return &candidate;
     }
@@ -154,7 +153,9 @@ bool tryExtractStructureIdFromOrder(const std::wstring& orderLine,
   return false;
 }
 
-bool tryResolveMoveDestinationCoordinates(const Unit& unit,
+// Templated on Unit/UnitNew, both of which expose matching coordinate accessors.
+template <typename UnitLike>
+bool tryResolveMoveDestinationCoordinates(const UnitLike& unit,
                                           const std::wstring& orderLine,
                                           const std::wstring& keyword,
                                           int& destinationX,
@@ -213,8 +214,10 @@ bool tryResolveMoveDestinationCoordinates(const Unit& unit,
   return true;
 }
 
+// Templated on Unit/UnitNew, both of which expose matching coordinate accessors.
+template <typename UnitLike>
 bool hasStructureAtMoveDestination(const AppData& appData,
-                                   const Unit& unit,
+                                   const UnitLike& unit,
                                    const std::wstring& orderLine,
                                    const std::wstring& keyword,
                                    int structureId)
@@ -236,10 +239,10 @@ bool hasStructureAtMoveDestination(const AppData& appData,
 
 int getManItemSkillLimitForWarning(const Item& item, const std::wstring& skillToken)
 {
-  const std::wstring normalizedSkillToken = normalizeItemTokenForWarning(skillToken);
+  const std::wstring normalizedSkillToken = StringUtils::normalizeToken(skillToken);
   for (const auto& [limitedSkillToken, levelLimit] : item.getSkillsMax())
   {
-    if (normalizeItemTokenForWarning(limitedSkillToken) == normalizedSkillToken)
+    if (StringUtils::normalizeToken(limitedSkillToken) == normalizedSkillToken)
     {
       return levelLimit > 0 ? levelLimit : 2;
     }
@@ -334,7 +337,7 @@ int countManItemsByTokenForWarning(const AppData& appData,
 {
   totalManCount = 0;
   int matchingTokenCount = 0;
-  const std::wstring normalizedRequiredToken = normalizeItemTokenForWarning(requiredToken);
+  const std::wstring normalizedRequiredToken = StringUtils::normalizeToken(requiredToken);
 
   for (const auto& [itemToken, count] : itemCounts)
   {
@@ -350,7 +353,7 @@ int countManItemsByTokenForWarning(const AppData& appData,
     }
 
     totalManCount += count;
-    if (normalizeItemTokenForWarning(item->getIdentifierToken()) == normalizedRequiredToken)
+    if (StringUtils::normalizeToken(item->getIdentifierToken()) == normalizedRequiredToken)
     {
       matchingTokenCount += count;
     }
@@ -385,12 +388,12 @@ int resolveMageStudyAboveLevel2CapacityForWarning(const AppData& appData, const 
     return 0;
   }
 
-  const std::wstring normalizedType = normalizeItemTokenForWarning(locationStructure->getStructureType());
+  const std::wstring normalizedType = StringUtils::normalizeToken(locationStructure->getStructureType());
   int maxCapacity = 0;
   for (std::size_t index = 0; index < appData.structInfoRepository().size(); ++index)
   {
     const StructInfo& candidate = appData.structInfoRepository().at(index);
-    if (normalizeItemTokenForWarning(candidate.getStructureType()) != normalizedType)
+    if (StringUtils::normalizeToken(candidate.getStructureType()) != normalizedType)
     {
       continue;
     }
@@ -789,7 +792,7 @@ int getRegionResourceAmountForWarning(const Region* region, const std::wstring& 
     return 0;
   }
 
-  const std::wstring normalizedItemToken = normalizeItemTokenForWarning(itemToken);
+  const std::wstring normalizedItemToken = StringUtils::normalizeToken(itemToken);
   if (normalizedItemToken.empty())
   {
     return 0;
@@ -803,7 +806,7 @@ int getRegionResourceAmountForWarning(const Region* region, const std::wstring& 
       continue;
     }
 
-    if (normalizeItemTokenForWarning(resourceToken) == normalizedItemToken)
+    if (StringUtils::normalizeToken(resourceToken) == normalizedItemToken)
     {
       totalAmount += amount;
     }
@@ -846,7 +849,7 @@ bool tryResolveRegionalProduceDemandForWarning(const AppData& appData,
     return false;
   }
 
-  const std::wstring producedTokenNormalized = normalizeItemTokenForWarning(producedItem->getIdentifierToken());
+  const std::wstring producedTokenNormalized = StringUtils::normalizeToken(producedItem->getIdentifierToken());
   if (producedTokenNormalized.empty())
   {
     return false;
@@ -861,7 +864,7 @@ bool tryResolveRegionalProduceDemandForWarning(const AppData& appData,
       continue;
     }
 
-    if (normalizeItemTokenForWarning(requirementToken) != producedTokenNormalized)
+    if (StringUtils::normalizeToken(requirementToken) != producedTokenNormalized)
     {
       hasOnlySelfRequirement = false;
       break;
@@ -903,7 +906,7 @@ bool tryResolveRegionalProduceDemandForWarning(const AppData& appData,
 
     for (const auto& [helpToken, helpAmount] : helperItem->getProductionHelp())
     {
-      if (normalizeItemTokenForWarning(helpToken) == producedTokenNormalized)
+      if (StringUtils::normalizeToken(helpToken) == producedTokenNormalized)
       {
         const int cappedHelperCount = std::min(manCount, helperCount);
         estimatedDemand += cappedHelperCount * helpAmount;
@@ -1027,7 +1030,7 @@ const Skill* tryResolveStudySkill(const AppData& appData,
 {
   const std::wstring trimmedOperand = StringUtils::trimWhitespace(skillOperand);
   const std::wstring normalizedOperand = StringUtils::toUpper(trimmedOperand);
-  const std::wstring normalizedTokenOperand = normalizeItemTokenForWarning(trimmedOperand);
+  const std::wstring normalizedTokenOperand = StringUtils::normalizeToken(trimmedOperand);
 
   if (normalizedOperand.empty() && normalizedTokenOperand.empty())
   {
@@ -1052,7 +1055,7 @@ const Skill* tryResolveStudySkill(const AppData& appData,
   for (std::size_t index = 0; index < appData.skillRepository().size(); ++index)
   {
     const Skill& skill = appData.skillRepository().at(index);
-    const std::wstring normalizedIdentifier = normalizeItemTokenForWarning(skill.getIdentifierToken());
+    const std::wstring normalizedIdentifier = StringUtils::normalizeToken(skill.getIdentifierToken());
     if ((!normalizedTokenOperand.empty() && normalizedIdentifier == normalizedTokenOperand) ||
       (!normalizedOperand.empty() && normalizedIdentifier == normalizedOperand))
     {
@@ -1105,7 +1108,7 @@ void checkGiveTakeWarningsForMainFaction(AppData& appData, int mainFactionNumber
         continue;
       }
 
-      const std::wstring normalizedToken = normalizeItemTokenForWarning(token);
+      const std::wstring normalizedToken = StringUtils::normalizeToken(token);
       if (!normalizedToken.empty())
       {
         normalizedCounts[normalizedToken] += amount;
@@ -1677,7 +1680,7 @@ void checkTeachWarningsForMainFaction(AppData& appData, int mainFactionNumber)
         {
           if (amount > 0)
           {
-            const std::wstring normalizedToken = normalizeItemTokenForWarning(itemToken);
+            const std::wstring normalizedToken = StringUtils::normalizeToken(itemToken);
             const Item* itemDef = appData.itemRepository().findByIdentifierToken(normalizedToken);
             if (!itemDef)
             {
@@ -1685,7 +1688,7 @@ void checkTeachWarningsForMainFaction(AppData& appData, int mainFactionNumber)
               for (std::size_t i = 0; i < appData.itemRepository().size(); ++i)
               {
                 const Item& candidate = appData.itemRepository().at(i);
-                if (normalizeItemTokenForWarning(candidate.getIdentifierToken()) == normalizedToken)
+                if (StringUtils::normalizeToken(candidate.getIdentifierToken()) == normalizedToken)
                 {
                   itemDef = &candidate;
                   break;
@@ -1867,6 +1870,67 @@ void checkMoveCapacityWarningsForMainFaction(AppData& appData, int mainFactionNu
   }
 }
 
+// Templated on Unit/UnitNew, both of which expose matching structure/warning accessors.
+template <typename UnitLike>
+void applyFutureStructureIdFromOrders(AppData& appData, UnitLike& unit, const std::vector<std::wstring>& orderLines)
+{
+  unit.setFutureStructureId(unit.getStructureId());
+
+  for (const std::wstring& orderLine : orderLines)
+  {
+    std::wstring keyword;
+    if (!tryExtractOrderKeywordUpper(orderLine, keyword))
+    {
+      continue;
+    }
+
+    if (keyword == L"MOVE" || keyword == L"ADVANCE")
+    {
+      int structureId = 0;
+      if (tryExtractStructureIdFromOrder(orderLine, keyword, structureId))
+      {
+        if (hasStructureAtMoveDestination(appData, unit, orderLine, keyword, structureId))
+        {
+          unit.setFutureStructureId(structureId);
+        }
+        else
+        {
+          unit.addWarning(
+            keyword + L": target structure " + std::to_wstring(structureId) + L" not found in destination region");
+        }
+        break;
+      }
+    }
+    else if (keyword == L"LEAVE")
+    {
+      unit.setFutureStructureId(0);
+      break;
+    }
+    else if (keyword == L"ENTER")
+    {
+      int structureId = 0;
+      if (tryExtractStructureIdFromOrder(orderLine, keyword, structureId))
+      {
+        const Structure* structure = appData.structureRepository().findByIdAndCoordinates(
+          structureId,
+          unit.getXCoordinate(),
+          unit.getYCoordinate(),
+          unit.getZCoordinate());
+        if (structure)
+        {
+          unit.setFutureStructureId(structureId);
+        }
+        else
+        {
+          unit.addWarning(
+            keyword + L": target structure " + std::to_wstring(structureId) + L" not found in current region");
+        }
+        break;
+      }
+    }
+  }
+}
+
 void updateFutureStructureIdsForMainFaction(AppData& appData, int mainFactionNumber)
 {
   auto& unitRepository = appData.unitRepository();
@@ -1884,59 +1948,116 @@ void updateFutureStructureIdsForMainFaction(AppData& appData, int mainFactionNum
       continue;
     }
 
-    unit->setFutureStructureId(unit->getStructureId());
+    applyFutureStructureIdFromOrders(appData, *unit, filterOrdersIgnoringFormBlocks(unit->getOrders()));
+  }
+
+  // UnitNew entries have no orders of their own; their commands live in the
+  // origin unit's FORM ... END block, so ENTER/MOVE need the same handling here.
+  auto& unitNewRepository = appData.unitNewRepository();
+  for (std::size_t index = 0; index < unitNewRepository.size(); ++index)
+  {
+    const UnitNew& view = unitNewRepository.at(index);
+
+    int unitNewFactionNumber = view.getFactionNumber();
+    if (unitNewFactionNumber <= 0)
+    {
+      const Unit* originUnitForFaction = unitRepository.findByNumber(view.getOriginUnit());
+      if (originUnitForFaction)
+      {
+        unitNewFactionNumber = originUnitForFaction->getFactionNumber();
+      }
+    }
+
+    if (unitNewFactionNumber != mainFactionNumber)
+    {
+      continue;
+    }
+
+    UnitNew* unitNew = unitNewRepository.findByNumberAndCoordinates(
+      view.getUnitNumber(), view.getXCoordinate(), view.getYCoordinate(), view.getZCoordinate());
+    if (!unitNew)
+    {
+      continue;
+    }
+
+    const Unit* originUnit = unitRepository.findByNumber(unitNew->getOriginUnit());
+    if (!originUnit)
+    {
+      unitNew->setFutureStructureId(unitNew->getStructureId());
+      continue;
+    }
+
+    const std::vector<std::wstring> formBlockOrders =
+      OrderParsingUtils::extractFormNewUnitBlock(originUnit->getOrders(), unitNew->getUnitNumber());
+    applyFutureStructureIdFromOrders(appData, *unitNew, formBlockOrders);
+  }
+}
+
+void checkPromoteWarningsForMainFaction(AppData& appData, int mainFactionNumber)
+{
+  auto& unitRepository = appData.unitRepository();
+  for (std::size_t index = 0; index < unitRepository.size(); ++index)
+  {
+    const Unit& view = unitRepository.at(index);
+    if (view.getFactionNumber() != mainFactionNumber)
+    {
+      continue;
+    }
+
+    Unit* unit = unitRepository.findByNumber(view.getUnitNumber());
+    if (!unit)
+    {
+      continue;
+    }
 
     for (const std::wstring& orderLine : filterOrdersIgnoringFormBlocks(unit->getOrders()))
     {
-      std::wstring keyword;
-      if (!tryExtractOrderKeywordUpper(orderLine, keyword))
+      std::vector<std::wstring> tokens;
+      std::vector<bool> tokenWasQuoted;
+      if (!tokenizeOrderLine(orderLine, tokens, tokenWasQuoted) || tokens.empty())
       {
         continue;
       }
 
-      if (keyword == L"MOVE" || keyword == L"ADVANCE")
+      std::size_t tokenIndex = 0;
+      if (!tokens.front().empty() && tokens.front().front() == L'@')
       {
-        int structureId = 0;
-        if (tryExtractStructureIdFromOrder(orderLine, keyword, structureId))
+        if (tokens.front().size() == 1)
         {
-          if (hasStructureAtMoveDestination(appData, *unit, orderLine, keyword, structureId))
-          {
-            unit->setFutureStructureId(structureId);
-          }
-          else
-          {
-            unit->addWarning(
-              keyword + L": target structure " + std::to_wstring(structureId) + L" not found in destination region");
-          }
-          break;
+          tokenIndex = 1;
+        }
+        else
+        {
+          tokens.front().erase(tokens.front().begin());
         }
       }
-      else if (keyword == L"LEAVE")
+
+      if (tokenIndex >= tokens.size() || StringUtils::toUpper(tokens[tokenIndex]) != L"PROMOTE")
       {
-        unit->setFutureStructureId(0);
-        break;
+        continue;
       }
-      else if (keyword == L"ENTER")
+
+      ++tokenIndex;
+      int promotedUnitNumber = 0;
+      if (tokenIndex >= tokens.size() ||
+          !tryParseIntStrict(tokens[tokenIndex], promotedUnitNumber) ||
+          promotedUnitNumber <= 0)
       {
-        int structureId = 0;
-        if (tryExtractStructureIdFromOrder(orderLine, keyword, structureId))
-        {
-          const Structure* structure = appData.structureRepository().findByIdAndCoordinates(
-            structureId,
-            unit->getXCoordinate(),
-            unit->getYCoordinate(),
-            unit->getZCoordinate());
-          if (structure)
-          {
-            unit->setFutureStructureId(structureId);
-          }
-          else
-          {
-            unit->addWarning(
-              keyword + L": target structure " + std::to_wstring(structureId) + L" not found in current region");
-          }
-          break;
-        }
+        continue;
+      }
+
+      const Unit* promotedUnit = unitRepository.findByNumber(promotedUnitNumber);
+      const bool sameStructure = promotedUnit &&
+        unit->getStructureId() > 0 &&
+        promotedUnit->getStructureId() == unit->getStructureId() &&
+        promotedUnit->getXCoordinate() == unit->getXCoordinate() &&
+        promotedUnit->getYCoordinate() == unit->getYCoordinate() &&
+        promotedUnit->getZCoordinate() == unit->getZCoordinate();
+      if (!sameStructure)
+      {
+        unit->addWarning(
+          L"PROMOTE: target unit " + std::to_wstring(promotedUnitNumber) +
+          L" is not in the same structure");
       }
     }
   }
@@ -2202,6 +2323,7 @@ void OrderWarningService::runForMainFaction(AppData& appData)
   checkStudyWarningsForMainFaction(appData, mainFactionNumber);
   checkTeachWarningsForMainFaction(appData, mainFactionNumber);
   checkMoveCapacityWarningsForMainFaction(appData, mainFactionNumber);
+  checkPromoteWarningsForMainFaction(appData, mainFactionNumber);
   updateFutureStructureIdsForMainFaction(appData, mainFactionNumber);
   checkShipCapacityWarningsForMainFaction(appData, mainFactionNumber);
 }

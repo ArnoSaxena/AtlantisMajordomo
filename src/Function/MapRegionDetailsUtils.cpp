@@ -30,6 +30,7 @@
 #include "Data/Unit.hpp"
 #include "Function/CoordinateFormattingUtils.hpp"
 #include "Function/StringUtils.hpp"
+#include "Function/UnitCapacityUtils.hpp"
 
 #include <algorithm>
 #include <cwctype>
@@ -140,9 +141,45 @@ std::wstring buildRegionSummaryText(const Region& region,
   }
 
   const StructInfo* structInfo = appData->structInfoRepository().findByType(structure->getStructureType());
-  if (structInfo && structInfo->getNeeds() > 0)
+  const Item* shipItem = nullptr;
+  if (structInfo)
   {
-    details += L", needs " + std::to_wstring(structInfo->getNeeds());
+    const std::wstring& itemToken = structInfo->getItemIdentifierToken();
+    if (!itemToken.empty())
+    {
+      shipItem = appData->itemRepository().findByIdentifierToken(itemToken);
+    }
+    if (!shipItem && !structure->getStructureName().empty())
+    {
+      shipItem = appData->itemRepository().findByItemName(structure->getStructureName());
+    }
+  }
+
+  const Unit* structureOwner = nullptr;
+  if (structure->getOwnerUnitId() > 0)
+  {
+    structureOwner = appData->unitRepository().findByNumber(structure->getOwnerUnitId());
+  }
+
+  const Unit& shipOwner = structureOwner ? *structureOwner : *selectedUnit;
+  const UnitCapacityUtils::ShipCapacities ship = UnitCapacityUtils::getShipCapacities(shipOwner, *appData);
+  if (ship.hasCapacityValues)
+  {
+    const int currentLoad = ship.shipCapacity - ship.shipFreeCapacity;
+    details += std::wstring(separator) + L"Capacity: " + std::to_wstring(ship.shipCapacity) + L" / " + std::to_wstring(currentLoad);
+
+    if (shipItem)
+    {
+      details += std::wstring(separator) + L"Speed: " + std::to_wstring(shipItem->getShipSpeedHexesPerMonth()) + L" hexes/month";
+    }
+
+    details += std::wstring(separator) + L"Sailing skill: " + std::to_wstring(ship.shipSkillNeed) + L" / " + std::to_wstring(ship.ownerSailContrib);
+  }
+  else if (shipItem)
+  {
+    details += std::wstring(separator) + L"Capacity: " + std::to_wstring(shipItem->getSwimCapacity()) + L" / 0";
+    details += std::wstring(separator) + L"Speed: " + std::to_wstring(shipItem->getShipSpeedHexesPerMonth()) + L" hexes/month";
+    details += std::wstring(separator) + L"Sailing skill: " + std::to_wstring(shipItem->getShipSailingSkillRequired()) + L" / 0";
   }
 
   const auto& fleetItems = structure->getFleetItems();
@@ -152,7 +189,7 @@ std::wstring buildRegionSummaryText(const Region& region,
     const int amount = itemEntry.second;
     const StructInfo* itemStructInfo = appData->structInfoRepository().findByItemIdentifierToken(itemToken);
     const std::wstring itemType = itemStructInfo ? itemStructInfo->getStructureType() : itemToken;
-    details += separator + std::wstring(L"  ") + std::to_wstring(amount) + L" " + itemType + L" [" + itemToken + L"]";
+    details += std::wstring(separator) + std::wstring(L"  ") + std::to_wstring(amount) + L" " + itemType + L" [" + itemToken + L"]";
   }
 
   return details;

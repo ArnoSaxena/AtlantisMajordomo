@@ -25,6 +25,7 @@
 #include "AppConfig.hpp"
 #include "Data/AppData.hpp"
 #include "Data/Commands.hpp"
+#include "Function/StringUtils.hpp"
 
 #include <QCheckBox>
 #include <QComboBox>
@@ -41,36 +42,6 @@
 #include <QVBoxLayout>
 
 #include <array>
-
-namespace
-{
-QString formatRgbColor(const std::array<int, 3>& rgb)
-{
-    return QString::number(rgb[0]) + ", " + QString::number(rgb[1]) + ", " + QString::number(rgb[2]);
-}
-
-bool tryParseRgbColor(const QString& text, std::array<int, 3>& rgb)
-{
-    const QStringList parts = text.split(',', Qt::SkipEmptyParts);
-    if (parts.size() != 3)
-    {
-        return false;
-    }
-
-    for (int i = 0; i < 3; ++i)
-    {
-        bool ok = false;
-        const int value = parts[i].trimmed().toInt(&ok);
-        if (!ok || value < 0 || value > 255)
-        {
-            return false;
-        }
-        rgb[static_cast<std::size_t>(i)] = value;
-    }
-
-    return true;
-}
-}
 
 // ---------------------------------------------------------------------------
 // Constructor
@@ -278,12 +249,14 @@ SettingsDialogQt::SettingsDialogQt(AppData&   appData,
 
     if (mainFactionUnitColorEdit_)
     {
-        mainFactionUnitColorEdit_->setText(formatRgbColor(appConfig_->getMainFactionUnitTextColor()));
+        mainFactionUnitColorEdit_->setText(QString::fromStdWString(
+            StringUtils::formatRgbColor(appConfig_->getMainFactionUnitTextColor())));
     }
 
     if (otherFactionUnitColorEdit_)
     {
-        otherFactionUnitColorEdit_->setText(formatRgbColor(appConfig_->getOtherFactionUnitTextColor()));
+        otherFactionUnitColorEdit_->setText(QString::fromStdWString(
+            StringUtils::formatRgbColor(appConfig_->getOtherFactionUnitTextColor())));
     }
 
     onlyLeaderCanTeachCheck_->setChecked(appData_->getOnlyLeaderCanTeach());
@@ -379,7 +352,8 @@ bool SettingsDialogQt::applySettings()
     }
 
     std::array<int, 3> mainFactionColor { 0, 0, 0 };
-    if (mainFactionUnitColorEdit_ && !tryParseRgbColor(mainFactionUnitColorEdit_->text(), mainFactionColor))
+        if (mainFactionUnitColorEdit_ && !StringUtils::tryParseRgbColor(
+            mainFactionUnitColorEdit_->text().toStdWString(), mainFactionColor))
     {
         QMessageBox::warning(this,
             "Invalid Value",
@@ -389,7 +363,8 @@ bool SettingsDialogQt::applySettings()
     }
 
     std::array<int, 3> otherFactionColor { 128, 128, 128 };
-    if (otherFactionUnitColorEdit_ && !tryParseRgbColor(otherFactionUnitColorEdit_->text(), otherFactionColor))
+        if (otherFactionUnitColorEdit_ && !StringUtils::tryParseRgbColor(
+            otherFactionUnitColorEdit_->text().toStdWString(), otherFactionColor))
     {
         QMessageBox::warning(this,
             "Invalid Value",

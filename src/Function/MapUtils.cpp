@@ -49,4 +49,38 @@ std::array<POINT, 6> buildHexagonPolygon(int centerX, int centerY, int hexWidth)
   return points;
 }
 
+POINT getRoadEndpointForDirection(const std::array<POINT, 6>& polygon, const std::wstring& direction)
+{
+  const auto midpoint = [&polygon](int firstIndex, int secondIndex)
+  {
+    POINT point {};
+    point.x = (polygon[firstIndex].x + polygon[secondIndex].x) / 2;
+    point.y = (polygon[firstIndex].y + polygon[secondIndex].y) / 2;
+    return point;
+  };
+
+  if (direction == L"N")
+  {
+    return midpoint(1, 2);
+  }
+  if (direction == L"NE")
+  {
+    return midpoint(2, 3);
+  }
+  if (direction == L"SE")
+  {
+    return midpoint(3, 4);
+  }
+  if (direction == L"S")
+  {
+    return midpoint(4, 5);
+  }
+  if (direction == L"SW")
+  {
+    return midpoint(5, 0);
+  }
+
+  return midpoint(0, 1);
+}
+
 } // namespace MapUtils

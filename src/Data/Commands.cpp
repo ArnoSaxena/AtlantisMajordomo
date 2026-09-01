@@ -183,6 +183,14 @@ namespace
   };
 
   /**
+  * @brief Parsed PROMOTE command payload.
+  */
+  struct PromoteCommand
+  {
+    int promotedUnitId { 0 }; /**< Unit that should receive ownership of the current structure. */
+  };
+
+  /**
   * @brief Parsed SAIL command payload.
   */
   struct SailCommand
@@ -234,6 +242,7 @@ namespace
     Work, /**< WORK wage effects. */
     Leave, /**< LEAVE command category. */
     Enter, /**< ENTER command category. */
+    Promote, /**< PROMOTE command category. */
     NoEffect /**< Parsed but intentionally ignored command. */
   };
 
@@ -256,6 +265,7 @@ namespace
     NameUnitCommand nameUnit; /**< Parsed payload for NameUnit kind. */
     LeaveCommand leave; /**< Parsed payload for Leave kind. */
     EnterCommand enter; /**< Parsed payload for Enter kind. */
+    PromoteCommand promote; /**< Parsed payload for Promote kind. */
   };
 
   /**
@@ -273,6 +283,7 @@ namespace
     std::map<int, std::map<std::wstring, int>> skillsByNewUnit; /**< Working skill days per nearby NEW unit. */
     std::map<int, std::wstring> unitNamesByUnit; /**< Working display name per nearby normal unit. */
     std::map<int, std::wstring> unitNamesByNewUnit; /**< Working display name per nearby NEW unit. */
+    std::map<int, int> structureOwnerChanges; /**< Structure ID -> new owner unit after PROMOTE. */
     std::map<std::wstring, int> remainingResources; /**< Remaining natural resources after production. */
     std::map<std::wstring, std::pair<int, int>> remainingForSale; /**< Remaining for-sale entries {amount, price}. */
     std::map<std::wstring, std::pair<int, int>> remainingWanted; /**< Remaining wanted entries {amount, price}. */
@@ -297,6 +308,7 @@ namespace
     Entertain, /**< Resolve ENTERTAIN income. */
     Name, /**< Resolve NAME UNIT updates. */
     Work, /**< Resolve WORK wages. */
+    Promote, /**< Resolve PROMOTE ownership transfers after ENTER/LEAVE. */
     Transport /**< Resolve TRANSPORT/DISTRIBUTE transfers last. */
   };
 
@@ -311,9 +323,6 @@ namespace
     ParsedOrderCommand parsedCommand; /**< Parsed command payload to execute. */
     bool isNewUnit { false }; /**< True when the origin is a UnitNew (FORM block unit). */
   };
-
-  /** @brief Normalizes token formatting and letter case for comparisons. */
-  std::wstring normalizeItemToken(std::wstring token);
 
   /**
   * @brief Resolves the per-man monthly silver study cost for a skill.
@@ -332,7 +341,7 @@ namespace
                                                 const std::wstring& operand)
   {
     const std::wstring trimmedOperand = StringUtils::trimWhitespace(operand);
-    const std::wstring normalizedToken = normalizeItemToken(trimmedOperand);
+    const std::wstring normalizedToken = StringUtils::normalizeToken(trimmedOperand);
     if (!normalizedToken.empty())
     {
       if (const Skill* exactByIdentifier = appData.skillRepository().findByIdentifier(normalizedToken))
@@ -343,7 +352,7 @@ namespace
       for (std::size_t skillIndex = 0; skillIndex < appData.skillRepository().size(); ++skillIndex)
       {
         const Skill& candidate = appData.skillRepository().at(skillIndex);
-        if (normalizeItemToken(candidate.getIdentifierToken()) == normalizedToken)
+        if (StringUtils::normalizeToken(candidate.getIdentifierToken()) == normalizedToken)
         {
           return &candidate;
         }
@@ -368,8 +377,8 @@ namespace
       for (std::size_t skillIndex = 0; skillIndex < appData.skillRepository().size(); ++skillIndex)
       {
         const Skill& candidate = appData.skillRepository().at(skillIndex);
-        const std::wstring candidateIdentifier = normalizeItemToken(candidate.getIdentifierToken());
-        const std::wstring candidateName = normalizeItemToken(candidate.getName());
+        const std::wstring candidateIdentifier = StringUtils::normalizeToken(candidate.getIdentifierToken());
+        const std::wstring candidateName = StringUtils::normalizeToken(candidate.getName());
 
         const bool prefixMatchesIdentifier =
           candidateIdentifier.size() >= normalizedToken.size() &&
@@ -400,26 +409,6 @@ namespace
     }
 
     return nullptr;
-  }
-
-  /**
-  * @brief Normalizes a token by trimming punctuation/space and upper-casing.
-  */
-  std::wstring normalizeItemToken(std::wstring token)
-  {
-    token = StringUtils::trimWhitespace(std::move(token));
-
-    while (!token.empty() && !iswalnum(token.front()))
-    {
-      token.erase(token.begin());
-    }
-
-    while (!token.empty() && !iswalnum(token.back()))
-    {
-      token.pop_back();
-    }
-
-    return StringUtils::toUpper(std::move(token));
   }
 
   /**
@@ -708,7 +697,7 @@ namespace
                           bool operandWasQuoted,
                           std::wstring& resolvedToken)
   {
-    std::wstring normalizedOperand = normalizeItemToken(operand);
+    std::wstring normalizedOperand = StringUtils::normalizeToken(operand);
     // SILV is a core currency token that can exist in unit inventories even
     // when item reports were not imported yet.
     if (normalizedOperand == L"SILV" || normalizedOperand == L"SILVER")
@@ -728,9 +717,9 @@ namespace
       for (std::size_t index = 0; index < appData.itemRepository().size(); ++index)
       {
         const Item& candidate = appData.itemRepository().at(index);
-        if (normalizeItemToken(candidate.getIdentifierToken()) == normalizedOperand)
+        if (StringUtils::normalizeToken(candidate.getIdentifierToken()) == normalizedOperand)
         {
-          resolvedToken = normalizeItemToken(candidate.getIdentifierToken());
+          resolvedToken = StringUtils::normalizeToken(candidate.getIdentifierToken());
           return !resolvedToken.empty();
         }
       }
@@ -761,7 +750,7 @@ namespace
       const Item& item = appData.itemRepository().at(index);
       if (StringUtils::toUpper(StringUtils::trimWhitespace(item.getItemName())) == normalizedTargetName)
       {
-        resolvedToken = normalizeItemToken(item.getIdentifierToken());
+        resolvedToken = StringUtils::normalizeToken(item.getIdentifierToken());
         return !resolvedToken.empty();
       }
     }
@@ -782,7 +771,7 @@ namespace
         continue;
       }
 
-      const std::wstring normalizedToken = normalizeItemToken(token);
+      const std::wstring normalizedToken = StringUtils::normalizeToken(token);
       if (normalizedToken.empty())
       {
         continue;
@@ -1579,6 +1568,54 @@ namespace
   }
 
   /**
+  * @brief Parses a PROMOTE command with a target unit id.
+  */
+  bool tryParsePromoteCommand(const std::wstring& line, PromoteCommand& command)
+  {
+    std::vector<std::wstring> tokens;
+    std::vector<bool> tokenWasQuoted;
+    if (!tokenizeCommandLine(line, tokens, tokenWasQuoted) || tokens.empty())
+    {
+      return false;
+    }
+
+    std::size_t tokenIndex = 0;
+    if (!tokens.empty() && !tokens.front().empty() && tokens.front().front() == L'@')
+    {
+      if (tokens.front().size() == 1)
+      {
+        tokenIndex = 1;
+      }
+      else
+      {
+        tokens.front().erase(tokens.front().begin());
+      }
+    }
+
+    if (tokenIndex >= tokens.size() || StringUtils::toUpper(tokens[tokenIndex]) != L"PROMOTE")
+    {
+      return false;
+    }
+    ++tokenIndex;
+
+    if (tokenIndex >= tokens.size())
+    {
+      return false;
+    }
+
+    try
+    {
+      command.promotedUnitId = std::stoi(tokens[tokenIndex]);
+      ++tokenIndex;
+      return tokenIndex == tokens.size() && command.promotedUnitId > 0; // Must have exactly one parameter
+    }
+    catch (...)
+    {
+      return false;
+    }
+  }
+
+  /**
   * @brief Checks whether a unit can legally perform transport via caravanserai rules.
   */
   bool unitOwnsCaravanseraiAndHasQuam(const AppData& appData, int unitNumber)
@@ -1913,6 +1950,14 @@ namespace
       return true;
     }
 
+    PromoteCommand promoteCommand;
+    if (tryParsePromoteCommand(line, promoteCommand))
+    {
+      parsed.kind = SimulatedCommandKind::Promote;
+      parsed.promote = std::move(promoteCommand);
+      return true;
+    }
+
     if (isTaxCommand(line))
     {
       parsed.kind = SimulatedCommandKind::Tax;
@@ -2073,7 +2118,7 @@ namespace
   */
   const Item* findItemByTokenNormalized(const AppData& appData, const std::wstring& itemToken)
   {
-    const std::wstring normalizedToken = normalizeItemToken(itemToken);
+    const std::wstring normalizedToken = StringUtils::normalizeToken(itemToken);
     if (normalizedToken.empty())
     {
       return nullptr;
@@ -2087,7 +2132,7 @@ namespace
     for (std::size_t index = 0; index < appData.itemRepository().size(); ++index)
     {
       const Item& candidate = appData.itemRepository().at(index);
-      if (normalizeItemToken(candidate.getIdentifierToken()) == normalizedToken)
+      if (StringUtils::normalizeToken(candidate.getIdentifierToken()) == normalizedToken)
       {
         return &candidate;
       }
@@ -2103,10 +2148,10 @@ namespace
   */
   int getManItemSkillLimit(const Item& item, const std::wstring& skillToken)
   {
-    const std::wstring normalizedSkillToken = normalizeItemToken(skillToken);
+    const std::wstring normalizedSkillToken = StringUtils::normalizeToken(skillToken);
     for (const auto& [limitedSkillToken, levelLimit] : item.getSkillsMax())
     {
-      if (normalizeItemToken(limitedSkillToken) == normalizedSkillToken)
+      if (StringUtils::normalizeToken(limitedSkillToken) == normalizedSkillToken)
       {
         return levelLimit > 0 ? levelLimit : 2;
       }
@@ -2219,19 +2264,19 @@ namespace
 
       if (const Skill* requiredSkill = findSkillByTokenOrNameNormalized(appData, requiredSkillToken))
       {
-        normalizedRequiredSkillToken = normalizeItemToken(requiredSkill->getIdentifierToken());
-        normalizedRequiredSkillName = normalizeItemToken(requiredSkill->getName());
+        normalizedRequiredSkillToken = StringUtils::normalizeToken(requiredSkill->getIdentifierToken());
+        normalizedRequiredSkillName = StringUtils::normalizeToken(requiredSkill->getName());
       }
 
       if (normalizedRequiredSkillToken.empty())
       {
-        normalizedRequiredSkillToken = normalizeItemToken(requiredSkillToken);
+        normalizedRequiredSkillToken = StringUtils::normalizeToken(requiredSkillToken);
       }
 
       int requiredSkillDays = 0;
       for (const auto& [unitSkillToken, days] : unitSkills)
       {
-        const std::wstring normalizedUnitSkillToken = normalizeItemToken(unitSkillToken);
+        const std::wstring normalizedUnitSkillToken = StringUtils::normalizeToken(unitSkillToken);
         const bool exactIdentifierMatch = normalizedUnitSkillToken == normalizedRequiredSkillToken;
         const bool exactNameMatch = !normalizedRequiredSkillName.empty() &&
                                     normalizedUnitSkillToken == normalizedRequiredSkillName;
@@ -2309,6 +2354,9 @@ namespace
 
       case SimulatedCommandKind::Enter:
         return CommandPhase::Move;
+
+      case SimulatedCommandKind::Promote:
+        return CommandPhase::Promote;
 
       case SimulatedCommandKind::Transport:
         return CommandPhase::Transport;
@@ -3051,7 +3099,7 @@ namespace
         int entertainDays = 0;
         for (const auto& [skillToken, days] : originSkillsIter->second)
         {
-          if (normalizeItemToken(skillToken) == L"ENTE")
+          if (StringUtils::normalizeToken(skillToken) == L"ENTE")
           {
             entertainDays = days;
             break;
@@ -3142,7 +3190,7 @@ namespace
           return;
         }
 
-        const std::wstring producedToken = normalizeItemToken(producedItem->getIdentifierToken());
+        const std::wstring producedToken = StringUtils::normalizeToken(producedItem->getIdentifierToken());
         if (producedToken.empty())
         {
           return;
@@ -3181,7 +3229,7 @@ namespace
             continue;
           }
 
-          if (normalizeItemToken(requirementToken) != producedTokenNormalized)
+          if (StringUtils::normalizeToken(requirementToken) != producedTokenNormalized)
           {
             hasOnlySelfRequirement = false;
             break;
@@ -3225,7 +3273,7 @@ namespace
             // Check if this helper item provides a bonus for the produced item
             for (const auto& [helpToken, helpAmount] : productionHelp)
             {
-              if (normalizeItemToken(helpToken) == producedTokenNormalized)
+              if (StringUtils::normalizeToken(helpToken) == producedTokenNormalized)
               {
                 // Apply bonus with 1:1 man-to-tool constraint
                 const int cappedHelperCount = std::min(manCount, helperCount);
@@ -3249,7 +3297,7 @@ namespace
               continue;
             }
 
-            const std::wstring normalizedRequirementToken = normalizeItemToken(requirementToken);
+            const std::wstring normalizedRequirementToken = StringUtils::normalizeToken(requirementToken);
             if (normalizedRequirementToken.empty())
             {
               continue;
@@ -3302,7 +3350,7 @@ namespace
               continue;
             }
 
-            const std::wstring normalizedRequirementToken = normalizeItemToken(requirementToken);
+            const std::wstring normalizedRequirementToken = StringUtils::normalizeToken(requirementToken);
             if (normalizedRequirementToken.empty())
             {
               continue;
@@ -3448,12 +3496,12 @@ namespace
         {
           std::map<std::wstring, int>& unitSkills = skillsIter->second;
           const std::wstring studiedSkillToken = studiedSkill->getIdentifierToken();
-          const std::wstring normalizedStudiedSkillToken = normalizeItemToken(studiedSkillToken);
+          const std::wstring normalizedStudiedSkillToken = StringUtils::normalizeToken(studiedSkillToken);
           std::wstring targetSkillToken = studiedSkillToken;
           for (const auto& [existingSkillToken, existingDays] : unitSkills)
           {
             (void)existingDays;
-            if (normalizeItemToken(existingSkillToken) == normalizedStudiedSkillToken)
+            if (StringUtils::normalizeToken(existingSkillToken) == normalizedStudiedSkillToken)
             {
               targetSkillToken = existingSkillToken;
               break;
@@ -3509,7 +3557,7 @@ namespace
           bool hasLeadItem = false;
           for (const auto& [itemToken, amount] : originCountsIter->second)
           {
-            if (amount > 0 && normalizeItemToken(itemToken) == L"LEAD")
+            if (amount > 0 && StringUtils::normalizeToken(itemToken) == L"LEAD")
             {
               const Item* itemDef = appData.itemRepository().findByIdentifierToken(itemToken);
               if (itemDef && itemDef->isMan())
@@ -3729,6 +3777,45 @@ namespace
         return;
       }
 
+      case SimulatedCommandKind::Promote:
+      {
+        if (!originUnit || parsedCommand.promote.promotedUnitId <= 0)
+        {
+          return;
+        }
+
+        const Structure* structure = appData.structureRepository().findByIdAndCoordinates(
+          originUnit->getStructureId(),
+          originUnit->getXCoordinate(),
+          originUnit->getYCoordinate(),
+          originUnit->getZCoordinate());
+        if (!structure || structure->getOwnerUnitId() != originUnitNumber)
+        {
+          return;
+        }
+
+        const Unit* promotedUnit = appData.unitRepository().findByNumber(parsedCommand.promote.promotedUnitId);
+        if (!promotedUnit)
+        {
+          return;
+        }
+
+        if (promotedUnit->getFactionNumber() != originUnit->getFactionNumber())
+        {
+          return;
+        }
+
+        if (promotedUnit->getXCoordinate() != originUnit->getXCoordinate() ||
+            promotedUnit->getYCoordinate() != originUnit->getYCoordinate() ||
+            promotedUnit->getZCoordinate() != originUnit->getZCoordinate())
+        {
+          return;
+        }
+
+        simulation.structureOwnerChanges[structure->getStructureId()] = promotedUnit->getUnitNumber();
+        return;
+      }
+
       default:
         return;
     }
@@ -3857,7 +3944,7 @@ namespace
           continue;
         }
 
-        const std::wstring normalizedToken = normalizeItemToken(resourceToken);
+        const std::wstring normalizedToken = StringUtils::normalizeToken(resourceToken);
         if (normalizedToken.empty())
         {
           continue;
@@ -3868,7 +3955,7 @@ namespace
 
       for (const auto& [itemToken, amountPrice] : region->getForSale())
       {
-        const std::wstring normalizedToken = normalizeItemToken(itemToken);
+        const std::wstring normalizedToken = StringUtils::normalizeToken(itemToken);
         if (!normalizedToken.empty())
         {
           simulation.remainingForSale[normalizedToken] = amountPrice;
@@ -3877,7 +3964,7 @@ namespace
 
       for (const auto& [itemToken, amountPrice] : region->getWanted())
       {
-        const std::wstring normalizedToken = normalizeItemToken(itemToken);
+        const std::wstring normalizedToken = StringUtils::normalizeToken(itemToken);
         if (!normalizedToken.empty())
         {
           simulation.remainingWanted[normalizedToken] = amountPrice;
@@ -3957,17 +4044,19 @@ namespace
       }
     }
 
-    constexpr std::array<CommandPhase, 11> kCommandPhases = {
+    constexpr std::array<CommandPhase, 13> kCommandPhases = {
       CommandPhase::GiveTake,
       CommandPhase::Tax,
       CommandPhase::Sell,
       CommandPhase::Buy,
+      CommandPhase::Move,
       CommandPhase::Teach,
       CommandPhase::Study,
       CommandPhase::Produce,
       CommandPhase::Entertain,
       CommandPhase::Name,
       CommandPhase::Work,
+      CommandPhase::Promote,
       CommandPhase::Transport,
     };
 

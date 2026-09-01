@@ -26,8 +26,11 @@
 #include "Data/Faction.hpp"
 #include "Data/Commands.hpp"
 #include "Data/Region.hpp"
+#include "Data/Structure.hpp"
 #include "Data/Unit.hpp"
 #include "Data/UnitNew.hpp"
+#include "Function/OrderParsingUtils.hpp"
+#include "Function/StringUtils.hpp"
 
 int CommandSimulationService::calculateMainFactionUnclaimedSilverAfterCommands(const AppData& appData)
 {
@@ -91,6 +94,105 @@ void CommandSimulationService::processMainFactionClaimEffects(AppData& appData)
 
 void CommandSimulationService::recalculateAfterOrdersValues(AppData& appData)
 {
+  // PROMOTE is an instantaneous ownership-transfer order. Apply its effect here
+  // so the structure owner is updated at the same time as the unit/item summaries.
+  auto& unitRepository = appData.unitRepository();
+  for (std::size_t unitIndex = 0; unitIndex < unitRepository.size(); ++unitIndex)
+  {
+    Unit* unit = unitRepository.findByNumber(unitRepository.at(unitIndex).getUnitNumber());
+    if (!unit)
+    {
+      continue;
+    }
+
+    const int currentStructureId = unit->getStructureId();
+    if (currentStructureId <= 0)
+    {
+      continue;
+    }
+
+    Structure* currentStructure = appData.structureRepository().findByIdAndCoordinates(
+      currentStructureId,
+      unit->getXCoordinate(),
+      unit->getYCoordinate(),
+      unit->getZCoordinate());
+    if (!currentStructure || currentStructure->getOwnerUnitId() != unit->getUnitNumber())
+    {
+      continue;
+    }
+
+    const auto& orders = unit->getOrders();
+    for (const std::wstring& orderText : orders)
+    {
+      std::vector<std::wstring> tokens;
+      std::vector<bool> tokenWasQuoted;
+      if (!OrderParsingUtils::tokenizeOrderLine(orderText, tokens, tokenWasQuoted) || tokens.empty())
+      {
+        continue;
+      }
+
+      std::size_t tokenIndex = 0;
+      if (!tokens.front().empty() && tokens.front().front() == L'@')
+      {
+        if (tokens.front().size() == 1)
+        {
+          tokenIndex = 1;
+        }
+        else
+        {
+          tokens.front().erase(tokens.front().begin());
+        }
+      }
+
+      if (tokenIndex >= tokens.size() || StringUtils::toUpper(tokens[tokenIndex]) != L"PROMOTE")
+      {
+        continue;
+      }
+
+      ++tokenIndex;
+      if (tokenIndex >= tokens.size())
+      {
+        continue;
+      }
+
+      int promotedUnitId = 0;
+      try
+      {
+        promotedUnitId = std::stoi(tokens[tokenIndex]);
+      }
+      catch (...)
+      {
+        continue;
+      }
+
+      if (promotedUnitId <= 0)
+      {
+        continue;
+      }
+
+      Unit* promotedUnit = unitRepository.findByNumber(promotedUnitId);
+      if (!promotedUnit)
+      {
+        continue;
+      }
+
+      if (promotedUnit->getFactionNumber() != unit->getFactionNumber())
+      {
+        continue;
+      }
+
+      if (promotedUnit->getXCoordinate() != unit->getXCoordinate() ||
+          promotedUnit->getYCoordinate() != unit->getYCoordinate() ||
+          promotedUnit->getZCoordinate() != unit->getZCoordinate())
+      {
+        continue;
+      }
+
+      currentStructure->setOwnerUnitId(promotedUnitId);
+      break;
+    }
+  }
+
   // CLAIM directly affects faction-level after-orders silver and warning state.
   processMainFactionClaimEffects(appData);
 

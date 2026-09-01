@@ -27,6 +27,7 @@
 #endif
 
 #include <array>
+#include <string>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -43,8 +44,7 @@ struct POINT
  * @brief Pure geometric utilities for hex-map calculations.
  *
  * These functions have no dependency on Win32 GUI state and are designed
- * to be reusable by both the Win32 and Qt builds (the Qt build will provide
- * an equivalent using QPoint in place of POINT).
+ * to be reusable by both the Win32 and Qt builds.
  */
 namespace MapUtils
 {
@@ -59,5 +59,13 @@ namespace MapUtils
  *         left vertex.
  */
 std::array<POINT, 6> buildHexagonPolygon(int centerX, int centerY, int hexWidth);
+
+/**
+ * @brief Returns the midpoint of the hexagon edge for a compass direction.
+ *
+ * @param polygon Hexagon vertices in clockwise order starting from the left vertex.
+ * @param direction Compass direction: N, NE, SE, S, SW, or NW.
+ */
+POINT getRoadEndpointForDirection(const std::array<POINT, 6>& polygon, const std::wstring& direction);
 
 } // namespace MapUtils

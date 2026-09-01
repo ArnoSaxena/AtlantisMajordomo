@@ -132,6 +132,20 @@ namespace StringUtils
         return value;
     }
 
+    std::wstring normalizeToken(std::wstring value)
+    {
+        value = trimWhitespace(std::move(value));
+        while (!value.empty() && !std::iswalnum(static_cast<wint_t>(value.front())))
+        {
+            value.erase(value.begin());
+        }
+        while (!value.empty() && !std::iswalnum(static_cast<wint_t>(value.back())))
+        {
+            value.pop_back();
+        }
+        return toUpper(std::move(value));
+    }
+
     int parseIntSafe(const std::wstring& text)
     {
         try
@@ -142,6 +156,71 @@ namespace StringUtils
         {
             return 0;
         }
+    }
+
+    bool tryParseLeadingInteger(const std::wstring& text, long long& value)
+    {
+        const std::wstring trimmed = trimWhitespace(text);
+        if (trimmed.empty())
+        {
+            return false;
+        }
+
+        std::size_t startIndex = 0;
+        while (startIndex < trimmed.size() && !std::iswdigit(static_cast<wint_t>(trimmed[startIndex]))
+               && trimmed[startIndex] != L'+' && trimmed[startIndex] != L'-')
+        {
+            ++startIndex;
+        }
+        if (startIndex >= trimmed.size())
+        {
+            return false;
+        }
+
+        std::size_t parsedLength = 0;
+        try
+        {
+            value = std::stoll(trimmed.substr(startIndex), &parsedLength);
+        }
+        catch (...)
+        {
+            return false;
+        }
+
+        return parsedLength > 0;
+    }
+
+    std::wstring formatRgbColor(const std::array<int, 3>& rgb)
+    {
+        return std::to_wstring(rgb[0]) + L", " + std::to_wstring(rgb[1]) + L", " + std::to_wstring(rgb[2]);
+    }
+
+    bool tryParseRgbColor(const std::wstring& text, std::array<int, 3>& rgb)
+    {
+        const std::vector<std::wstring> tokens = splitByComma(text);
+        if (tokens.size() != 3)
+        {
+            return false;
+        }
+
+        for (std::size_t index = 0; index < rgb.size(); ++index)
+        {
+            try
+            {
+                const int value = std::stoi(tokens[index]);
+                if (value < 0 || value > 255)
+                {
+                    return false;
+                }
+                rgb[index] = value;
+            }
+            catch (const std::exception&)
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     // Add an CRLF to the new string for each single LF. 

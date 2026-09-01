@@ -297,13 +297,17 @@ UnitCapacities getUnitCapacities(const UnitNew& unit, const AppData& appData)
 
 ShipCapacities getShipCapacities(const Unit& unit, const AppData& appData)
 {
-    const int manCount  = appData.itemRepository().calculateManItemCount(unit.getItems());
-    const int sailDays  = unit.getSkillDays(L"SAIL");
+    const auto& items = unit.getItemsAfterOrders().empty() ? unit.getItems() : unit.getItemsAfterOrders();
+    const int manCount = appData.itemRepository().calculateManItemCount(items);
+    const int sailDays = unit.getSkillDays(L"SAIL");
+    const int structureId = unit.getFutureStructureId() > 0
+        ? unit.getFutureStructureId()
+        : unit.getStructureId();
     return buildShipCapacities(
         unit.getUnitNumber(),
         sailDays,
         manCount,
-        unit.getStructureId(),
+        structureId,
         unit.getXCoordinate(),
         unit.getYCoordinate(),
         unit.getZCoordinate(),

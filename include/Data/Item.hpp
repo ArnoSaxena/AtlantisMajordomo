@@ -74,6 +74,9 @@ public:
   bool isArmour() const;
   bool isResource() const;
   bool isMount() const;
+  /** True when the item was auto-created from a skill description and is
+   *  awaiting its real definition from an "Item reports:" entry. */
+  bool isProvisional() const;
   int getMoves() const;
   int getWalkCapacity() const;
   int getRideCapacity() const;
@@ -98,6 +101,7 @@ public:
   void setArmour(bool armour);
   void setResource(bool resource);
   void setMount(bool mount);
+  void setProvisional(bool provisional);
   void setMoves(int moves);
   void setWalkCapacity(int walkCapacity);
   void setRideCapacity(int rideCapacity);
@@ -125,6 +129,7 @@ private:
   bool         armour_ { false };
   bool         resource_ { false };
   bool         mount_ { false };
+  bool         provisional_ { false };
   int          moves_ { 0 };
   int          walkCapacity_ { 0 };
   int          rideCapacity_ { 0 };

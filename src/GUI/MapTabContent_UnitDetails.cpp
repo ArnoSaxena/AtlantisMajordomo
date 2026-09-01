@@ -43,6 +43,7 @@
 #include "Function/CoordinateUtils.hpp"
 #include "Function/MonthUtils.hpp"
 #include "Function/OrderBusinessLogic.hpp"
+#include "Function/OrderItemTokenUtils.hpp"
 #include "Function/OrderParsingUtils.hpp"
 #include "Function/OrderWarningService.hpp"
 #include "Function/UnitCapacityUtils.hpp"
@@ -60,175 +61,6 @@
 #include <string>
 #include <vector>
 #include <windowsx.h>
-
-namespace
-{
-std::wstring normalizeOrderItemToken(std::wstring token)
-{
-  token = StringUtils::trimWhitespace(std::move(token));
-  while (!token.empty() && !iswalnum(token.front()))
-  {
-    token.erase(token.begin());
-  }
-  while (!token.empty() && !iswalnum(token.back()))
-  {
-    token.pop_back();
-  }
-  return StringUtils::toUpper(std::move(token));
-}
-
-bool tryResolveOrderItemToken(const AppData& appData,
-                              const std::wstring& operand,
-                              std::wstring& resolvedToken)
-{
-  const std::wstring normalizedOperand = normalizeOrderItemToken(operand);
-  if (normalizedOperand.empty())
-  {
-    return false;
-  }
-
-  if (const Item* exactItem = appData.itemRepository().findByIdentifierToken(normalizedOperand))
-  {
-    resolvedToken = exactItem->getIdentifierToken();
-    return true;
-  }
-
-  for (std::size_t index = 0; index < appData.itemRepository().size(); ++index)
-  {
-    const Item& item = appData.itemRepository().at(index);
-    const std::wstring normalizedName = normalizeOrderItemToken(item.getItemName());
-    const std::wstring normalizedPluralName = normalizeOrderItemToken(item.getItemNamePlural());
-    if (normalizedOperand == normalizedName || normalizedOperand == normalizedPluralName)
-    {
-      resolvedToken = item.getIdentifierToken();
-      return true;
-    }
-  }
-
-  return false;
-}
-
-bool tryConsumeUnitReference(const std::vector<std::wstring>& tokens, std::size_t& tokenIndex)
-{
-  if (tokenIndex >= tokens.size())
-  {
-    return false;
-  }
-
-  if (StringUtils::toUpper(tokens[tokenIndex]) == L"NEW")
-  {
-    ++tokenIndex;
-    if (tokenIndex >= tokens.size())
-    {
-      return false;
-    }
-  }
-
-  int unitNumber = 0;
-  if (!OrderParsingUtils::tryParseIntStrict(tokens[tokenIndex], unitNumber) || unitNumber <= 0)
-  {
-    return false;
-  }
-
-  ++tokenIndex;
-  return true;
-}
-
-std::set<std::wstring> collectTouchedItemTokensForUnit(const AppData& appData,
-                                                       int unitNumber,
-                                                       bool isNewUnit)
-{
-  std::set<std::wstring> touchedTokens;
-  const std::vector<Order>* orders = appData.orderRepository().getOrdersForUnit(unitNumber, isNewUnit);
-  if (!orders)
-  {
-    return touchedTokens;
-  }
-
-  for (const Order& order : *orders)
-  {
-    std::vector<std::wstring> tokens;
-    std::vector<bool> quoted;
-    if (!OrderParsingUtils::tokenizeOrderLine(order.getFullOrderText(), tokens, quoted) || tokens.empty())
-    {
-      continue;
-    }
-
-    std::size_t tokenIndex = 0;
-    if (!tokens[0].empty() && tokens[0][0] == L'@')
-    {
-      if (tokens[0].size() > 1)
-      {
-        tokens[0] = tokens[0].substr(1);
-      }
-      else
-      {
-        ++tokenIndex;
-      }
-    }
-
-    if (tokenIndex >= tokens.size())
-    {
-      continue;
-    }
-
-    const std::wstring command = StringUtils::toUpper(tokens[tokenIndex]);
-    std::size_t itemTokenIndex = std::wstring::npos;
-
-    if (command == L"PRODUCE")
-    {
-      if ((tokenIndex + 1) < tokens.size())
-      {
-        int amount = 0;
-        const bool hasAmount = OrderParsingUtils::tryParseIntStrict(tokens[tokenIndex + 1], amount) && amount > 0;
-        itemTokenIndex = hasAmount ? (tokenIndex + 2) : (tokenIndex + 1);
-      }
-    }
-    else if (command == L"BUY" || command == L"SELL")
-    {
-      itemTokenIndex = tokenIndex + 2;
-    }
-    else if (command == L"TRANSPORT" || command == L"DISTRIBUTE")
-    {
-      std::size_t cursor = tokenIndex + 1;
-      if (!tryConsumeUnitReference(tokens, cursor) || cursor >= tokens.size())
-      {
-        continue;
-      }
-
-      const std::wstring quantityToken = StringUtils::toUpper(tokens[cursor]);
-      ++cursor;
-      if (quantityToken == L"ALL" || quantityToken == L"EXCEPT")
-      {
-        itemTokenIndex = cursor;
-      }
-      else
-      {
-        int quantity = 0;
-        if (!OrderParsingUtils::tryParseIntStrict(quantityToken, quantity) || quantity <= 0)
-        {
-          continue;
-        }
-        itemTokenIndex = cursor;
-      }
-    }
-
-    if (itemTokenIndex == std::wstring::npos || itemTokenIndex >= tokens.size())
-    {
-      continue;
-    }
-
-    std::wstring resolvedToken;
-    if (tryResolveOrderItemToken(appData, tokens[itemTokenIndex], resolvedToken) && !resolvedToken.empty())
-    {
-      touchedTokens.insert(resolvedToken);
-    }
-  }
-
-  return touchedTokens;
-}
-
-}
 
 void MapTabContent::populateUnitsForSelectedRegion()
 {
@@ -272,9 +104,11 @@ void MapTabContent::populateUnitsForSelectedRegion()
   }
   const bool hasLatestPeriod = (latestMonth >= 1 && latestMonth <= 12 && latestYear > 0);
 
-  int latestBattleMonth = 0;
-  int latestBattleYear = 0;
-  const bool hasLatestBattlePeriod = appData_->battleRepository().getLatestPeriod(latestBattleMonth, latestBattleYear);
+  // Battle indicators must reflect the currently displayed turn, not the
+  // repository's globally latest battle period (which may be an older turn).
+  const int latestBattleMonth = latestMonth;
+  const int latestBattleYear = latestYear;
+  const bool hasLatestBattlePeriod = hasLatestPeriod;
   int row = 0;
 
   for (std::size_t index = 0; index < unitRepository.size(); ++index)
@@ -310,7 +144,7 @@ void MapTabContent::populateUnitsForSelectedRegion()
         unit.getZCoordinate());
       if (structure)
       {
-        structureDisplay = structure->getStructureType() + L" [" + std::to_wstring(displayStructureId) + L"]";
+        structureDisplay = L"[" + std::to_wstring(displayStructureId) + L"] " + structure->getStructureType();
         if (!structure->getStructureName().empty())
         {
           structureDisplay += L" - " + structure->getStructureName();
@@ -456,7 +290,7 @@ void MapTabContent::populateUnitsForSelectedRegion()
           unitNew.getZCoordinate());
         if (structure)
         {
-          newStructureDisplay = structure->getStructureType() + L" [" + std::to_wstring(newDisplayStructureId) + L"]";
+          newStructureDisplay = L"[" + std::to_wstring(newDisplayStructureId) + L"] " + structure->getStructureType();
           if (!structure->getStructureName().empty())
           {
             newStructureDisplay += L" - " + structure->getStructureName();
@@ -574,7 +408,7 @@ void MapTabContent::populateUnitsForSelectedRegion()
     // Unit Name column left empty (column 1)
 
     // Structure column (column 4): same format as for units
-    std::wstring structureDisplay = structure->getStructureType() + L" [" + std::to_wstring(structure->getStructureId()) + L"]";
+    std::wstring structureDisplay = L"[" + std::to_wstring(structure->getStructureId()) + L"] " + structure->getStructureType();
     if (!structure->getStructureName().empty()) {
       structureDisplay += L" - " + structure->getStructureName();
     }
@@ -676,20 +510,6 @@ void MapTabContent::populateItemsForSelectedUnit(const Unit* unit)
   const std::map<std::wstring, int> afterCommandCounts =
     Commands::calculateAfterCommandItemCountsForUnit(*appData_, *unit);
 
-  auto normalizeToken = [](std::wstring token)
-  {
-    token = StringUtils::trimWhitespace(std::move(token));
-    while (!token.empty() && !iswalnum(token.front()))
-    {
-      token.erase(token.begin());
-    }
-    while (!token.empty() && !iswalnum(token.back()))
-    {
-      token.pop_back();
-    }
-    return StringUtils::toUpper(std::move(token));
-  };
-
   std::map<std::wstring, int> normalizedCurrentCounts;
   for (const auto& [itemToken, amount] : unit->getItems())
   {
@@ -698,7 +518,7 @@ void MapTabContent::populateItemsForSelectedUnit(const Unit* unit)
       continue;
     }
 
-    const std::wstring normalized = normalizeToken(itemToken);
+    const std::wstring normalized = StringUtils::normalizeToken(itemToken);
     if (normalized.empty())
     {
       continue;
@@ -715,7 +535,7 @@ void MapTabContent::populateItemsForSelectedUnit(const Unit* unit)
       continue;
     }
 
-    const std::wstring normalized = normalizeToken(itemToken);
+    const std::wstring normalized = StringUtils::normalizeToken(itemToken);
     if (normalized.empty())
     {
       continue;
@@ -733,7 +553,7 @@ void MapTabContent::populateItemsForSelectedUnit(const Unit* unit)
   {
     itemTokens.insert(itemToken);
   }
-  for (const std::wstring& touchedToken : collectTouchedItemTokensForUnit(*appData_, unit->getUnitNumber(), false))
+  for (const std::wstring& touchedToken : OrderItemTokenUtils::collectTouchedItemTokensForUnit(*appData_, unit->getUnitNumber(), false))
   {
     itemTokens.insert(touchedToken);
   }
@@ -809,20 +629,6 @@ void MapTabContent::populateItemsForSelectedUnit(const UnitNew* unitNew)
   const std::map<std::wstring, int> afterCommandCounts =
     Commands::calculateAfterCommandItemCountsForUnitNew(*appData_, *unitNew);
 
-  auto normalizeToken = [](std::wstring token)
-  {
-    token = StringUtils::trimWhitespace(std::move(token));
-    while (!token.empty() && !iswalnum(token.front()))
-    {
-      token.erase(token.begin());
-    }
-    while (!token.empty() && !iswalnum(token.back()))
-    {
-      token.pop_back();
-    }
-    return StringUtils::toUpper(std::move(token));
-  };
-
   std::map<std::wstring, int> normalizedCurrentCounts;
   for (const auto& [itemToken, amount] : unitNew->getItems())
   {
@@ -831,7 +637,7 @@ void MapTabContent::populateItemsForSelectedUnit(const UnitNew* unitNew)
       continue;
     }
 
-    const std::wstring normalized = normalizeToken(itemToken);
+    const std::wstring normalized = StringUtils::normalizeToken(itemToken);
     if (normalized.empty())
     {
       continue;
@@ -848,7 +654,7 @@ void MapTabContent::populateItemsForSelectedUnit(const UnitNew* unitNew)
       continue;
     }
 
-    const std::wstring normalized = normalizeToken(itemToken);
+    const std::wstring normalized = StringUtils::normalizeToken(itemToken);
     if (normalized.empty())
     {
       continue;
@@ -866,7 +672,7 @@ void MapTabContent::populateItemsForSelectedUnit(const UnitNew* unitNew)
   {
     itemTokens.insert(itemToken);
   }
-  for (const std::wstring& touchedToken : collectTouchedItemTokensForUnit(*appData_, unitNew->getUnitNumber(), true))
+  for (const std::wstring& touchedToken : OrderItemTokenUtils::collectTouchedItemTokensForUnit(*appData_, unitNew->getUnitNumber(), true))
   {
     itemTokens.insert(touchedToken);
   }

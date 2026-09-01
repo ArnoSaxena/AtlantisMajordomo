@@ -46,6 +46,7 @@
 #include "Function/OrderWarningService.hpp"
 #include "Function/SkillFormattingUtils.hpp"
 #include "Function/StringUtils.hpp"
+#include "Function/UnitsListSortUtils.hpp"
 
 #include <algorithm>
 #include <array>
@@ -74,33 +75,7 @@ struct UnitsListRowSnapshot
 
 bool tryParseLeadingInteger(const std::wstring& text, long long& value)
 {
-  std::wstring trimmed = StringUtils::trimWhitespace(text);
-  if (trimmed.empty())
-  {
-    return false;
-  }
-
-  std::size_t startIndex = 0;
-  while (startIndex < trimmed.size() && !iswdigit(trimmed[startIndex]) && trimmed[startIndex] != L'+' && trimmed[startIndex] != L'-')
-  {
-    ++startIndex;
-  }
-  if (startIndex >= trimmed.size())
-  {
-    return false;
-  }
-
-  std::size_t parsedLength = 0;
-  try
-  {
-    value = std::stoll(trimmed.substr(startIndex), &parsedLength);
-  }
-  catch (...)
-  {
-    return false;
-  }
-
-  return parsedLength > 0;
+  return StringUtils::tryParseLeadingInteger(text, value);
 }
 
 std::wstring getUnitsListSubItemText(HWND listView, int row, int column)
@@ -128,38 +103,7 @@ int compareUnitsListCellValues(const std::wstring& leftValue,
                                const std::wstring& rightValue,
                                bool ascending)
 {
-  const std::wstring trimmedLeft = StringUtils::trimWhitespace(leftValue);
-  const std::wstring trimmedRight = StringUtils::trimWhitespace(rightValue);
-
-  const bool leftEmpty = trimmedLeft.empty();
-  const bool rightEmpty = trimmedRight.empty();
-  if (leftEmpty != rightEmpty)
-  {
-    // Keep empty entries at the bottom in both sort directions.
-    return leftEmpty ? 1 : -1;
-  }
-  if (leftEmpty)
-  {
-    return 0;
-  }
-
-  long long leftNumber = 0;
-  long long rightNumber = 0;
-  const bool leftHasNumber = tryParseLeadingInteger(trimmedLeft, leftNumber);
-  const bool rightHasNumber = tryParseLeadingInteger(trimmedRight, rightNumber);
-
-  if (leftHasNumber && rightHasNumber && leftNumber != rightNumber)
-  {
-    return ascending ? (leftNumber < rightNumber ? -1 : 1) : (leftNumber > rightNumber ? -1 : 1);
-  }
-
-  const int textComparison = _wcsicmp(trimmedLeft.c_str(), trimmedRight.c_str());
-  if (textComparison == 0)
-  {
-    return 0;
-  }
-
-  return ascending ? textComparison : -textComparison;
+  return UnitsListSortUtils::compareCellValues(leftValue, rightValue, ascending);
 }
 
 void reinsertUnitsListRows(HWND listView,

@@ -336,7 +336,8 @@ bool DataSerializer::saveToFile(const AppData& appData, const std::wstring& file
       file << L"      \"unitId\": " << eventValue.getUnitId() << L",\n";
       file << L"      \"message\": \"" << JsonUtils::escapeJsonString(eventValue.getMessage()) << L"\",\n";
       file << L"      \"month\": " << eventValue.getMonth() << L",\n";
-      file << L"      \"year\": " << eventValue.getYear() << L"\n";
+      file << L"      \"year\": " << eventValue.getYear() << L",\n";
+      file << L"      \"errorEvent\": " << (eventValue.isErrorEvent() ? L"true" : L"false") << L"\n";
       file << L"    }";
     }
 
@@ -344,6 +345,7 @@ bool DataSerializer::saveToFile(const AppData& appData, const std::wstring& file
     file << L"  \"settings\": {\n";
     file << L"    \"shipStructureIdThreshold\": " << appData.getShipStructureIdThreshold() << L",\n";
     file << L"    \"flyingShipsCsv\": \"" << JsonUtils::escapeJsonString(appData.getFlyingShipsCsv()) << L"\",\n";
+    file << L"    \"magicSkillTriggersCsv\": \"" << JsonUtils::escapeJsonString(appData.getMagicSkillTriggersCsv()) << L"\",\n";
     file << L"    \"onlyLeaderCanTeach\": " << (appData.getOnlyLeaderCanTeach() ? L"true" : L"false") << L",\n";
     file << L"    \"leaderMages\": " << (appData.getLeaderMages() ? L"true" : L"false") << L"\n";
     file << L"  },\n";
@@ -366,7 +368,17 @@ bool DataSerializer::saveToFile(const AppData& appData, const std::wstring& file
       file << L"      \"month\": " << structure.getMonth() << L",\n";
       file << L"      \"year\": " << structure.getYear() << L",\n";
       file << L"      \"isClosed\": " << (structure.isClosed() ? L"true" : L"false") << L",\n";
-      file << L"      \"ownerUnitId\": " << structure.getOwnerUnitId() << L"\n";
+      file << L"      \"ownerUnitId\": " << structure.getOwnerUnitId() << L",\n";
+      file << L"      \"fleetItems\": {";
+      const auto& fleetItems = structure.getFleetItems();
+      size_t fleetItemIndex = 0;
+      for (const auto& [fleetItemToken, fleetItemAmount] : fleetItems)
+      {
+        if (fleetItemIndex > 0) file << L", ";
+        file << L"\"" << JsonUtils::escapeJsonString(fleetItemToken) << L"\": " << fleetItemAmount;
+        ++fleetItemIndex;
+      }
+      file << L"}\n";
       file << L"    }";
     }
     file << L"\n  ],\n";
@@ -402,6 +414,8 @@ bool DataSerializer::saveToFile(const AppData& appData, const std::wstring& file
       file << L"    {\n";
       file << L"      \"token\": \"" << JsonUtils::escapeJsonString(item.getIdentifierToken()) << L"\",\n";
       file << L"      \"name\": \"" << JsonUtils::escapeJsonString(item.getItemName()) << L"\",\n";
+      file << L"      \"namePlural\": \"" << JsonUtils::escapeJsonString(item.getItemNamePlural()) << L"\",\n";
+      file << L"      \"provisional\": " << (item.isProvisional() ? L"true" : L"false") << L",\n";
       file << L"      \"weight\": " << item.getWeight() << L",\n";
       file << L"      \"meeleWeapon\": " << (item.isMeeleWeapon() ? L"true" : L"false") << L",\n";
       file << L"      \"rangedWeapon\": " << (item.isRangedWeapon() ? L"true" : L"false") << L",\n";
@@ -1635,6 +1649,7 @@ bool DataSerializer::loadFromFile(AppData& appData, const std::wstring& filePath
         int month = 0;
         int year = 0;
         std::wstring message;
+        bool errorEvent = false;
 
         size_t fieldPos = 0;
         while ((fieldPos = obj.find(L'"', fieldPos)) != std::wstring::npos)
@@ -1656,6 +1671,8 @@ bool DataSerializer::loadFromFile(AppData& appData, const std::wstring& filePath
             parseJsonNumber(fieldValue, month);
           else if (fieldName == L"year")
             parseJsonNumber(fieldValue, year);
+          else if (fieldName == L"errorEvent")
+            parseJsonBool(fieldValue, errorEvent);
 
           fieldPos = fieldEnd + 1;
         }
@@ -1663,7 +1680,9 @@ bool DataSerializer::loadFromFile(AppData& appData, const std::wstring& filePath
         if (unitId != 0 && !message.empty())
         {
           int eventId = appData.eventRepository().getNextEventId();
-          appData.eventRepository().add(Event(unitId, eventId, message, month, year));
+          Event newEvent(unitId, eventId, message, month, year);
+          newEvent.setErrorEvent(errorEvent);
+          appData.eventRepository().add(newEvent);
         }
         pos = objEnd + 1;
       }
@@ -1675,6 +1694,7 @@ bool DataSerializer::loadFromFile(AppData& appData, const std::wstring& filePath
     {
       int shipStructureIdThreshold = appData.getShipStructureIdThreshold();
       std::wstring flyingShipsCsv;
+      std::wstring magicSkillTriggersCsv = appData.getMagicSkillTriggersCsv();
       bool onlyLeaderCanTeach = appData.getOnlyLeaderCanTeach();
       bool leaderMages = appData.getLeaderMages();
 
@@ -1696,6 +1716,8 @@ bool DataSerializer::loadFromFile(AppData& appData, const std::wstring& filePath
           parseJsonNumber(fieldValue, shipStructureIdThreshold);
         else if (fieldName == L"flyingShipsCsv")
           parseJsonString(fieldValue, flyingShipsCsv);
+        else if (fieldName == L"magicSkillTriggersCsv")
+          parseJsonString(fieldValue, magicSkillTriggersCsv);
         else if (fieldName == L"onlyLeaderCanTeach")
           parseJsonBool(fieldValue, onlyLeaderCanTeach);
         else if (fieldName == L"leaderMages")
@@ -1706,6 +1728,7 @@ bool DataSerializer::loadFromFile(AppData& appData, const std::wstring& filePath
 
       appData.setShipStructureIdThreshold(shipStructureIdThreshold);
       appData.setFlyingShipsCsv(flyingShipsCsv);
+      appData.setMagicSkillTriggersCsv(magicSkillTriggersCsv);
       appData.setOnlyLeaderCanTeach(onlyLeaderCanTeach);
       appData.setLeaderMages(leaderMages);
     }
@@ -1730,6 +1753,7 @@ bool DataSerializer::loadFromFile(AppData& appData, const std::wstring& filePath
         int ownerUnitId = 0;
         std::wstring type, name;
         bool isClosed = false;
+        std::map<std::wstring, int> fleetItems;
 
         size_t fieldPos = 0;
         while ((fieldPos = obj.find(L'"', fieldPos)) != std::wstring::npos)
@@ -1763,6 +1787,8 @@ bool DataSerializer::loadFromFile(AppData& appData, const std::wstring& filePath
             parseJsonBool(fieldValue, isClosed);
           else if (fieldName == L"ownerUnitId")
             parseJsonNumber(fieldValue, ownerUnitId);
+          else if (fieldName == L"fleetItems")
+            fleetItems = parseJsonStringIntMap(fieldValue);
 
           fieldPos = fieldEnd + 1;
         }
@@ -1771,6 +1797,7 @@ bool DataSerializer::loadFromFile(AppData& appData, const std::wstring& filePath
         if (Structure* structure = appData.structureRepository().findByIdAndCoordinates(id, x, y, z))
         {
           structure->setOwnerUnitId(ownerUnitId);
+          structure->setFleetItems(fleetItems);
         }
         pos = objEnd + 1;
       }
@@ -1858,9 +1885,11 @@ bool DataSerializer::loadFromFile(AppData& appData, const std::wstring& filePath
         std::wstring obj = itemRepositoryArray.substr(objStart + 1, objEnd - objStart - 1);
 
         std::wstring token, name, fullText;
+        std::wstring namePlural;
         int weight = 0, moves = 0, walkCapacity = 0, rideCapacity = 0, swimCapacity = 0, flyCapacity = 0;
         int shipSpeedHexesPerMonth = 0, shipSailingSkillRequired = 0, magesStudy = 0, defaultSkillMax = 0;
         bool meeleWeapon = false, rangedWeapon = false, armour = false, resource = false, mount = false, man = false;
+        bool provisional = false;
         std::map<std::wstring, int> resources;
         std::map<std::wstring, int> skillsMax;
         std::map<std::wstring, int> productionSkill;
@@ -1880,6 +1909,8 @@ bool DataSerializer::loadFromFile(AppData& appData, const std::wstring& filePath
         std::wstring fv;
         if (extractItemField(L"token", fv))        parseJsonString(fv, token);
         if (extractItemField(L"name", fv))         parseJsonString(fv, name);
+        if (extractItemField(L"namePlural", fv))   parseJsonString(fv, namePlural);
+        if (extractItemField(L"provisional", fv))  parseJsonBool(fv, provisional);
         if (extractItemField(L"weight", fv))       parseJsonNumber(fv, weight);
         if (extractItemField(L"meeleWeapon", fv))  parseJsonBool(fv, meeleWeapon);
         if (extractItemField(L"rangedWeapon", fv)) parseJsonBool(fv, rangedWeapon);
@@ -1908,6 +1939,8 @@ bool DataSerializer::loadFromFile(AppData& appData, const std::wstring& filePath
           if (existing)
           {
             if (!name.empty()) existing->setItemName(name);
+            if (!namePlural.empty()) existing->setItemNamePlural(namePlural);
+            existing->setProvisional(provisional);
             existing->setWeight(weight);
             existing->setMeeleWeapon(meeleWeapon);
             existing->setRangedWeapon(rangedWeapon);
@@ -1937,6 +1970,8 @@ bool DataSerializer::loadFromFile(AppData& appData, const std::wstring& filePath
                                         walkCapacity, rideCapacity, swimCapacity, flyCapacity, man);
             if (Item* added = appData.itemRepository().findByIdentifierToken(token))
             {
+              if (!namePlural.empty()) added->setItemNamePlural(namePlural);
+              added->setProvisional(provisional);
               added->setShipSpeedHexesPerMonth(shipSpeedHexesPerMonth);
               added->setShipSailingSkillRequired(shipSailingSkillRequired);
               added->setMagesStudy(magesStudy);

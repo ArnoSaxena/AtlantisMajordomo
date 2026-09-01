@@ -54,11 +54,125 @@
 #include <commctrl.h>
 #include <cwctype>
 #include <map>
+#include <richedit.h>
 #include <set>
 #include <sstream>
 #include <string>
 #include <vector>
 #include <windowsx.h>
+
+namespace
+{
+void applyColorizedRange(HWND richEditHwnd,
+                        const std::wstring& fullText,
+                        const std::wstring& label,
+                        COLORREF color)
+{
+  if (!richEditHwnd || fullText.empty())
+  {
+    return;
+  }
+
+  wchar_t className[32] {};
+  if (GetClassNameW(richEditHwnd, className, static_cast<int>(std::size(className))) == 0)
+  {
+    return;
+  }
+
+  if (std::wstring(className) != RICHEDIT_CLASS)
+  {
+    return;
+  }
+
+  const std::wstring lowerText = StringUtils::toLower(fullText);
+  const std::wstring lowerLabel = StringUtils::toLower(label);
+  const std::size_t labelPos = lowerText.find(lowerLabel);
+  if (labelPos == std::wstring::npos)
+  {
+    return;
+  }
+
+  const std::size_t valueStart = labelPos + label.size();
+  const std::size_t lineBreakPos = fullText.find(L"\r\n", valueStart);
+  const std::size_t valueEnd = lineBreakPos == std::wstring::npos ? fullText.size() : lineBreakPos;
+
+  if (valueEnd <= valueStart)
+  {
+    return;
+  }
+
+  const LONG start = static_cast<LONG>(valueStart);
+  const LONG end = static_cast<LONG>(valueEnd);
+  SendMessageW(richEditHwnd, EM_SETSEL, start, end);
+
+  CHARFORMAT2W charFormat {};
+  charFormat.cbSize = sizeof(charFormat);
+  charFormat.dwMask = CFM_COLOR;
+  charFormat.crTextColor = color;
+  SendMessageW(richEditHwnd, EM_SETCHARFORMAT, SCF_SELECTION, reinterpret_cast<LPARAM>(&charFormat));
+}
+
+void applyShipWarningColors(HWND richEditHwnd, const std::wstring& fullText)
+{
+  if (!richEditHwnd || fullText.empty())
+  {
+    return;
+  }
+
+  static const std::wstring kCapacityLabel = L"Capacity: ";
+  static const std::wstring kSkillLabel = L"Sailing skill: ";
+
+  const std::wstring lowerText = StringUtils::toLower(fullText);
+  const std::size_t capacityPos = lowerText.find(StringUtils::toLower(kCapacityLabel));
+  const std::size_t skillPos = lowerText.find(StringUtils::toLower(kSkillLabel));
+
+  if (capacityPos != std::wstring::npos)
+  {
+    const std::size_t valueStart = capacityPos + kCapacityLabel.size();
+    const std::size_t lineBreakPos = fullText.find(L"\r\n", valueStart);
+    const std::size_t valueEnd = lineBreakPos == std::wstring::npos ? fullText.size() : lineBreakPos;
+    if (valueEnd > valueStart)
+    {
+      const std::wstring value = fullText.substr(valueStart, valueEnd - valueStart);
+      const std::size_t slashPos = value.find(L"/");
+      if (slashPos != std::wstring::npos)
+      {
+        const std::wstring currentLoadText = StringUtils::trimWhitespace(value.substr(slashPos + 1));
+        const std::wstring capacityText = StringUtils::trimWhitespace(value.substr(0, slashPos));
+        const int currentLoad = StringUtils::parseIntSafe(currentLoadText);
+        const int capacity = StringUtils::parseIntSafe(capacityText);
+        if (currentLoad > capacity)
+        {
+          applyColorizedRange(richEditHwnd, fullText, kCapacityLabel, RGB(200, 0, 0));
+        }
+      }
+    }
+  }
+
+  if (skillPos != std::wstring::npos)
+  {
+    const std::size_t valueStart = skillPos + kSkillLabel.size();
+    const std::size_t lineBreakPos = fullText.find(L"\r\n", valueStart);
+    const std::size_t valueEnd = lineBreakPos == std::wstring::npos ? fullText.size() : lineBreakPos;
+    if (valueEnd > valueStart)
+    {
+      const std::wstring value = fullText.substr(valueStart, valueEnd - valueStart);
+      const std::size_t slashPos = value.find(L"/");
+      if (slashPos != std::wstring::npos)
+      {
+        const std::wstring requiredText = StringUtils::trimWhitespace(value.substr(0, slashPos));
+        const std::wstring currentText = StringUtils::trimWhitespace(value.substr(slashPos + 1));
+        const int required = StringUtils::parseIntSafe(requiredText);
+        const int current = StringUtils::parseIntSafe(currentText);
+        if (current < required)
+        {
+          applyColorizedRange(richEditHwnd, fullText, kSkillLabel, RGB(200, 0, 0));
+        }
+      }
+    }
+  }
+}
+}
 
 void MapTabContent::updateRegionDetailsView(const Region* region)
 {
@@ -86,6 +200,7 @@ void MapTabContent::updateRegionDetailsView(const Region* region)
     L"\r\n");
 
   SetWindowTextW(regionDetailsView_, details.c_str());
+  applyShipWarningColors(regionDetailsView_, details);
   populateResourcesList(region);
   populateForSaleList(region);
   populateWantedList(region);

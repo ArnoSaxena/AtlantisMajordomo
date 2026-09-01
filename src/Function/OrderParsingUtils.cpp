@@ -119,20 +119,6 @@ bool tokenizeOrderLine(const std::wstring& line,
   return true;
 }
 
-std::wstring normalizeItemTokenForWarning(std::wstring token)
-{
-  token = StringUtils::trimWhitespace(std::move(token));
-  while (!token.empty() && !iswalnum(token.front()))
-  {
-    token.erase(token.begin());
-  }
-  while (!token.empty() && !iswalnum(token.back()))
-  {
-    token.pop_back();
-  }
-  return StringUtils::toUpper(std::move(token));
-}
-
 bool tryExtractOrderKeywordUpper(const std::wstring& orderLine, std::wstring& keyword)
 {
   std::vector<std::wstring> tokens;
@@ -486,7 +472,7 @@ bool tryResolveItemTokenForWarning(const AppData& appData,
                                    bool operandWasQuoted,
                                    std::wstring& resolvedToken)
 {
-  std::wstring normalized = normalizeItemTokenForWarning(operand);
+  std::wstring normalized = StringUtils::normalizeToken(operand);
   if (!normalized.empty() && appData.itemRepository().findByIdentifierToken(normalized))
   {
     resolvedToken = normalized;
@@ -515,7 +501,7 @@ bool tryResolveItemTokenForWarning(const AppData& appData,
     const Item& item = appData.itemRepository().at(index);
     if (StringUtils::toUpper(StringUtils::trimWhitespace(item.getItemName())) == normalizedName)
     {
-      resolvedToken = normalizeItemTokenForWarning(item.getIdentifierToken());
+      resolvedToken = StringUtils::normalizeToken(item.getIdentifierToken());
       return !resolvedToken.empty();
     }
   }

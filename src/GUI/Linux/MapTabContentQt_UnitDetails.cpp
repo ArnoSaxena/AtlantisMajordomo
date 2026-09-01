@@ -40,10 +40,12 @@
 #include "Data/Unit.hpp"
 #include "Data/UnitNew.hpp"
 #include "Function/HexDirectionUtils.hpp"
+#include "Function/OrderItemTokenUtils.hpp"
 #include "Function/OrderParsingUtils.hpp"
 #include "Function/SkillFormattingUtils.hpp"
 #include "Function/StringUtils.hpp"
 #include "Function/UnitCapacityUtils.hpp"
+#include "Function/UnitsListSortUtils.hpp"
 
 #include <QLabel>
 #include <QListWidget>
@@ -93,128 +95,17 @@ QTableWidgetItem* makeReadOnlyItem(const QString& text)
 
 bool tryParseLeadingInteger(const QString& text, long long& value)
 {
-    const QString trimmed = text.trimmed();
-    if (trimmed.isEmpty())
-    {
-        return false;
-    }
-
-    int start = 0;
-    while (start < trimmed.size())
-    {
-        const QChar ch = trimmed.at(start);
-        if (ch.isDigit() || ch == QChar(u'+') || ch == QChar(u'-'))
-        {
-            break;
-        }
-        ++start;
-    }
-    if (start >= trimmed.size())
-    {
-        return false;
-    }
-
-    int end = start;
-    if (trimmed.at(end) == QChar(u'+') || trimmed.at(end) == QChar(u'-'))
-    {
-        ++end;
-    }
-    while (end < trimmed.size() && trimmed.at(end).isDigit())
-    {
-        ++end;
-    }
-    if (end <= start)
-    {
-        return false;
-    }
-
-    bool ok = false;
-    const QString numberToken = trimmed.mid(start, end - start);
-    value = numberToken.toLongLong(&ok);
-    return ok;
+    return StringUtils::tryParseLeadingInteger(text.toStdWString(), value);
 }
 
 int compareUnitsListCellValues(const QString& leftValue,
                                const QString& rightValue,
                                bool ascending)
 {
-    const QString trimmedLeft = leftValue.trimmed();
-    const QString trimmedRight = rightValue.trimmed();
-
-    const bool leftEmpty = trimmedLeft.isEmpty();
-    const bool rightEmpty = trimmedRight.isEmpty();
-    if (leftEmpty != rightEmpty)
-    {
-        // Keep empty entries at the bottom for both sort directions.
-        return leftEmpty ? 1 : -1;
-    }
-    if (leftEmpty)
-    {
-        return 0;
-    }
-
-    long long leftNumber = 0;
-    long long rightNumber = 0;
-    const bool leftHasNumber = tryParseLeadingInteger(trimmedLeft, leftNumber);
-    const bool rightHasNumber = tryParseLeadingInteger(trimmedRight, rightNumber);
-    if (leftHasNumber && rightHasNumber && leftNumber != rightNumber)
-    {
-        return ascending ? (leftNumber < rightNumber ? -1 : 1)
-                         : (leftNumber > rightNumber ? -1 : 1);
-    }
-
-    const int textComparison = QString::compare(trimmedLeft, trimmedRight, Qt::CaseInsensitive);
-    if (textComparison == 0)
-    {
-        return 0;
-    }
-
-    return ascending ? textComparison : -textComparison;
-}
-
-std::wstring normalizeOrderItemToken(std::wstring token)
-{
-    token = StringUtils::trimWhitespace(std::move(token));
-    while (!token.empty() && !iswalnum(token.front()))
-    {
-        token.erase(token.begin());
-    }
-    while (!token.empty() && !iswalnum(token.back()))
-    {
-        token.pop_back();
-    }
-    return StringUtils::toUpper(std::move(token));
-}
-
-bool tryResolveOrderItemToken(const AppData& appData,
-                              const std::wstring& operand,
-                              std::wstring& resolvedToken)
-{
-    const std::wstring normalizedOperand = normalizeOrderItemToken(operand);
-    if (normalizedOperand.empty())
-    {
-        return false;
-    }
-
-    if (const Item* exactItem = appData.itemRepository().findByIdentifierToken(normalizedOperand))
-    {
-        resolvedToken = exactItem->getIdentifierToken();
-        return true;
-    }
-
-    for (std::size_t index = 0; index < appData.itemRepository().size(); ++index)
-    {
-        const Item& item = appData.itemRepository().at(index);
-        const std::wstring normalizedName = normalizeOrderItemToken(item.getItemName());
-        const std::wstring normalizedPluralName = normalizeOrderItemToken(item.getItemNamePlural());
-        if (normalizedOperand == normalizedName || normalizedOperand == normalizedPluralName)
-        {
-            resolvedToken = item.getIdentifierToken();
-            return true;
-        }
-    }
-
-    return false;
+    return UnitsListSortUtils::compareCellValues(
+        leftValue.toStdWString(),
+        rightValue.toStdWString(),
+        ascending);
 }
 
 int resolveSingleMainFactionNumber(const AppData* appData)
@@ -340,126 +231,6 @@ void applyUnitsListFactionTextColors(QTableWidget* unitsList,
             }
         }
     }
-}
-
-bool tryConsumeUnitReference(const std::vector<std::wstring>& tokens, std::size_t& tokenIndex)
-{
-    if (tokenIndex >= tokens.size())
-    {
-        return false;
-    }
-
-    if (StringUtils::toUpper(tokens[tokenIndex]) == L"NEW")
-    {
-        ++tokenIndex;
-        if (tokenIndex >= tokens.size())
-        {
-            return false;
-        }
-    }
-
-    int unitNumber = 0;
-    if (!OrderParsingUtils::tryParseIntStrict(tokens[tokenIndex], unitNumber) || unitNumber <= 0)
-    {
-        return false;
-    }
-
-    ++tokenIndex;
-    return true;
-}
-
-std::set<std::wstring> collectTouchedItemTokensForUnit(const AppData& appData,
-                                                       int unitNumber,
-                                                       bool isNewUnit)
-{
-    std::set<std::wstring> touchedTokens;
-    const std::vector<Order>* orders = appData.orderRepository().getOrdersForUnit(unitNumber, isNewUnit);
-    if (!orders)
-    {
-        return touchedTokens;
-    }
-
-    for (const Order& order : *orders)
-    {
-        std::vector<std::wstring> tokens;
-        std::vector<bool> quoted;
-        if (!OrderParsingUtils::tokenizeOrderLine(order.getFullOrderText(), tokens, quoted) || tokens.empty())
-        {
-            continue;
-        }
-
-        std::size_t tokenIndex = 0;
-        if (!tokens[0].empty() && tokens[0][0] == L'@')
-        {
-            if (tokens[0].size() > 1)
-            {
-                tokens[0] = tokens[0].substr(1);
-            }
-            else
-            {
-                ++tokenIndex;
-            }
-        }
-
-        if (tokenIndex >= tokens.size())
-        {
-            continue;
-        }
-
-        const std::wstring command = StringUtils::toUpper(tokens[tokenIndex]);
-        std::size_t itemTokenIndex = std::wstring::npos;
-
-        if (command == L"PRODUCE")
-        {
-            if ((tokenIndex + 1) < tokens.size())
-            {
-                int amount = 0;
-                const bool hasAmount = OrderParsingUtils::tryParseIntStrict(tokens[tokenIndex + 1], amount) && amount > 0;
-                itemTokenIndex = hasAmount ? (tokenIndex + 2) : (tokenIndex + 1);
-            }
-        }
-        else if (command == L"BUY" || command == L"SELL")
-        {
-            itemTokenIndex = tokenIndex + 2;
-        }
-        else if (command == L"TRANSPORT" || command == L"DISTRIBUTE")
-        {
-            std::size_t cursor = tokenIndex + 1;
-            if (!tryConsumeUnitReference(tokens, cursor) || cursor >= tokens.size())
-            {
-                continue;
-            }
-
-            const std::wstring quantityToken = StringUtils::toUpper(tokens[cursor]);
-            ++cursor;
-            if (quantityToken == L"ALL" || quantityToken == L"EXCEPT")
-            {
-                itemTokenIndex = cursor;
-            }
-            else
-            {
-                int quantity = 0;
-                if (!OrderParsingUtils::tryParseIntStrict(quantityToken, quantity) || quantity <= 0)
-                {
-                    continue;
-                }
-                itemTokenIndex = cursor;
-            }
-        }
-
-        if (itemTokenIndex == std::wstring::npos || itemTokenIndex >= tokens.size())
-        {
-            continue;
-        }
-
-        std::wstring resolvedToken;
-        if (tryResolveOrderItemToken(appData, tokens[itemTokenIndex], resolvedToken) && !resolvedToken.empty())
-        {
-            touchedTokens.insert(resolvedToken);
-        }
-    }
-
-    return touchedTokens;
 }
 
 } // namespace
@@ -595,9 +366,11 @@ void MapTabContentQt::populateUnitsForSelectedRegion()
     }
     const bool hasLatestPeriod = (latestMonth >= 1 && latestMonth <= 12 && latestYear > 0);
 
-    int latestBattleMonth = 0;
-    int latestBattleYear = 0;
-    const bool hasLatestBattlePeriod = appData_->battleRepository().getLatestPeriod(latestBattleMonth, latestBattleYear);
+    // Battle indicators must reflect the currently displayed turn, not the
+    // repository's globally latest battle period (which may be an older turn).
+    const int latestBattleMonth = latestMonth;
+    const int latestBattleYear = latestYear;
+    const bool hasLatestBattlePeriod = hasLatestPeriod;
 
     int selectedRow = -1;
 
@@ -690,7 +463,7 @@ void MapTabContentQt::populateUnitsForSelectedRegion()
                 unit.getZCoordinate());
             if (structure)
             {
-                structureText = structure->getStructureType() + L" [" + std::to_wstring(displayStructureId) + L"]";
+                structureText = L"[" + std::to_wstring(displayStructureId) + L"] " + structure->getStructureType();
                 if (!structure->getStructureName().empty())
                 {
                     structureText += L" - " + structure->getStructureName();
@@ -802,7 +575,7 @@ void MapTabContentQt::populateUnitsForSelectedRegion()
                     unitNew.getZCoordinate());
                 if (structure)
                 {
-                    newStructureText = structure->getStructureType() + L" [" + std::to_wstring(newDisplayStructureId) + L"]";
+                    newStructureText = L"[" + std::to_wstring(newDisplayStructureId) + L"] " + structure->getStructureType();
                     if (!structure->getStructureName().empty())
                     {
                         newStructureText += L" - " + structure->getStructureName();
@@ -880,7 +653,7 @@ void MapTabContentQt::populateUnitsForSelectedRegion()
             continue;
         }
 
-        std::wstring structureText = structure->getStructureType() + L" [" + std::to_wstring(structure->getStructureId()) + L"]";
+        std::wstring structureText = L"[" + std::to_wstring(structure->getStructureId()) + L"] " + structure->getStructureType();
         if (!structure->getStructureName().empty())
         {
             structureText += L" - " + structure->getStructureName();
@@ -1130,20 +903,6 @@ void MapTabContentQt::populateItemsForSelectedUnit(const Unit* unit)
     const std::map<std::wstring, int> afterCommandCounts =
         Commands::calculateAfterCommandItemCountsForUnit(*appData_, *unit);
 
-    auto normalizeToken = [](std::wstring token)
-    {
-        token = StringUtils::trimWhitespace(std::move(token));
-        while (!token.empty() && !iswalnum(token.front()))
-        {
-            token.erase(token.begin());
-        }
-        while (!token.empty() && !iswalnum(token.back()))
-        {
-            token.pop_back();
-        }
-        return StringUtils::toUpper(std::move(token));
-    };
-
     std::map<std::wstring, int> normalizedCurrentCounts;
     for (const auto& [itemToken, amount] : unit->getItems())
     {
@@ -1152,7 +911,7 @@ void MapTabContentQt::populateItemsForSelectedUnit(const Unit* unit)
             continue;
         }
 
-        const std::wstring normalized = normalizeToken(itemToken);
+        const std::wstring normalized = StringUtils::normalizeToken(itemToken);
         if (normalized.empty())
         {
             continue;
@@ -1169,7 +928,7 @@ void MapTabContentQt::populateItemsForSelectedUnit(const Unit* unit)
             continue;
         }
 
-        const std::wstring normalized = normalizeToken(itemToken);
+        const std::wstring normalized = StringUtils::normalizeToken(itemToken);
         if (normalized.empty())
         {
             continue;
@@ -1187,7 +946,7 @@ void MapTabContentQt::populateItemsForSelectedUnit(const Unit* unit)
     {
         itemTokens.insert(itemToken);
     }
-    for (const std::wstring& touchedToken : collectTouchedItemTokensForUnit(*appData_, unit->getUnitNumber(), false))
+    for (const std::wstring& touchedToken : OrderItemTokenUtils::collectTouchedItemTokensForUnit(*appData_, unit->getUnitNumber(), false))
     {
         itemTokens.insert(touchedToken);
     }
@@ -1254,20 +1013,6 @@ void MapTabContentQt::populateItemsForSelectedUnit(const UnitNew* unitNew)
     const std::map<std::wstring, int> afterCommandCounts =
         Commands::calculateAfterCommandItemCountsForUnitNew(*appData_, *unitNew);
 
-    auto normalizeToken = [](std::wstring token)
-    {
-        token = StringUtils::trimWhitespace(std::move(token));
-        while (!token.empty() && !iswalnum(token.front()))
-        {
-            token.erase(token.begin());
-        }
-        while (!token.empty() && !iswalnum(token.back()))
-        {
-            token.pop_back();
-        }
-        return StringUtils::toUpper(std::move(token));
-    };
-
     std::map<std::wstring, int> normalizedCurrentCounts;
     for (const auto& [itemToken, amount] : unitNew->getItems())
     {
@@ -1276,7 +1021,7 @@ void MapTabContentQt::populateItemsForSelectedUnit(const UnitNew* unitNew)
             continue;
         }
 
-        const std::wstring normalized = normalizeToken(itemToken);
+        const std::wstring normalized = StringUtils::normalizeToken(itemToken);
         if (normalized.empty())
         {
             continue;
@@ -1293,7 +1038,7 @@ void MapTabContentQt::populateItemsForSelectedUnit(const UnitNew* unitNew)
             continue;
         }
 
-        const std::wstring normalized = normalizeToken(itemToken);
+        const std::wstring normalized = StringUtils::normalizeToken(itemToken);
         if (normalized.empty())
         {
             continue;
@@ -1311,7 +1056,7 @@ void MapTabContentQt::populateItemsForSelectedUnit(const UnitNew* unitNew)
     {
         itemTokens.insert(itemToken);
     }
-    for (const std::wstring& touchedToken : collectTouchedItemTokensForUnit(*appData_, unitNew->getUnitNumber(), true))
+    for (const std::wstring& touchedToken : OrderItemTokenUtils::collectTouchedItemTokensForUnit(*appData_, unitNew->getUnitNumber(), true))
     {
         itemTokens.insert(touchedToken);
     }

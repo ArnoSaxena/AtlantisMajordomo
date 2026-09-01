@@ -54,8 +54,6 @@ bool tokenizeOrderLine(const std::wstring& line,
                        std::vector<std::wstring>& tokens,
                        std::vector<bool>& tokenWasQuoted);
 
-std::wstring normalizeItemTokenForWarning(std::wstring token);
-
 bool tryExtractOrderKeywordUpper(const std::wstring& orderLine, std::wstring& keyword);
 bool isMonthLongOrderLine(const std::wstring& orderLine);
 std::wstring findMonthLongOrderText(const std::vector<std::wstring>& orders);

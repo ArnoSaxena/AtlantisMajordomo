@@ -239,42 +239,6 @@ private:
   HWND ownerWindow_ { nullptr };
 };
 
-
-
-POINT getRoadEndpointForDirection(const std::array<POINT, 6>& polygon, const std::wstring& direction)
-{
-  auto midpoint = [&polygon](int firstIndex, int secondIndex)
-  {
-    POINT point {};
-    point.x = (polygon[firstIndex].x + polygon[secondIndex].x) / 2;
-    point.y = (polygon[firstIndex].y + polygon[secondIndex].y) / 2;
-    return point;
-  };
-
-  if (direction == L"N")
-  {
-    return midpoint(1, 2);
-  }
-  if (direction == L"NE")
-  {
-    return midpoint(2, 3);
-  }
-  if (direction == L"SE")
-  {
-    return midpoint(3, 4);
-  }
-  if (direction == L"S")
-  {
-    return midpoint(4, 5);
-  }
-  if (direction == L"SW")
-  {
-    return midpoint(5, 0);
-  }
-
-  return midpoint(0, 1);
-}
-
 } // namespace
 
 
@@ -994,7 +958,7 @@ void MapTabContent::paintMap(HDC hdc) const
           const int centerY = visual.center.y - scrollY_;
           for (const auto& direction : roadDirectionsToDraw)
           {
-            const POINT mapEndpoint = getRoadEndpointForDirection(visual.polygon, direction);
+            const POINT mapEndpoint = MapUtils::getRoadEndpointForDirection(visual.polygon, direction);
             MoveToEx(memoryDc, centerX, centerY, nullptr);
             LineTo(memoryDc, mapEndpoint.x - scrollX_, mapEndpoint.y - scrollY_);
           }
@@ -1371,14 +1335,14 @@ void MapTabContent::paintMap(HDC hdc) const
         continue;
       }
 
-      const POINT northEndpoint = getRoadEndpointForDirection(visual.polygon, L"N");
-      const POINT northWestEndpoint = getRoadEndpointForDirection(visual.polygon, L"NW");
+      const POINT northEndpoint = MapUtils::getRoadEndpointForDirection(visual.polygon, L"N");
+      const POINT northWestEndpoint = MapUtils::getRoadEndpointForDirection(visual.polygon, L"NW");
       const POINT borderMidpoint {
         (northEndpoint.x + northWestEndpoint.x) / 2,
         (northEndpoint.y + northWestEndpoint.y) / 2
       };
-      const POINT southEndpoint = getRoadEndpointForDirection(visual.polygon, L"S");
-      const POINT southWestEndpoint = getRoadEndpointForDirection(visual.polygon, L"SW");
+      const POINT southEndpoint = MapUtils::getRoadEndpointForDirection(visual.polygon, L"S");
+      const POINT southWestEndpoint = MapUtils::getRoadEndpointForDirection(visual.polygon, L"SW");
       const POINT borderMidpointBottomLeft {
         (southEndpoint.x + southWestEndpoint.x) / 2,
         (southEndpoint.y + southWestEndpoint.y) / 2

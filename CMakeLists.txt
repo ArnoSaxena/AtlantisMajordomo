@@ -56,6 +56,7 @@ set(COMMON_SOURCES
   src/Function/ItemOrderingUtils.cpp
   src/Function/OrderBusinessLogic.cpp
   src/Function/OrderChecksUtils.cpp
+  src/Function/OrderItemTokenUtils.cpp
   src/Function/OrderParsingUtils.cpp
   src/Function/OrderWarningService.cpp
   src/Function/ReadOnlyPopupService.cpp
@@ -65,6 +66,7 @@ set(COMMON_SOURCES
   src/Function/TabRefreshUtils.cpp
   src/Function/MapUtils.cpp
   src/Function/UnitCapacityUtils.cpp
+  src/Function/UnitsListSortUtils.cpp
 )
 
 # ---------------------------------------------------------------------------

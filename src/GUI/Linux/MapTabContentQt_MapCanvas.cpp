@@ -45,6 +45,7 @@
 #include <QWheelEvent>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <set>
 
@@ -65,34 +66,14 @@ QPolygon toQPolygon(const std::array<POINT, 6>& points)
 
 QPoint getRoadEndpointForDirection(const QPolygon& polygon, const std::wstring& direction)
 {
-    auto midpoint = [&polygon](int firstIndex, int secondIndex) -> QPoint
+    std::array<POINT, 6> points {};
+    for (std::size_t index = 0; index < points.size(); ++index)
     {
-        return QPoint((polygon[firstIndex].x() + polygon[secondIndex].x()) / 2,
-                      (polygon[firstIndex].y() + polygon[secondIndex].y()) / 2);
-    };
-
-    if (direction == L"N")
-    {
-        return midpoint(1, 2);
-    }
-    if (direction == L"NE")
-    {
-        return midpoint(2, 3);
-    }
-    if (direction == L"SE")
-    {
-        return midpoint(3, 4);
-    }
-    if (direction == L"S")
-    {
-        return midpoint(4, 5);
-    }
-    if (direction == L"SW")
-    {
-        return midpoint(5, 0);
+        points[index] = { polygon[static_cast<int>(index)].x(), polygon[static_cast<int>(index)].y() };
     }
 
-    return midpoint(0, 1);
+    const POINT endpoint = MapUtils::getRoadEndpointForDirection(points, direction);
+    return QPoint(static_cast<int>(endpoint.x), static_cast<int>(endpoint.y));
 }
 
 } // namespace
