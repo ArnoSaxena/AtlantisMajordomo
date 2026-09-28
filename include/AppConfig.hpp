@@ -40,6 +40,11 @@ public:
   AppConfig();
 
   /**
+  * @brief Gets the directory containing the running executable.
+  */
+  static std::wstring getExecutableDirectory();
+
+  /**
   * @brief Loads configuration from disk or creates defaults when missing.
   * @return true when load/create succeeded.
   */
@@ -185,6 +190,16 @@ public:
     void setDataFilePath(const std::wstring& dataFilePath);
 
     /**
+    * @brief Gets the configured local engine executable path.
+    */
+    const std::wstring& getLocalEnginePath() const;
+
+    /**
+    * @brief Sets the configured local engine executable path.
+    */
+    void setLocalEnginePath(const std::wstring& localEnginePath);
+
+    /**
     * @brief Sets configured magic skill trigger phrases as CSV.
     */
     void setMagicSkillTriggersCsv(const std::wstring& magicSkillTriggersCsv);
@@ -218,6 +233,8 @@ public:
     */
     std::array<int, 3> getSelectedRegionBorderColor() const;
 
+    std::array<int, 3> getGuardedRegionBorderColor() const;
+
     /**
     * @brief Gets the configured RGB color for road overlays.
     */
@@ -239,6 +256,11 @@ public:
     std::array<int, 3> getOtherFactionUnitTextColor() const;
 
     /**
+    * @brief Gets the configured RGB background color for alternating map unit-list rows.
+    */
+    std::array<int, 3> getAlternateUnitRowBackgroundColor() const;
+
+    /**
     * @brief Sets the configured RGB text color for map unit-list rows of the main faction.
     */
     void setMainFactionUnitTextColor(const std::array<int, 3>& rgbColor);
@@ -247,6 +269,13 @@ public:
     * @brief Sets the configured RGB text color for map unit-list rows of non-main factions.
     */
     void setOtherFactionUnitTextColor(const std::array<int, 3>& rgbColor);
+
+    /**
+    * @brief Sets the configured RGB background color for alternating map unit-list rows.
+    */
+    void setAlternateUnitRowBackgroundColor(const std::array<int, 3>& rgbColor);
+
+    void setGuardedRegionBorderColor(const std::array<int, 3>& rgbColor);
 
 private:
   std::wstring configFilePath_;
@@ -264,8 +293,8 @@ private:
   std::wstring flyingShipsCsv_;
   std::wstring fullMonthOrdersCsv_;
   std::wstring magicSkillTriggersCsv_;
+  std::wstring localEnginePath_;
 
-  static std::wstring getExecutableDirectory();
   static std::wstring getDefaultSaveFilePath();
   static std::wstring getDefaultDataFilePath();
   static std::wstring getDefaultReportImportFolder();
@@ -292,6 +321,8 @@ private:
   std::array<int, 3> roadColor_ { 0, 0, 0 };
   std::array<int, 3> structureMarkerColor_ { 0, 0, 0 };
   std::array<int, 3> selectedRegionBorderColor_ { 173, 216, 230 };
+  std::array<int, 3> guardedRegionBorderColor_ { 80, 0, 120 };
   std::array<int, 3> mainFactionUnitTextColor_ { 0, 0, 0 };
   std::array<int, 3> otherFactionUnitTextColor_ { 128, 128, 128 };
+  std::array<int, 3> alternateUnitRowBackgroundColor_ { 245, 245, 245 };
 };

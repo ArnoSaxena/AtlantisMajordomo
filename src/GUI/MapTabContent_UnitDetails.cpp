@@ -203,7 +203,8 @@ void MapTabContent::populateUnitsForSelectedRegion()
 
     std::wstring flags = StringUtils::joinLines(unit.getFlags(), L", ");
     std::wstring skills = SkillFormattingUtils::formatSkills(unit.getSkills());
-    const std::wstring monthLongOrder = OrderParsingUtils::findMonthLongOrderText(unit.getOrders());
+    const std::wstring monthLongOrder = OrderParsingUtils::findMonthLongOrderText(
+      OrderParsingUtils::filterOrdersIgnoringFormBlocks(unit.getOrders()));
     const std::wstring warningIndicator = unit.getWarnings().empty() ? L"" : L"!";
     const bool isDamagedInLatestBattle = hasLatestBattlePeriod &&
       appData_->battleRepository().isUnitDamagedInAnyBattleForPeriod(
@@ -376,6 +377,32 @@ void MapTabContent::populateUnitsForSelectedRegion()
     selectedRegionY_,
     selectedZ_
   );
+  const auto structureHasDisplayedUnit = [&](const Structure& structure) -> bool {
+    if (structure.getStructureId() == 0)
+    {
+      return false;
+    }
+
+    for (std::size_t index = 0; index < unitRepository.size(); ++index)
+    {
+      const Unit& unit = unitRepository.at(index);
+      if (hasLatestPeriod && (unit.getMonth() != latestMonth || unit.getYear() != latestYear))
+      {
+        continue;
+      }
+
+      if (unit.getStructureId() == structure.getStructureId() &&
+          unit.getXCoordinate() == structure.getXCoordinate() &&
+          unit.getYCoordinate() == structure.getYCoordinate() &&
+          unit.getZCoordinate() == structure.getZCoordinate())
+      {
+        return true;
+      }
+    }
+
+    return false;
+  };
+
   for (const Structure* structure : regionStructures)
   {
     if (!structure)
@@ -388,11 +415,7 @@ void MapTabContent::populateUnitsForSelectedRegion()
       continue;
     }
 
-    if (appData_->unitRepository().hasUnitInStructureAtCoordinates(
-      structure->getStructureId(),
-      structure->getXCoordinate(),
-      structure->getYCoordinate(),
-      structure->getZCoordinate()))
+    if (structureHasDisplayedUnit(*structure))
     {
       continue;
     }

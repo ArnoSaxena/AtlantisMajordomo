@@ -38,6 +38,7 @@ class StructureRepository;
 class StructInfoRepository;
 class OrderRepository;
 class UnitRepository;
+class UnitNewRepository;
 
 /**
 * @brief Repository for loaded reports.
@@ -59,6 +60,7 @@ public:
                   FactionRepository& factionRepository,
                   RegionRepository& regionRepository,
                   UnitRepository& unitRepository,
+                  UnitNewRepository& unitNewRepository,
                   BattleRepository& battleRepository,
                   EventRepository& eventRepository,
                   ItemRepository& itemRepository,
@@ -77,9 +79,20 @@ public:
   std::size_t size() const;
   const Report& at(std::size_t index) const;
 
+  /**
+  * @brief Gets the latest valid report period in the repository.
+  * @param[out] month Latest month when true is returned.
+  * @param[out] year Latest year when true is returned.
+  * @return true if at least one valid report period exists.
+  */
+  bool getLatestPeriod(int& month, int& year) const;
+  void setLatestPeriod(int month, int year);
+
   const std::wstring& getLastError() const;
 
 private:
   std::vector<Report> reports_;
   std::wstring        lastError_;
+  int                 latestMonth_ { 0 };
+  int                 latestYear_ { 0 };
 };

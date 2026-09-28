@@ -21,6 +21,8 @@
  
 #include "Function/StringUtils.hpp"
 
+#include "Data/Faction.hpp"
+
 #include <algorithm>
 #include <map>
 #include <sstream>
@@ -144,6 +146,26 @@ namespace StringUtils
             value.pop_back();
         }
         return toUpper(std::move(value));
+    }
+
+    std::wstring formatFactionListLabel(const Faction& faction)
+    {
+        std::wstring label;
+        if (faction.isMainFaction())
+        {
+            label = L"* ";
+        }
+
+        if (!faction.getName().empty())
+        {
+            label += faction.getName() + L" (" + std::to_wstring(faction.getFactionNumber()) + L")";
+        }
+        else
+        {
+            label += std::to_wstring(faction.getFactionNumber());
+        }
+
+        return label;
     }
 
     int parseIntSafe(const std::wstring& text)

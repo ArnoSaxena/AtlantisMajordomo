@@ -54,6 +54,9 @@ set(COMMON_SOURCES
   src/Function/MonthUtils.cpp
   src/Function/MapNavigationUtils.cpp
   src/Function/ItemOrderingUtils.cpp
+    src/Function/LocalEngineFactionUtils.cpp
+    src/Function/LocalEngineRunUtils.cpp
+    src/Function/LocalEngineSettingsUtils.cpp
   src/Function/OrderBusinessLogic.cpp
   src/Function/OrderChecksUtils.cpp
   src/Function/OrderItemTokenUtils.cpp
@@ -64,7 +67,9 @@ set(COMMON_SOURCES
   src/Function/StartupAutoLoadUtils.cpp
   src/Function/StringUtils.cpp
   src/Function/TabRefreshUtils.cpp
+  src/Function/TradeTaxUtils.cpp
   src/Function/MapUtils.cpp
+  src/Function/MainFactionExportUtils.cpp
   src/Function/UnitCapacityUtils.cpp
   src/Function/UnitsListSortUtils.cpp
 )
@@ -79,6 +84,8 @@ if(WIN32)
     src/GUI/UiSizeProfile.cpp
     src/GUI/UiScaleManagerWin.cpp
     src/GUI/MainWindowWin.cpp
+    src/GUI/LocalEngineTabContent.cpp
+    src/GUI/TradeTaxTabContent.cpp
     src/GUI/EventsTabContent.cpp
     src/GUI/WinGuiUtils.cpp
     src/GUI/WinSizingUtils.cpp
@@ -136,6 +143,7 @@ elseif(UNIX)
     src/GUI/Linux/ReportsTabContentQt.cpp
     src/GUI/Linux/EventsTabContentQt.cpp
     src/GUI/Linux/BattlesTabContentQt.cpp
+    src/GUI/Linux/TradeTaxTabContentQt.cpp
     src/GUI/Linux/FactionsTabContentQt.cpp
     src/GUI/Linux/ItemsTabContentQt.cpp
     src/GUI/Linux/SkillsTabContentQt.cpp
@@ -152,6 +160,7 @@ elseif(UNIX)
     include/GUI/ReportsTabContentQt.hpp
     include/GUI/EventsTabContentQt.hpp
     include/GUI/BattlesTabContentQt.hpp
+    include/GUI/TradeTaxTabContentQt.hpp
     include/GUI/FactionsTabContentQt.hpp
     include/GUI/ItemsTabContentQt.hpp
     include/GUI/SkillsTabContentQt.hpp

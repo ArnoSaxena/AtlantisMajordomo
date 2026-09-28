@@ -152,6 +152,13 @@ bool AppConfig::load()
     DebugLog(L"AppConfig::load() - dataFilePath: " + dataFilePath_);
   }
 
+  std::wstring configuredLocalEnginePath;
+  if (JsonUtils::extractJsonStringField(content, L"localEnginePath", configuredLocalEnginePath))
+  {
+    localEnginePath_ = configuredLocalEnginePath;
+    DebugLog(L"AppConfig::load() - localEnginePath: " + localEnginePath_);
+  }
+
   bool hasMainWindowWidth = false;
   std::wstring configuredMainWindowWidth;
   if (JsonUtils::extractJsonFieldValue(content, L"mainWindowWidth", configuredMainWindowWidth))
@@ -277,6 +284,8 @@ bool AppConfig::load()
   bool hasStructureMarkerEntry = false;
   bool hasMainFactionUnitTextEntry = false;
   bool hasOtherFactionUnitTextEntry = false;
+  bool hasAlternateUnitRowBackgroundEntry = false;
+  bool hasGuardedRegionBorderEntry = false;
   std::wstring coloursObject;
   if (JsonUtils::extractJsonObjectField(content, L"colours", coloursObject))
   {
@@ -354,6 +363,17 @@ bool AppConfig::load()
       }
     }
 
+    std::wstring jsonGuardedBorderRgb;
+    if (JsonUtils::extractJsonFieldValue(coloursObject, L"guardedRegionBorder", jsonGuardedBorderRgb))
+    {
+      hasGuardedRegionBorderEntry = true;
+      std::array<int, 3> parsedRgb { 0, 0, 0 };
+      if (JsonUtils::parseRgbColorArray(jsonGuardedBorderRgb, parsedRgb))
+      {
+        guardedRegionBorderColor_ = parsedRgb;
+      }
+    }
+
     std::wstring jsonMainFactionUnitTextRgb;
     if (JsonUtils::extractJsonFieldValue(coloursObject, L"mainFactionUnitText", jsonMainFactionUnitTextRgb))
     {
@@ -375,13 +395,24 @@ bool AppConfig::load()
         otherFactionUnitTextColor_ = parsedRgb;
       }
     }
+
+    std::wstring jsonAlternateUnitRowBackgroundRgb;
+    if (JsonUtils::extractJsonFieldValue(coloursObject, L"alternateUnitRowBackground", jsonAlternateUnitRowBackgroundRgb))
+    {
+      hasAlternateUnitRowBackgroundEntry = true;
+      std::array<int, 3> parsedRgb { 0, 0, 0 };
+      if (JsonUtils::parseRgbColorArray(jsonAlternateUnitRowBackgroundRgb, parsedRgb))
+      {
+        alternateUnitRowBackgroundColor_ = parsedRgb;
+      }
+    }
   }
   else
   {
     DebugLog(L"AppConfig::load() - colours block NOT found in config");
   }
 
-  if (!hasColoursBlock || !hasRegionsBlock || !hasPeasantsBlock || !hasRoadEntry || !hasStructureMarkerEntry || !hasMainFactionUnitTextEntry || !hasOtherFactionUnitTextEntry || !hasMainWindowWidth || !hasMainWindowHeight || !hasMapHexWidth || !hasUiSizeMode || !hasExportOrdersFolder || !hasDataFilePath || !hasOnlyLeaderCanTeach || !hasLeaderMages || !hasFlyingShipsCsv || !hasFullMonthOrdersCsv || !hasMagicSkillTriggersCsv)
+  if (!hasColoursBlock || !hasRegionsBlock || !hasPeasantsBlock || !hasRoadEntry || !hasStructureMarkerEntry || !hasGuardedRegionBorderEntry || !hasMainFactionUnitTextEntry || !hasOtherFactionUnitTextEntry || !hasAlternateUnitRowBackgroundEntry || !hasMainWindowWidth || !hasMainWindowHeight || !hasMapHexWidth || !hasUiSizeMode || !hasExportOrdersFolder || !hasDataFilePath || !hasOnlyLeaderCanTeach || !hasLeaderMages || !hasFlyingShipsCsv || !hasFullMonthOrdersCsv || !hasMagicSkillTriggersCsv)
   {
     DebugLog(L"AppConfig::load() - missing fields detected, re-saving config with defaults");
     save();
@@ -404,6 +435,7 @@ bool AppConfig::save() const
   file << L"  \"saveFilePath\": \"" << JsonUtils::escapeJsonString(saveFilePath_) << L"\",\n";
   file << L"  \"reportImportFolder\": \"" << JsonUtils::escapeJsonString(reportImportFolder_) << L"\",\n";
   file << L"  \"dataFilePath\": \"" << JsonUtils::escapeJsonString(dataFilePath_) << L"\",\n";
+  file << L"  \"localEnginePath\": \"" << JsonUtils::escapeJsonString(localEnginePath_) << L"\",\n";
   file << L"  \"exportOrdersFolder\": \"" << JsonUtils::escapeJsonString(exportOrdersFolder_) << L"\",\n";
   file << L"  \"mainWindowWidth\": " << mainWindowWidth_ << L",\n";
   file << L"  \"mainWindowHeight\": " << mainWindowHeight_ << L",\n";
@@ -456,6 +488,10 @@ bool AppConfig::save() const
         << selectedRegionBorderColor_[0] << L", "
         << selectedRegionBorderColor_[1] << L", "
         << selectedRegionBorderColor_[2] << L"],\n";
+      file << L"    \"guardedRegionBorder\": ["
+        << guardedRegionBorderColor_[0] << L", "
+        << guardedRegionBorderColor_[1] << L", "
+        << guardedRegionBorderColor_[2] << L"],\n";
       file << L"    \"mainFactionUnitText\": ["
         << mainFactionUnitTextColor_[0] << L", "
         << mainFactionUnitTextColor_[1] << L", "
@@ -463,7 +499,11 @@ bool AppConfig::save() const
       file << L"    \"otherFactionUnitText\": ["
         << otherFactionUnitTextColor_[0] << L", "
         << otherFactionUnitTextColor_[1] << L", "
-        << otherFactionUnitTextColor_[2] << L"]\n";
+        << otherFactionUnitTextColor_[2] << L"],\n";
+      file << L"    \"alternateUnitRowBackground\": ["
+        << alternateUnitRowBackgroundColor_[0] << L", "
+        << alternateUnitRowBackgroundColor_[1] << L", "
+        << alternateUnitRowBackgroundColor_[2] << L"]\n";
       file << L"  }\n";
   file << L"}\n";
 
@@ -532,6 +572,16 @@ void AppConfig::setDataFilePath(const std::wstring& dataFilePath)
   }
 
   dataFilePath_ = dataFilePath;
+}
+
+const std::wstring& AppConfig::getLocalEnginePath() const
+{
+  return localEnginePath_;
+}
+
+void AppConfig::setLocalEnginePath(const std::wstring& localEnginePath)
+{
+  localEnginePath_ = localEnginePath;
 }
 
 int AppConfig::getMainWindowWidth() const
@@ -704,6 +754,16 @@ std::array<int, 3> AppConfig::getSelectedRegionBorderColor() const{
   return selectedRegionBorderColor_;
 }
 
+std::array<int, 3> AppConfig::getGuardedRegionBorderColor() const
+{
+  return guardedRegionBorderColor_;
+}
+
+void AppConfig::setGuardedRegionBorderColor(const std::array<int, 3>& rgbColor)
+{
+  guardedRegionBorderColor_ = rgbColor;
+}
+
 std::array<int, 3> AppConfig::getRoadColor() const
 {
   return roadColor_;
@@ -736,6 +796,20 @@ void AppConfig::setMainFactionUnitTextColor(const std::array<int, 3>& rgbColor)
 void AppConfig::setOtherFactionUnitTextColor(const std::array<int, 3>& rgbColor)
 {
   otherFactionUnitTextColor_ = {
+    std::clamp(rgbColor[0], 0, 255),
+    std::clamp(rgbColor[1], 0, 255),
+    std::clamp(rgbColor[2], 0, 255)
+  };
+}
+
+std::array<int, 3> AppConfig::getAlternateUnitRowBackgroundColor() const
+{
+  return alternateUnitRowBackgroundColor_;
+}
+
+void AppConfig::setAlternateUnitRowBackgroundColor(const std::array<int, 3>& rgbColor)
+{
+  alternateUnitRowBackgroundColor_ = {
     std::clamp(rgbColor[0], 0, 255),
     std::clamp(rgbColor[1], 0, 255),
     std::clamp(rgbColor[2], 0, 255)
@@ -872,4 +946,5 @@ void AppConfig::applyDefaults()
   selectedRegionBorderColor_ = { 173, 216, 230 };
   mainFactionUnitTextColor_ = { 0, 0, 0 };
   otherFactionUnitTextColor_ = { 128, 128, 128 };
+  alternateUnitRowBackgroundColor_ = { 245, 245, 245 };
 }

@@ -38,7 +38,9 @@ class ItemsTabContent;
 class SkillsTabContent;
 class FactionsTabContent;
 class BattlesTabContent;
+class LocalEngineTabContent;
 class MapTabContent;
+class TradeTaxTabContent;
 class WinTabView;
 
 /**
@@ -62,7 +64,7 @@ public:
   static constexpr wchar_t kAboutDescription[] =
     L"Yet another Atlantis Pbem player client.";
   // TODO: Need to create a more elaborate description.
-  static constexpr wchar_t kAboutVersion[] = L"1.3.205";
+  static constexpr wchar_t kAboutVersion[] = L"1.3.259";
 
   /**
   * @brief Registers the window class and creates the main window.
@@ -98,6 +100,8 @@ private:
   std::unique_ptr<MapTabContent> mapTabContent_;
   std::unique_ptr<FactionsTabContent> factionsTabContent_;
   std::unique_ptr<BattlesTabContent> battlesTabContent_;
+  std::unique_ptr<LocalEngineTabContent> localEngineTabContent_;
+  std::unique_ptr<TradeTaxTabContent> tradeTaxTabContent_;
   UiScaleManagerWin uiScaleManager_;
   bool hasAppliedUiScale_ { false };
   int reportsTabIndex_ { -1 };
@@ -107,6 +111,8 @@ private:
   int skillsTabIndex_ { -1 };
   int factionsTabIndex_ { -1 };
   int battlesTabIndex_ { -1 };
+  int tradeTaxTabIndex_ { -1 };
+  int localEngineTabIndex_ { -1 };
 
   static LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp);
   LRESULT handleMessage(UINT msg, WPARAM wp, LPARAM lp);

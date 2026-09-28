@@ -66,6 +66,15 @@ namespace
   */
   std::vector<std::wstring> gFullMonthOrderKeywords = kDefaultFullMonthOrderKeywords;
 
+  bool isCurrentReportSnapshot(int month,
+                               int year,
+                               bool hasLatestPeriod,
+                               int latestMonth,
+                               int latestYear)
+  {
+    return !hasLatestPeriod || (month == latestMonth && year == latestYear);
+  }
+
   /**
   * @brief Quantity semantics for GIVE/TAKE-like commands.
   */
@@ -2113,6 +2122,25 @@ namespace
     return false;
   }
 
+  bool hasCombSkillAtLeastOne(const std::map<std::wstring, int>& unitSkills)
+  {
+    for (const auto& [skillToken, days] : unitSkills)
+    {
+      const std::wstring normalizedToken = StringUtils::normalizeToken(skillToken);
+      if (normalizedToken != L"COMB" && normalizedToken != L"COMBAT")
+      {
+        continue;
+      }
+
+      if (Skill::trainingDaysToLevel(days) >= 1)
+      {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
   /**
   * @brief Finds an item by token while tolerating case differences.
   */
@@ -2255,6 +2283,11 @@ namespace
                                            const std::map<std::wstring, int>& unitSkills,
                                            const Item& item)
   {
+    if (item.getProductionSkill().empty())
+    {
+      return item.isResource() ? 1 : 0;
+    }
+
     int bestQualifiedLevel = 0;
 
     for (const auto& [requiredSkillToken, requiredLevel] : item.getProductionSkill())
@@ -2714,13 +2747,27 @@ namespace
 
       case SimulatedCommandKind::Tax:
       {
-        if (simulation.remainingTaxableIncome <= 0 || !hasCombSkillAtLeastOne(*originUnit))
+        if (simulation.remainingTaxableIncome <= 0)
         {
           return;
         }
 
-        auto originCountsIter = simulation.itemCountsByUnit.find(originUnitNumber);
-        if (originCountsIter == simulation.itemCountsByUnit.end())
+        std::map<int, std::map<std::wstring, int>>& originItemCountsMap =
+          isNewUnit ? simulation.itemCountsByNewUnit : simulation.itemCountsByUnit;
+        std::map<int, std::map<std::wstring, int>>& originSkillsMap =
+          isNewUnit ? simulation.skillsByNewUnit : simulation.skillsByUnit;
+
+        auto originCountsIter = originItemCountsMap.find(originUnitNumber);
+        if (originCountsIter == originItemCountsMap.end())
+        {
+          return;
+        }
+
+        const auto originSkillsIter = originSkillsMap.find(originUnitNumber);
+        const bool hasCombatSkill = originSkillsIter != originSkillsMap.end()
+          ? hasCombSkillAtLeastOne(originSkillsIter->second)
+          : (!isNewUnit && originUnit && hasCombSkillAtLeastOne(*originUnit));
+        if (!hasCombatSkill)
         {
           return;
         }
@@ -3833,11 +3880,24 @@ namespace
   {
     RegionCommandSimulation simulation;
     std::vector<ScheduledCommand> scheduledCommands;
+    int latestReportMonth = 0;
+    int latestReportYear = 0;
+    const bool hasLatestReportPeriod =
+      appData.reportRepository().getLatestPeriod(latestReportMonth, latestReportYear);
 
     const UnitRepository& unitRepository = appData.unitRepository();
     for (std::size_t index = 0; index < unitRepository.size(); ++index)
     {
       const Unit& candidate = unitRepository.at(index);
+      if (!isCurrentReportSnapshot(candidate.getMonth(),
+                                   candidate.getYear(),
+                                   hasLatestReportPeriod,
+                                   latestReportMonth,
+                                   latestReportYear))
+      {
+        continue;
+      }
+
       const int unitNumber = candidate.getUnitNumber();
       if (candidate.getXCoordinate() == regionX &&
           candidate.getYCoordinate() == regionY &&
@@ -3864,6 +3924,15 @@ namespace
     for (std::size_t index = 0; index < unitNewRepository.size(); ++index)
     {
       const UnitNew& candidate = unitNewRepository.at(index);
+      if (!isCurrentReportSnapshot(candidate.getMonth(),
+                                   candidate.getYear(),
+                                   hasLatestReportPeriod,
+                                   latestReportMonth,
+                                   latestReportYear))
+      {
+        continue;
+      }
+
       const int unitNumber = candidate.getUnitNumber();
       if (candidate.getXCoordinate() == regionX &&
           candidate.getYCoordinate() == regionY &&
@@ -3969,6 +4038,16 @@ namespace
         {
           simulation.remainingWanted[normalizedToken] = amountPrice;
         }
+      }
+
+      if (hasLatestReportPeriod &&
+          !isCurrentReportSnapshot(region->getMonth(),
+                                   region->getYear(),
+                                   hasLatestReportPeriod,
+                                   latestReportMonth,
+                                   latestReportYear))
+      {
+        return simulation;
       }
     }
 

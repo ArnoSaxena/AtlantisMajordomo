@@ -29,6 +29,7 @@
 #include "GUI/SkillsTabContentQt.hpp"
 #include "GUI/SettingsDialogQt.hpp"
 #include "GUI/MapTabContentQt.hpp"
+#include "GUI/TradeTaxTabContentQt.hpp"
 
 #include "Data/AppData.hpp"
 #include "Data/Commands.hpp"
@@ -37,15 +38,22 @@
 #include "Data/ReportRepository.hpp"
 #include "Data/Unit.hpp"
 #include "Function/StartupAutoLoadUtils.hpp"
+#include "Function/StringUtils.hpp"
 #include "Function/TabRefreshUtils.hpp"
 #include "Function/OrderWarningService.hpp"
 
 #include "Function/OrderBusinessLogic.hpp"
 #include "Function/OrderParsingUtils.hpp"
 #include "Function/CommandSimulationService.hpp"
+#include "Function/MainFactionExportUtils.hpp"
 
 #include <QCloseEvent>
+#include <QCheckBox>
+#include <QHBoxLayout>
+#include <QLabel>
 #include <QFileDialog>
+#include <QLineEdit>
+#include <QPushButton>
 #include <QFont>
 #include <QGuiApplication>
 #include <QIcon>
@@ -94,17 +102,6 @@ struct QtUiMetrics
 
 constexpr int kDefaultMainWindowWidth = 900;
 constexpr int kDefaultMainWindowHeight = 600;
-
-QtUiProfile profileFromConfigMode(const std::wstring& configuredMode)
-{
-    std::wstring normalized = configuredMode;
-    std::transform(normalized.begin(), normalized.end(), normalized.begin(), std::towlower);
-
-    if (normalized == L"compact") return QtUiProfile::Compact;
-    if (normalized == L"standard") return QtUiProfile::Standard;
-    if (normalized == L"large") return QtUiProfile::Large;
-    return QtUiProfile::Auto;
-}
 
 QtUiProfile detectAutoProfile(QScreen* screen)
 {
@@ -178,102 +175,8 @@ QtUiMetrics metricsForProfile(QtUiProfile profile)
 
 QtUiMetrics resolveMetricsForConfig(const AppConfig& appConfig, QScreen* screen)
 {
-    const QtUiProfile requested = profileFromConfigMode(appConfig.getUiSizeMode());
+    const QtUiProfile requested = StringUtils::parseUiSizeProfileMode<QtUiProfile>(appConfig.getUiSizeMode());
     return metricsForProfile(resolveProfile(requested, screen));
-}
-
-struct MainFactionExportContext
-{
-    int factionNumber { 0 };
-    std::wstring password;
-    int nextMonth { 0 };
-    int nextYear  { 0 };
-};
-
-bool isLaterPeriod(int year, int month, int refYear, int refMonth)
-{
-    return (year > refYear) || (year == refYear && month > refMonth);
-}
-
-bool tryBuildMainFactionExportContext(const AppData& appData,
-                                      MainFactionExportContext& ctx,
-                                      std::wstring& errorMessage)
-{
-    const auto& factionRepo = appData.factionRepository();
-    const Faction* mainFaction = nullptr;
-    int mainFactionCount = 0;
-
-    for (std::size_t i = 0; i < factionRepo.size(); ++i)
-    {
-        const Faction& faction = factionRepo.at(i);
-        if (faction.isMainFaction())
-        {
-            ++mainFactionCount;
-            mainFaction = &faction;
-        }
-    }
-
-    if (mainFactionCount == 0 || mainFaction == nullptr)
-    {
-        errorMessage = L"Cannot export orders: no main faction is selected.";
-        return false;
-    }
-
-    if (mainFactionCount > 1)
-    {
-        errorMessage = L"Cannot export orders: more than one main faction is selected.";
-        return false;
-    }
-
-    int latestYear = 0, latestMonth = 0;
-    bool hasPeriod = false;
-
-    const auto& reportRepository = appData.reportRepository();
-    for (std::size_t i = 0; i < reportRepository.size(); ++i)
-    {
-        const Report& report = reportRepository.at(i);
-        const int month = report.getMonth();
-        const int year  = report.getYear();
-        if (month < 1 || month > 12) continue;
-        if (!hasPeriod || isLaterPeriod(year, month, latestYear, latestMonth))
-        {
-            latestYear  = year;
-            latestMonth = month;
-            hasPeriod   = true;
-        }
-    }
-
-    if (!hasPeriod)
-    {
-        errorMessage = L"Cannot export orders: no valid month/year was found in loaded reports.";
-        return false;
-    }
-
-    ++latestMonth;
-    if (latestMonth > 12) { latestMonth = 1; ++latestYear; }
-
-    ctx.factionNumber = mainFaction->getFactionNumber();
-    ctx.password      = mainFaction->getPassword();
-    ctx.nextMonth     = latestMonth;
-    ctx.nextYear      = latestYear;
-    errorMessage.clear();
-    return true;
-}
-
-std::wstring formatTwoDigits(int value)
-{
-    return (value < 10 ? L"0" : L"") + std::to_wstring(value);
-}
-
-std::wstring buildSuggestedOrdersFilename(const MainFactionExportContext& ctx)
-{
-    return L"orders_"
-        + std::to_wstring(ctx.factionNumber)
-        + L"_"
-        + std::to_wstring(ctx.nextYear)
-        + L"_"
-        + formatTwoDigits(ctx.nextMonth)
-        + L".ord";
 }
 
 // Returns the number of units updated on success, or -1 on error.
@@ -619,6 +522,48 @@ void MainWindow::setupTabs()
     skillsTab_   = addTab("Skills");
     factionsTab_ = addTab("Factions");
     battlesTab_  = addTab("Battles");
+    tradeTaxTab_ = addTab("Trade/Tax");
+    localEngineTab_ = addTab("Local Engine");
+}
+
+void MainWindow::prepareLocal()
+{
+}
+
+void MainWindow::browseLocalEnginePath()
+{
+    const QString initialPath = localEnginePathEdit_ != nullptr && !localEnginePathEdit_->text().isEmpty()
+        ? localEnginePathEdit_->text()
+        : QString::fromStdWString(appConfig_.getDataFilePath());
+
+    const QString filePath = QFileDialog::getOpenFileName(
+        this,
+        "Select Engine",
+        initialPath,
+        "Engine Files (*.exe *.bat *.cmd *.sh *.py);;All Files (*)");
+
+    if (!filePath.isEmpty())
+    {
+        localEnginePathEdit_->setText(filePath);
+    }
+}
+
+void MainWindow::updateLocalEngineControls()
+{
+    if (localEngineTab_ == nullptr || localEngineCheck_ == nullptr)
+    {
+        return;
+    }
+
+    const bool enabled = localEngineCheck_->isChecked();
+    const auto controls = localEngineTab_->findChildren<QWidget*>(QString(), Qt::FindDirectChildrenOnly);
+    for (QWidget* control : controls)
+    {
+        if (control != localEngineCheck_)
+        {
+            control->setEnabled(enabled);
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -627,6 +572,52 @@ void MainWindow::setupTabs()
 
 void MainWindow::deferredInit()
 {
+    // Local Engine tab
+    localEngineLabel_ = new QLabel("Engine", localEngineTab_);
+    localEngineCheck_ = new QCheckBox("Local", localEngineTab_);
+    localEngineCheck_->setChecked(false);
+    localEnginePathEdit_ = new QLineEdit(localEngineTab_);
+    localEnginePathEdit_->setPlaceholderText("Select engine path");
+    localEngineBrowseButton_ = new QPushButton("Browse", localEngineTab_);
+
+    auto* engineLayout = new QHBoxLayout();
+    engineLayout->setContentsMargins(0, 0, 0, 0);
+    engineLayout->addWidget(localEngineLabel_);
+    engineLayout->addWidget(localEnginePathEdit_, 1);
+    engineLayout->addWidget(localEngineBrowseButton_);
+
+    auto* localEngineLayout = new QVBoxLayout(localEngineTab_);
+    localEngineLayout->setContentsMargins(12, 12, 12, 12);
+    localEngineLayout->addWidget(localEngineCheck_);
+    localEngineLayout->addLayout(engineLayout);
+    localEngineLayout->addStretch();
+
+    connect(localEngineCheck_, &QCheckBox::toggled, this, [this](bool checked)
+    {
+        if (checked)
+        {
+            const auto reply = QMessageBox::question(this,
+                                                    "Local Engine",
+                                                    "Prepare local?",
+                                                    QMessageBox::StandardButton::Ok | QMessageBox::StandardButton::Cancel,
+                                                    QMessageBox::StandardButton::Cancel);
+
+            if (reply != QMessageBox::StandardButton::Ok)
+            {
+                localEngineCheck_->setChecked(false);
+                updateLocalEngineControls();
+                return;
+            }
+
+            prepareLocal();
+        }
+
+        updateLocalEngineControls();
+    });
+
+    connect(localEngineBrowseButton_, &QPushButton::clicked, this, &MainWindow::browseLocalEnginePath);
+    updateLocalEngineControls();
+
     // Reports tab
     reportsTabContent_ = new ReportsTabContentQt(appData_, appConfig_, reportsTab_);
     QVBoxLayout* reportsLayout = new QVBoxLayout(reportsTab_);
@@ -645,6 +636,14 @@ void MainWindow::deferredInit()
     battlesLayout->setContentsMargins(0, 0, 0, 0);
     battlesLayout->addWidget(battlesTabContent_);
         connect(battlesTabContent_, &BattlesTabContentQt::navigateToMap,
+            this, &MainWindow::onNavigateToMap);
+
+    // Trade/Tax tab
+    tradeTaxTabContent_ = new TradeTaxTabContentQt(appData_, tradeTaxTab_);
+    QVBoxLayout* tradeTaxLayout = new QVBoxLayout(tradeTaxTab_);
+    tradeTaxLayout->setContentsMargins(0, 0, 0, 0);
+    tradeTaxLayout->addWidget(tradeTaxTabContent_);
+        connect(tradeTaxTabContent_, &TradeTaxTabContentQt::navigateToRegion,
             this, &MainWindow::onNavigateToMap);
 
     // Items tab
@@ -680,6 +679,15 @@ void MainWindow::deferredInit()
             this, [this]() {
                 if (eventsTabContent_) {
                     eventsTabContent_->refresh();
+                }
+            });
+    connect(mapTabContent_, &MapTabContentQt::ordersChanged,
+            this, [this]() {
+                if (eventsTabContent_) {
+                    eventsTabContent_->refresh();
+                }
+                if (tradeTaxTabContent_) {
+                    tradeTaxTabContent_->refresh();
                 }
             });
 
@@ -722,6 +730,7 @@ void MainWindow::refreshAllTabs()
         [this]() { if (skillsTabContent_) { skillsTabContent_->refresh(); } },
         [this]() { if (factionsTabContent_) { factionsTabContent_->refresh(); } },
         [this]() { if (battlesTabContent_) { battlesTabContent_->refresh(); } },
+        [this]() { if (tradeTaxTabContent_) { tradeTaxTabContent_->refresh(); } },
         {}
     });
 
@@ -830,6 +839,7 @@ void MainWindow::onFileLoadReport()
                                     appData_.factionRepository(),
                                     appData_.regionRepository(),
                                     appData_.unitRepository(),
+                                    appData_.unitNewRepository(),
                                     appData_.battleRepository(),
                                     appData_.eventRepository(),
                                     appData_.itemRepository(),
@@ -881,6 +891,7 @@ void MainWindow::onFileImportData()
                                 appData_.factionRepository(),
                                 appData_.regionRepository(),
                                 appData_.unitRepository(),
+                                appData_.unitNewRepository(),
                                 appData_.battleRepository(),
                                 appData_.eventRepository(),
                                 appData_.itemRepository(),
@@ -906,9 +917,9 @@ void MainWindow::onFileImportData()
 
 void MainWindow::onFileExportOrders()
 {
-    MainFactionExportContext ctx;
+    MainFactionExportUtils::ExportContext ctx;
     std::wstring errorMessage;
-    if (!tryBuildMainFactionExportContext(appData_, ctx, errorMessage))
+    if (!MainFactionExportUtils::tryBuildContext(appData_, ctx, errorMessage))
     {
         QMessageBox::warning(this, "Export Orders", QString::fromStdWString(errorMessage));
         return;
@@ -919,7 +930,8 @@ void MainWindow::onFileExportOrders()
     if (initialDir.isEmpty())
         initialDir = dirFromPath(appConfig_.getSaveFilePath());
 
-    const QString suggestedName = QString::fromStdWString(buildSuggestedOrdersFilename(ctx));
+    const QString suggestedName = QString::fromStdWString(
+        MainFactionExportUtils::buildSuggestedOrdersFilename(ctx));
     const QString initialPath   = initialDir.isEmpty()
         ? suggestedName
         : initialDir + QLatin1Char('/') + suggestedName;

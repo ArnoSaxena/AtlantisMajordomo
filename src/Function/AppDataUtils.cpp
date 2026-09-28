@@ -60,11 +60,11 @@ std::wstring buildDateLabelText(const AppData* appData)
     }
   };
 
-  const ReportRepository& reportRepository = appData->reportRepository();
-  for (std::size_t index = 0; index < reportRepository.size(); ++index)
+  int latestReportMonth = 0;
+  int latestReportYear = 0;
+  if (appData->reportRepository().getLatestPeriod(latestReportMonth, latestReportYear))
   {
-    const Report& report = reportRepository.at(index);
-    adoptIfLater(report.getMonth(), report.getYear());
+    adoptIfLater(latestReportMonth, latestReportYear);
   }
 
   int latestBattleMonth = 0;
@@ -120,6 +120,7 @@ bool importReportFromFile(AppData& appData,
     appData.factionRepository(),
     appData.regionRepository(),
     appData.unitRepository(),
+    appData.unitNewRepository(),
     appData.battleRepository(),
     appData.eventRepository(),
     appData.itemRepository(),
@@ -137,23 +138,8 @@ bool importReportFromFile(AppData& appData,
 std::vector<WarningRow> getWarningsForLatestPeriod(const AppData& appData)
 {
   int latestMonth = 0;
-  int latestYear  = 0;
-  const auto& reportRepo = appData.reportRepository();
-  for (std::size_t i = 0; i < reportRepo.size(); ++i)
-  {
-    const Report& r = reportRepo.at(i);
-    const int rm = r.getMonth();
-    const int ry = r.getYear();
-    if (rm >= 1 && rm <= 12 && ry > 0)
-    {
-      if (ry > latestYear || (ry == latestYear && rm > latestMonth))
-      {
-        latestMonth = rm;
-        latestYear  = ry;
-      }
-    }
-  }
-  const bool hasLatestPeriod = (latestMonth >= 1 && latestMonth <= 12 && latestYear > 0);
+  int latestYear = 0;
+  const bool hasLatestPeriod = appData.reportRepository().getLatestPeriod(latestMonth, latestYear);
 
   std::vector<WarningRow> result;
 

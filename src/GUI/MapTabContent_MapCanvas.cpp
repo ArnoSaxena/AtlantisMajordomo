@@ -36,6 +36,8 @@
 #include "Data/RegionRepository.hpp"
 #include "Data/Skill.hpp"
 #include "Data/Structure.hpp"
+#include "Data/Unit.hpp"
+#include "Data/UnitRepository.hpp"
 #include "GUI/ControlIds.hpp"
 #include "GUI/OrdersEditorUtils.hpp"
 #include "Function/AppDataUtils.hpp"
@@ -58,6 +60,7 @@
 #include <set>
 #include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
 #include <windowsx.h>
 
@@ -843,6 +846,29 @@ void MapTabContent::paintMap(HDC hdc) const
   const bool hasLatestBattlePeriod =
     latestBattlePeriodMonth >= 1 && latestBattlePeriodMonth <= 12 && latestBattlePeriodYear > 0;
 
+  const auto hasMainFactionGuard = [this](const Region& region) -> bool {
+    if (!appData_)
+    {
+      return false;
+    }
+
+    const int mainFactionNumber = appData_->factionRepository().getMainFactionNumber();
+    const auto& units = appData_->unitRepository();
+    for (std::size_t unitIndex = 0; unitIndex < units.size(); ++unitIndex)
+    {
+      const Unit& unit = units.at(unitIndex);
+      if (unit.getFactionNumber() == mainFactionNumber && unit.isOnGuard()
+          && unit.getXCoordinate() == region.getXCoordinate()
+          && unit.getYCoordinate() == region.getYCoordinate()
+          && unit.getZCoordinate() == selectedZ_)
+      {
+        return true;
+      }
+    }
+
+    return false;
+  };
+
   for (const auto& visual : visibleRegions_)
   {
     std::array<POINT, 6> translated = visual.polygon;
@@ -854,6 +880,7 @@ void MapTabContent::paintMap(HDC hdc) const
 
     HBRUSH fillBrush = CreateSolidBrush(getRegionFillColor(visual.region->getRegionType()));
     HGDIOBJ oldBrush = SelectObject(memoryDc, fillBrush);
+
     Polygon(memoryDc, translated.data(), static_cast<int>(translated.size()));
     SelectObject(memoryDc, oldBrush);
     DeleteObject(fillBrush);
@@ -1100,6 +1127,39 @@ void MapTabContent::paintMap(HDC hdc) const
         DeleteObject(battlePen);
       }
     }
+  }
+
+  if (appConfig_)
+  {
+    const std::array<int, 3> guardedColor = appConfig_->getGuardedRegionBorderColor();
+    HPEN guardedPen = CreatePen(
+      PS_SOLID,
+      2,
+      RGB(std::clamp(guardedColor[0], 0, 255),
+          std::clamp(guardedColor[1], 0, 255),
+          std::clamp(guardedColor[2], 0, 255)));
+    HGDIOBJ oldGuardedPen = SelectObject(memoryDc, guardedPen);
+    HGDIOBJ oldGuardedBrush = SelectObject(memoryDc, GetStockObject(NULL_BRUSH));
+
+    for (const auto& visual : visibleRegions_)
+    {
+      if (!visual.region || !hasMainFactionGuard(*visual.region))
+      {
+        continue;
+      }
+
+      std::array<POINT, 6> translated = visual.polygon;
+      for (auto& point : translated)
+      {
+        point.x -= scrollX_;
+        point.y -= scrollY_;
+      }
+      Polygon(memoryDc, translated.data(), static_cast<int>(translated.size()));
+    }
+
+    SelectObject(memoryDc, oldGuardedBrush);
+    SelectObject(memoryDc, oldGuardedPen);
+    DeleteObject(guardedPen);
   }
 
   SelectObject(memoryDc, oldPen);
@@ -1415,6 +1475,59 @@ void MapTabContent::paintMap(HDC hdc) const
         }
       }
     }
+  }
+
+  if (appData_)
+  {
+    constexpr std::array<const wchar_t*, 6> directions = { L"NW", L"N", L"NE", L"SE", L"S", L"SW" };
+    constexpr std::array<std::pair<std::size_t, std::size_t>, 6> edgeVertices = {
+      std::pair<std::size_t, std::size_t>{ 0, 1 },
+      { 1, 2 },
+      { 2, 3 },
+      { 3, 4 },
+      { 4, 5 },
+      { 5, 0 }
+    };
+    HPEN missingExitPen = CreatePen(PS_SOLID, 2, RGB(255, 0, 0));
+    HGDIOBJ oldMissingExitPen = SelectObject(memoryDc, missingExitPen);
+
+    for (const auto& visual : visibleRegions_)
+    {
+      if (!visual.region || !visual.region->getVisited())
+      {
+        continue;
+      }
+
+      std::set<std::wstring> availableExitDirections;
+      for (const std::wstring& direction : visual.region->getExitDirections())
+      {
+        const std::wstring normalizedDirection = HexDirectionUtils::normalizeHexDirection(direction);
+        if (!normalizedDirection.empty())
+        {
+          availableExitDirections.insert(normalizedDirection);
+        }
+      }
+
+      for (std::size_t index = 0; index < directions.size(); ++index)
+      {
+        if (availableExitDirections.find(directions[index]) != availableExitDirections.end())
+        {
+          continue;
+        }
+
+        const auto [firstVertex, secondVertex] = edgeVertices[index];
+        MoveToEx(memoryDc,
+                 visual.polygon[firstVertex].x - scrollX_,
+                 visual.polygon[firstVertex].y - scrollY_,
+                 nullptr);
+        LineTo(memoryDc,
+               visual.polygon[secondVertex].x - scrollX_,
+               visual.polygon[secondVertex].y - scrollY_);
+      }
+    }
+
+    SelectObject(memoryDc, oldMissingExitPen);
+    DeleteObject(missingExitPen);
   }
 
   BitBlt(

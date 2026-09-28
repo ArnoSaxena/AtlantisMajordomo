@@ -35,6 +35,7 @@ class ItemsTabContentQt;
 class MapTabContentQt;
 class ReportsTabContentQt;
 class SkillsTabContentQt;
+class TradeTaxTabContentQt;
 
 /**
  * @brief Top-level application window for the Qt / Linux build.
@@ -89,6 +90,9 @@ private:
     void refreshAllTabs();
     void applyConfigToAppData();
     void applyQtUiSizing();
+    void prepareLocal();
+    void browseLocalEnginePath();
+    void updateLocalEngineControls();
 
     AppData&    appData_;
     AppConfig   appConfig_;
@@ -101,6 +105,7 @@ private:
     ItemsTabContentQt*    itemsTabContent_     { nullptr };
     SkillsTabContentQt*   skillsTabContent_    { nullptr };
     MapTabContentQt*      mapTabContent_       { nullptr };
+    TradeTaxTabContentQt* tradeTaxTabContent_   { nullptr };
 
     QWidget*    reportsTab_  { nullptr };
     QWidget*    mapTab_      { nullptr };
@@ -109,5 +114,12 @@ private:
     QWidget*    skillsTab_   { nullptr };
     QWidget*    factionsTab_ { nullptr };
     QWidget*    battlesTab_  { nullptr };
+    QWidget*    tradeTaxTab_ { nullptr };
+    QWidget*    localEngineTab_ { nullptr };
+
+    QCheckBox* localEngineCheck_ { nullptr };
+    QLabel*    localEngineLabel_ { nullptr };
+    QLineEdit* localEnginePathEdit_ { nullptr };
+    QPushButton* localEngineBrowseButton_ { nullptr };
 };
 

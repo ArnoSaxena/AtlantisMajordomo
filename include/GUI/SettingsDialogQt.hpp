@@ -89,6 +89,7 @@ private:
     QLineEdit*   reportFolderPathEdit_    { nullptr };
     QLineEdit*   mainFactionUnitColorEdit_{ nullptr };
     QLineEdit*   otherFactionUnitColorEdit_{ nullptr };
+    QLineEdit*   alternateUnitRowBackgroundColorEdit_{ nullptr };
     QComboBox*   uiSizeModeCombo_         { nullptr };
     QComboBox*   mapHexSizeModeCombo_     { nullptr };
     QCheckBox*   onlyLeaderCanTeachCheck_ { nullptr };

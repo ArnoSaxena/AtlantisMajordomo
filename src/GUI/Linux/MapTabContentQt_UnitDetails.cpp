@@ -233,6 +233,32 @@ void applyUnitsListFactionTextColors(QTableWidget* unitsList,
     }
 }
 
+void applyUnitsListRowBackgroundColors(QTableWidget* unitsList,
+                                       const AppConfig* appConfig)
+{
+    if (!unitsList || !appConfig)
+    {
+        return;
+    }
+
+    const std::array<int, 3> rgb = appConfig->getAlternateUnitRowBackgroundColor();
+    const QBrush alternateBrush(QColor(
+        std::clamp(rgb[0], 0, 255),
+        std::clamp(rgb[1], 0, 255),
+        std::clamp(rgb[2], 0, 255)));
+    for (int row = 0; row < unitsList->rowCount(); ++row)
+    {
+        for (int column = 0; column < unitsList->columnCount(); ++column)
+        {
+            QTableWidgetItem* item = unitsList->item(row, column);
+            if (item)
+            {
+                item->setBackground((row % 2) != 0 ? alternateBrush : QBrush());
+            }
+        }
+    }
+}
+
 } // namespace
 
 void MapTabContentQt::refresh()
@@ -497,7 +523,8 @@ void MapTabContentQt::populateUnitsForSelectedRegion()
 
         const std::wstring flagsText = StringUtils::joinLines(unit.getFlags(), L", ");
         const std::wstring skillsText = SkillFormattingUtils::formatSkills(unit.getSkills());
-        const std::wstring monthLongOrderText = OrderParsingUtils::findMonthLongOrderText(unit.getOrders());
+        const std::wstring monthLongOrderText = OrderParsingUtils::findMonthLongOrderText(
+            OrderParsingUtils::filterOrdersIgnoringFormBlocks(unit.getOrders()));
         const std::wstring warningIndicator = unit.getWarnings().empty() ? L"" : L"!";
 
         const bool isDamagedInLatestBattle = hasLatestBattlePeriod &&
@@ -632,6 +659,33 @@ void MapTabContentQt::populateUnitsForSelectedRegion()
 
     const auto regionStructures = appData_->structureRepository().findByCoordinates(
         selectedRegionX_, selectedRegionY_, selectedZ_);
+    const auto structureHasDisplayedUnit = [&](const Structure& structure) -> bool
+    {
+        if (structure.getStructureId() == 0)
+        {
+            return false;
+        }
+
+        for (std::size_t index = 0; index < unitRepository.size(); ++index)
+        {
+            const Unit& unit = unitRepository.at(index);
+            if (hasLatestPeriod && (unit.getMonth() != latestMonth || unit.getYear() != latestYear))
+            {
+                continue;
+            }
+
+            if (unit.getStructureId() == structure.getStructureId() &&
+                unit.getXCoordinate() == structure.getXCoordinate() &&
+                unit.getYCoordinate() == structure.getYCoordinate() &&
+                unit.getZCoordinate() == structure.getZCoordinate())
+            {
+                return true;
+            }
+        }
+
+        return false;
+    };
+
     for (const Structure* structure : regionStructures)
     {
         if (!structure)
@@ -644,11 +698,7 @@ void MapTabContentQt::populateUnitsForSelectedRegion()
             continue;
         }
 
-        if (appData_->unitRepository().hasUnitInStructureAtCoordinates(
-            structure->getStructureId(),
-            structure->getXCoordinate(),
-            structure->getYCoordinate(),
-            structure->getZCoordinate()))
+        if (structureHasDisplayedUnit(*structure))
         {
             continue;
         }
@@ -693,6 +743,7 @@ void MapTabContentQt::populateUnitsForSelectedRegion()
         selectedRegionX_,
         selectedRegionY_,
         selectedZ_);
+    applyUnitsListRowBackgroundColors(unitsList_, appConfig_);
 
     updateSelectedUnitFromList();
 }
@@ -786,6 +837,7 @@ void MapTabContentQt::sortUnitsListByColumn(int columnIndex, bool ascending)
         selectedRegionX_,
         selectedRegionY_,
         selectedZ_);
+    applyUnitsListRowBackgroundColors(unitsList_, appConfig_);
 }
 
 void MapTabContentQt::updateUnitsListSortHeaderMarkers()

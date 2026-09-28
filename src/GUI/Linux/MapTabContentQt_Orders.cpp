@@ -130,6 +130,7 @@ void MapTabContentQt::saveOrdersToSelectedUnit()
         updateRegionDetailsView(selectedRegion);
     }
     updateWarningsSummaryLabel();
+    emit ordersChanged();
 }
 
 void MapTabContentQt::appendOrderLineToOrdersEditor(const std::wstring& orderLine)

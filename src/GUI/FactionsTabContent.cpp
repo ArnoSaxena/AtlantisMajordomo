@@ -664,20 +664,7 @@ void FactionsTabContent::updateFactionsList()
   for (int row = 0; row < static_cast<int>(sortedFactions.size()); ++row)
   {
     const Faction* faction = sortedFactions[static_cast<std::size_t>(row)];
-    std::wstring listText;
-    if (faction->isMainFaction())
-    {
-      listText = L"* ";
-    }
-
-    if (!faction->getName().empty())
-    {
-      listText += faction->getName() + L" (" + std::to_wstring(faction->getFactionNumber()) + L")";
-    }
-    else
-    {
-      listText += std::to_wstring(faction->getFactionNumber());
-    }
+    const std::wstring listText = StringUtils::formatFactionListLabel(*faction);
 
     LVITEMW item {};
     item.mask = LVIF_TEXT | LVIF_PARAM;

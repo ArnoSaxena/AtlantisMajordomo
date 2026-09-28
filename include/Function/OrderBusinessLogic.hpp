@@ -29,6 +29,8 @@
 #include <map>
 
 class AppData;
+class UnitNewRepository;
+class UnitRepository;
 
 namespace OrderBusinessLogic
 {
@@ -72,6 +74,12 @@ bool rewriteFactionDeclareOrders(AppData& appData,
 void syncOrderRepositoryForSavedUnit(AppData& appData,
 									 int originUnitNumber,
 									 bool recalculateAfterOrdersValues = true);
+
+// Rebuilds FORM NEW preview entries from all current unit orders.
+void rebuildUnitNewRepositoryFromOrders(const UnitRepository& unitRepository,
+											UnitNewRepository& unitNewRepository,
+											int currentMonth,
+											int currentYear);
 
 // Returns the next available unit number for a FORM order at the given coordinates.
 int computeNextNewUnitNumber(AppData* appData, int x, int y, int z);

@@ -72,6 +72,11 @@ bool DataSerializer::saveToFile(const AppData& appData, const std::wstring& file
 
     file << L"{\n";
     file << L"  \"version\": 1,\n";
+    int latestReportMonth = 0;
+    int latestReportYear = 0;
+    appData.reportRepository().getLatestPeriod(latestReportMonth, latestReportYear);
+    file << L"  \"latestReportMonth\": " << latestReportMonth << L",\n";
+    file << L"  \"latestReportYear\": " << latestReportYear << L",\n";
     file << L"  \"factions\": [\n";
 
     const FactionRepository& factionRepo = appData.factionRepository();
@@ -1027,6 +1032,29 @@ bool DataSerializer::loadFromFile(AppData& appData, const std::wstring& filePath
     file.close();
 
     appData.clear();
+
+    int latestReportMonth = 0;
+    int latestReportYear = 0;
+    bool hasLatestReportMonth = false;
+    bool hasLatestReportYear = false;
+    const auto extractTopLevelNumber = [&content](const std::wstring& key, int& value) -> bool
+    {
+      const size_t keyPos = content.find(L"\"" + key + L"\"");
+      if (keyPos == std::wstring::npos)
+      {
+        return false;
+      }
+
+      const size_t colonPos = content.find(L':', keyPos + key.size() + 2);
+      if (colonPos == std::wstring::npos)
+      {
+        return false;
+      }
+
+      return parseJsonNumber(extractFieldValue(content, colonPos), value);
+    };
+    hasLatestReportMonth = extractTopLevelNumber(L"latestReportMonth", latestReportMonth);
+    hasLatestReportYear = extractTopLevelNumber(L"latestReportYear", latestReportYear);
 
     // Parse factions
     std::wstring factionsArray;
@@ -2086,6 +2114,11 @@ bool DataSerializer::loadFromFile(AppData& appData, const std::wstring& filePath
     }
 
     // OrderRepository is derived data: rebuild it from loaded unit orders.
+    if (hasLatestReportMonth && hasLatestReportYear)
+    {
+      appData.reportRepository().setLatestPeriod(latestReportMonth, latestReportYear);
+    }
+
     appData.orderRepository().clear();
     for (std::size_t index = 0; index < appData.unitRepository().size(); ++index)
     {

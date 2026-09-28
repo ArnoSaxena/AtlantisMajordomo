@@ -129,6 +129,7 @@ signals:
     void navigateToMap(int x, int y, int z);
 
     void warningsChanged();
+    void ordersChanged();
 
 private slots:
     // -----------------------------------------------------------------------

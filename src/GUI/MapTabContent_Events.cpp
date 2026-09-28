@@ -335,6 +335,15 @@ bool MapTabContent::handleNotify(const NMHDR* hdr)
         return true;
       }
 
+      if (appConfig_ && (row % 2) != 0)
+      {
+        const std::array<int, 3> rowRgb = appConfig_->getAlternateUnitRowBackgroundColor();
+        customDraw->clrTextBk = RGB(
+          std::clamp(rowRgb[0], 0, 255),
+          std::clamp(rowRgb[1], 0, 255),
+          std::clamp(rowRgb[2], 0, 255));
+      }
+
       const auto resolveMainFactionNumber = [this]() -> int
       {
         if (!appData_)
@@ -441,9 +450,26 @@ bool MapTabContent::handleNotify(const NMHDR* hdr)
 
           const bool isSelected =
             (ListView_GetItemState(unitsList_, row, LVIS_SELECTED) & LVIS_SELECTED) != 0;
-          FillRect(customDraw->nmcd.hdc,
-                   &cellRect,
-                   GetSysColorBrush(isSelected ? COLOR_HIGHLIGHT : COLOR_WINDOW));
+          HBRUSH backgroundBrush = GetSysColorBrush(COLOR_WINDOW);
+          HBRUSH alternateBrush = nullptr;
+          if (isSelected)
+          {
+            backgroundBrush = GetSysColorBrush(COLOR_HIGHLIGHT);
+          }
+          else if (appConfig_ && (row % 2) != 0)
+          {
+            const std::array<int, 3> rowRgb = appConfig_->getAlternateUnitRowBackgroundColor();
+            alternateBrush = CreateSolidBrush(RGB(
+              std::clamp(rowRgb[0], 0, 255),
+              std::clamp(rowRgb[1], 0, 255),
+              std::clamp(rowRgb[2], 0, 255)));
+            backgroundBrush = alternateBrush;
+          }
+          FillRect(customDraw->nmcd.hdc, &cellRect, backgroundBrush);
+          if (alternateBrush)
+          {
+            DeleteObject(alternateBrush);
+          }
           SetBkMode(customDraw->nmcd.hdc, TRANSPARENT);
           SetTextColor(customDraw->nmcd.hdc,
                        hasFactionRowTextColor ? factionRowTextColor : GetSysColor(COLOR_WINDOWTEXT));
@@ -532,7 +558,7 @@ bool MapTabContent::handleNotify(const NMHDR* hdr)
           {
             customDraw->clrText = RGB(200, 0, 0);
           }
-          customDraw->clrTextBk = CLR_DEFAULT;
+          customDraw->clrTextBk = (appConfig_ && (row % 2) != 0) ? customDraw->clrTextBk : CLR_DEFAULT;
           notifyResult_ = CDRF_NEWFONT;
           return true;
         }
@@ -545,7 +571,7 @@ bool MapTabContent::handleNotify(const NMHDR* hdr)
       if (customDraw->iSubItem > kStructureSubItem)
       {
         customDraw->clrText = hasFactionRowTextColor ? factionRowTextColor : CLR_DEFAULT;
-        customDraw->clrTextBk = CLR_DEFAULT;
+        customDraw->clrTextBk = (appConfig_ && (row % 2) != 0) ? customDraw->clrTextBk : CLR_DEFAULT;
         notifyResult_ = CDRF_NEWFONT;
         return true;
       }
@@ -574,7 +600,7 @@ bool MapTabContent::handleNotify(const NMHDR* hdr)
       }
 
       customDraw->clrText = hasFactionRowTextColor ? factionRowTextColor : RGB(0, 140, 0);
-      customDraw->clrTextBk = CLR_DEFAULT;
+      customDraw->clrTextBk = (appConfig_ && (row % 2) != 0) ? customDraw->clrTextBk : CLR_DEFAULT;
       notifyResult_ = CDRF_NEWFONT;
       return true;
     }

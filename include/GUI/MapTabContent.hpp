@@ -207,6 +207,7 @@ public:
   *           selects the period and highlights the matching battle in the list.
   */
   void setNavigationCallback(std::function<void(const NavigationRequest&)> callback);
+  void setOrdersChangedCallback(std::function<void()> callback);
 
 private:
   enum class DragMode
@@ -313,6 +314,7 @@ private:
   int unitsListSortColumn_ { -1 };
   bool unitsListSortAscending_ { true };
   std::function<void(const NavigationRequest&)> navigationCallback_;
+  std::function<void()> ordersChangedCallback_;
 
   static LRESULT CALLBACK mapCanvasWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp);
   static LRESULT CALLBACK unitSearchEditSubclassProc(HWND hwnd,

@@ -79,6 +79,8 @@ private:
   static constexpr int IDC_MAP_HEX_SIZE_MODE_COMBO = GUI::ControlIds::kSettingsMapHexSizeModeCombo;
   static constexpr int IDC_MAIN_FACTION_UNIT_COLOR_EDIT = GUI::ControlIds::kSettingsMainFactionUnitColorEdit;
   static constexpr int IDC_OTHER_FACTION_UNIT_COLOR_EDIT = GUI::ControlIds::kSettingsOtherFactionUnitColorEdit;
+  static constexpr int IDC_ALTERNATE_UNIT_ROW_BACKGROUND_COLOR_EDIT = GUI::ControlIds::kSettingsAlternateUnitRowBackgroundColorEdit;
+  static constexpr int IDC_GUARDED_REGION_BORDER_COLOR_EDIT = GUI::ControlIds::kSettingsGuardedRegionBorderColorEdit;
   //static constexpr int IDC_FLYING_SHIPS_ADD = GUI::ControlIds::kSettingsFlyingShipsAdd;
   //static constexpr int IDC_FLYING_SHIPS_REMOVE = GUI::ControlIds::kSettingsFlyingShipsRemove;
   static constexpr int IDC_FULL_MONTH_ORDERS_ADD = GUI::ControlIds::kSettingsFullMonthOrdersAdd;
@@ -103,6 +105,8 @@ private:
   HWND mapHexSizeModeCombo_ { nullptr };
   HWND mainFactionUnitColorEdit_ { nullptr };
   HWND otherFactionUnitColorEdit_ { nullptr };
+  HWND alternateUnitRowBackgroundColorEdit_ { nullptr };
+  HWND guardedRegionBorderColorEdit_ { nullptr };
   //HWND flyingShipsList_ { nullptr };
   HWND fullMonthOrdersList_ { nullptr };
   HWND magicTriggersList_ { nullptr };

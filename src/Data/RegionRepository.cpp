@@ -133,8 +133,9 @@ bool RegionRepository::upsertRegion(int xCoordinate,
     const bool isSameReportPeriod = (newYear == existing->getYear() && newMonth == existing->getMonth());
     const bool shouldPromoteVisited = visited && !existing->getVisited();
 
-    if (isLater || isSameReportPeriod || shouldPromoteVisited)
+    if (isLater || isSameReportPeriod)
     {
+      const bool wasVisited = existing->getVisited();
       existing->setMonth(newMonth);
       existing->setYear(newYear);
       existing->setZCoordinate(zCoordinate);
@@ -154,7 +155,14 @@ bool RegionRepository::upsertRegion(int xCoordinate,
       existing->setResourcesAfterOrders({});
       existing->setWantedAfterOrders({});
       existing->setForSaleAfterOrders({});
-      existing->setVisited(visited);
+      existing->setVisited(wasVisited || visited);
+      lastError_.clear();
+      return true;
+    }
+
+    if (shouldPromoteVisited)
+    {
+      existing->setVisited(true);
       lastError_.clear();
       return true;
     }

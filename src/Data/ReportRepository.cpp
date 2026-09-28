@@ -31,6 +31,7 @@
 #include "Data/StructInfoRepository.hpp"
 #include "Data/OrderRepository.hpp"
 #include "Data/UnitRepository.hpp"
+#include "Data/UnitNewRepository.hpp"
 #include "DebugLog.hpp"
 #include "Function/CommandSimulationService.hpp"
 #include "Function/OrderBusinessLogic.hpp"
@@ -111,6 +112,7 @@ bool ReportRepository::addFromFile(const std::wstring& filePath,
                                   FactionRepository& factionRepository,
                                   RegionRepository& regionRepository,
                                   UnitRepository& unitRepository,
+                                  UnitNewRepository& unitNewRepository,
                                   BattleRepository& battleRepository,
                                   EventRepository& eventRepository,
                                   ItemRepository& itemRepository,
@@ -151,6 +153,7 @@ bool ReportRepository::addFromFile(const std::wstring& filePath,
   const auto& declaredFactionNames = report.getFactionDeclaredFactionNames();
 
   bool shouldRebuildTrackedOrders = reports_.empty();
+  bool shouldRebuildUnitNewEntries = false;
   if (!reports_.empty())
   {
     int latestYear = reports_.front().getYear();
@@ -164,6 +167,7 @@ bool ReportRepository::addFromFile(const std::wstring& filePath,
       }
     }
 
+    shouldRebuildUnitNewEntries = isLaterPeriod(year, month, latestYear, latestMonth);
     shouldRebuildTrackedOrders = isSameOrLaterPeriod(year, month, latestYear, latestMonth);
   }
 
@@ -362,7 +366,13 @@ bool ReportRepository::addFromFile(const std::wstring& filePath,
   itemsAndDependentsFuture.get();
   DebugLog(L"ReportRepository::addFromFile() - all parse stages done, adding report to collection");
 
+  if (shouldRebuildUnitNewEntries)
+  {
+    OrderBusinessLogic::rebuildUnitNewRepositoryFromOrders(unitRepository, unitNewRepository, month, year);
+  }
+
   reports_.push_back(std::move(report));
+  setLatestPeriod(month, year);
 
   if (shouldRebuildTrackedOrders)
   {
@@ -407,6 +417,12 @@ bool ReportRepository::removeAt(std::size_t index)
   }
 
   reports_.erase(reports_.begin() + static_cast<std::ptrdiff_t>(index));
+  latestMonth_ = 0;
+  latestYear_ = 0;
+  for (const Report& report : reports_)
+  {
+    setLatestPeriod(report.getMonth(), report.getYear());
+  }
   lastError_.clear();
   return true;
 }
@@ -414,6 +430,8 @@ bool ReportRepository::removeAt(std::size_t index)
 void ReportRepository::clear()
 {
   reports_.clear();
+  latestMonth_ = 0;
+  latestYear_ = 0;
   lastError_.clear();
 }
 
@@ -425,6 +443,28 @@ std::size_t ReportRepository::size() const
 const Report& ReportRepository::at(std::size_t index) const
 {
   return reports_.at(index);
+}
+
+bool ReportRepository::getLatestPeriod(int& month, int& year) const
+{
+  month = latestMonth_;
+  year = latestYear_;
+  return latestYear_ > 0;
+}
+
+void ReportRepository::setLatestPeriod(int month, int year)
+{
+  if (month < 1 || month > 12 || year <= 0)
+  {
+    return;
+  }
+
+  if (year > latestYear_ ||
+      (year == latestYear_ && month > latestMonth_))
+  {
+    latestMonth_ = month;
+    latestYear_ = year;
+  }
 }
 
 const std::wstring& ReportRepository::getLastError() const

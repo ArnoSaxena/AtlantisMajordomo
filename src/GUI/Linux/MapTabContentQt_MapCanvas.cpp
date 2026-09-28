@@ -48,6 +48,7 @@
 #include <array>
 #include <cmath>
 #include <set>
+#include <utility>
 
 namespace
 {
@@ -931,6 +932,48 @@ void MapCanvasWidget::paintEvent(QPaintEvent* event)
                 painter.setBrush(QBrush(arrowColor));
                 painter.drawPolygon(arrowHead);
             }
+        }
+    }
+
+    constexpr std::array<const wchar_t*, 6> directions = { L"NW", L"N", L"NE", L"SE", L"S", L"SW" };
+    constexpr std::array<std::pair<std::size_t, std::size_t>, 6> edgeVertices = {
+        std::pair<std::size_t, std::size_t>{ 0, 1 },
+        { 1, 2 },
+        { 2, 3 },
+        { 3, 4 },
+        { 4, 5 },
+        { 5, 0 }
+    };
+    painter.setPen(QPen(QColor(255, 0, 0), 4));
+    painter.setBrush(Qt::NoBrush);
+
+    for (const RegionVisual& visual : visibleRegions_)
+    {
+        if (!visual.region || !visual.region->getVisited())
+        {
+            continue;
+        }
+
+        std::set<std::wstring> availableExitDirections;
+        for (const std::wstring& direction : visual.region->getExitDirections())
+        {
+            const std::wstring normalizedDirection = HexDirectionUtils::normalizeHexDirection(direction);
+            if (!normalizedDirection.empty())
+            {
+                availableExitDirections.insert(normalizedDirection);
+            }
+        }
+
+        for (std::size_t index = 0; index < directions.size(); ++index)
+        {
+            if (availableExitDirections.find(directions[index]) != availableExitDirections.end())
+            {
+                continue;
+            }
+
+            const auto [firstVertex, secondVertex] = edgeVertices[index];
+            painter.drawLine(visual.polygon[static_cast<int>(firstVertex)] - QPoint(scrollX_, scrollY_),
+                             visual.polygon[static_cast<int>(secondVertex)] - QPoint(scrollX_, scrollY_));
         }
     }
 }

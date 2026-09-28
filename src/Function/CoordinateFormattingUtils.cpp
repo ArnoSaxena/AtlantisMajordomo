@@ -22,6 +22,8 @@
 // 304c89c8-6d3c-4586-b0c4-fad2e67b2f65
 #include "Function/CoordinateFormattingUtils.hpp"
 
+#include <sstream>
+
 namespace CoordinateFormattingUtils
 {
 std::wstring formatCoordinates(int xCoordinate,
@@ -40,5 +42,49 @@ std::wstring formatCoordinates(int xCoordinate,
 
   result += L")";
   return result;
+}
+
+bool tryParseCoordinates(const std::wstring& coordinates, int& xCoordinate, int& yCoordinate, int& zCoordinate)
+{
+  std::wistringstream input(coordinates);
+  wchar_t delimiter = 0;
+  int parsedX = 0;
+  int parsedY = 0;
+  int parsedZ = 1;
+
+  if (!(input >> delimiter) || delimiter != L'(' || !(input >> parsedX >> delimiter) || delimiter != L',' ||
+      !(input >> parsedY))
+  {
+    return false;
+  }
+
+  input >> std::ws;
+  if (!(input >> delimiter))
+  {
+    return false;
+  }
+
+  if (delimiter == L',')
+  {
+    if (!(input >> parsedZ >> delimiter) || delimiter != L')')
+    {
+      return false;
+    }
+  }
+  else if (delimiter != L')')
+  {
+    return false;
+  }
+
+  input >> std::ws;
+  if (input.peek() != std::char_traits<wchar_t>::eof())
+  {
+    return false;
+  }
+
+  xCoordinate = parsedX;
+  yCoordinate = parsedY;
+  zCoordinate = parsedZ;
+  return true;
 }
 }

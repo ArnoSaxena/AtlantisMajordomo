@@ -2460,7 +2460,7 @@ void Report::parseEvents(EventRepository& eventRepository)
 void Report::parseOrders(FactionRepository& factionRepository, UnitRepository& unitRepository)
 {
   DebugLog(L"Report::parseOrders() - begin");
-  static const std::wregex atlantisLinePattern(L"^#atlantis\\s+(\\d+)\\s+\"([^\"]*)\"\\s*$", std::regex::icase);
+  static const std::wregex atlantisLinePattern(L"^#atlantis\\s+(\\d+)(?:\\s+\"([^\"]*)\")?\\s*$", std::regex::icase);
   static const std::wregex unitLinePattern(L"^unit\\s+(\\d+)\\b.*$", std::regex::icase);
 
   std::size_t ordersStartIndex = lines_.size();

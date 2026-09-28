@@ -36,6 +36,7 @@ struct RefreshCallbacks
   std::function<void()> refreshSkills;
   std::function<void()> refreshFactions;
   std::function<void()> refreshBattles;
+  std::function<void()> refreshTradeTax;
   std::function<void()> afterRefresh;
 };
 

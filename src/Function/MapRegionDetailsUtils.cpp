@@ -34,7 +34,9 @@
 
 #include <algorithm>
 #include <cwctype>
+#include <iomanip>
 #include <map>
+#include <sstream>
 #include <vector>
 
 namespace
@@ -106,6 +108,10 @@ std::wstring buildRegionSummaryText(const Region& region,
     details += L"Settlement Type: " + region.getSettlementType() + separator;
     details += L"Settlement Name: " + region.getSettlementName();
   }
+
+  std::wostringstream wagesText;
+  wagesText << std::fixed << std::setprecision(1) << region.getWages();
+  details += std::wstring(separator) + L"Wages: " + wagesText.str();
 
   if (!appData || selectedUnitNumber <= 0)
   {

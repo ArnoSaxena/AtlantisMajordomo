@@ -60,20 +60,6 @@ namespace
 // UserRole key used to store faction number on list/table items.
 constexpr int kFactionNumberRole = Qt::UserRole;
 
-// Build the display label for a faction as it appears in the factions list.
-QString factionListLabel(const Faction& f)
-{
-    QString label;
-    if (f.isMainFaction())
-        label = "* ";
-    if (!f.getName().empty())
-        label += QString::fromStdWString(f.getName())
-                 + " (" + QString::number(f.getFactionNumber()) + ")";
-    else
-        label += QString::number(f.getFactionNumber());
-    return label;
-}
-
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -390,7 +376,7 @@ void FactionsTabContentQt::updateFactionsList()
     for (int row = 0; row < static_cast<int>(sorted.size()); ++row)
     {
         const Faction* f = sorted[static_cast<std::size_t>(row)];
-        QListWidgetItem* item = new QListWidgetItem(factionListLabel(*f));
+        QListWidgetItem* item = new QListWidgetItem(QString::fromStdWString(StringUtils::formatFactionListLabel(*f)));
         item->setData(kFactionNumberRole, f->getFactionNumber());
         factionsList_->addItem(item);
 

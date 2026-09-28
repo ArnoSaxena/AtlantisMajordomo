@@ -36,6 +36,16 @@ static LRESULT CALLBACK panelWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 {
   switch (msg)
   {
+    case WM_COMMAND:
+    {
+      HWND parent = GetParent(hwnd);
+      if (parent)
+      {
+        return SendMessageW(parent, msg, wp, lp);
+      }
+      break;
+    }
+
     case WM_LBUTTONDOWN:
     case WM_MOUSEMOVE:
     case WM_LBUTTONUP:
@@ -184,10 +194,22 @@ void WinTabView::showTab(int index)
   {
     if (tabs_[static_cast<std::size_t>(i)].panel)
     {
-      ShowWindow(
-        tabs_[static_cast<std::size_t>(i)].panel,
-        i == index ? SW_SHOW : SW_HIDE
-      );
+      HWND panel = tabs_[static_cast<std::size_t>(i)].panel;
+      if (i == index)
+      {
+        SetWindowPos(panel,
+                     HWND_TOP,
+                     0,
+                     0,
+                     0,
+                     0,
+                     SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+        RedrawWindow(panel, nullptr, nullptr, RDW_INVALIDATE | RDW_ALLCHILDREN | RDW_UPDATENOW);
+      }
+      else
+      {
+        ShowWindow(panel, SW_HIDE);
+      }
     }
   }
 }

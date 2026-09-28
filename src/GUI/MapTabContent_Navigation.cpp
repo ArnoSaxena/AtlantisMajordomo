@@ -115,6 +115,11 @@ void MapTabContent::navigateToItemList(const std::wstring& itemToken)
   });
 }
 
+void MapTabContent::setOrdersChangedCallback(std::function<void()> callback)
+{
+  ordersChangedCallback_ = std::move(callback);
+}
+
 void MapTabContent::focusRegion(int x, int y, int z)
 {
   if (!appData_)

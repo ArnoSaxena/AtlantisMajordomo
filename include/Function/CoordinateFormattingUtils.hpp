@@ -31,4 +31,5 @@ std::wstring formatCoordinates(int xCoordinate,
                                int zCoordinate,
                                bool omitDefaultZ = true,
                                bool includeSpaces = false);
+bool tryParseCoordinates(const std::wstring& coordinates, int& xCoordinate, int& yCoordinate, int& zCoordinate);
 }

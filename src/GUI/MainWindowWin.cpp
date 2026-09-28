@@ -33,19 +33,23 @@
 #include "GUI/ControlIds.hpp"
 #include "GUI/FactionsTabContent.hpp"
 #include "GUI/ItemsTabContent.hpp"
+#include "GUI/LocalEngineTabContent.hpp"
 #include "GUI/MapTabContent.hpp"
 #include "GUI/ResourceIds.hpp"
 #include "GUI/ReportsTabContent.hpp"
 #include "GUI/SkillsTabContent.hpp"
 #include "GUI/SettingsDialog.hpp"
+#include "GUI/TradeTaxTabContent.hpp"
 #include "GUI/WinSizingUtils.hpp"
 #include "Function/OrderWarningService.hpp"
+#include "Function/StringUtils.hpp"
 #include "GUI/WinTabView.hpp"
 #include "Function/StartupAutoLoadUtils.hpp"
 #include "Function/TabRefreshUtils.hpp"
 #include "Function/OrderBusinessLogic.hpp"
 #include "Function/OrderParsingUtils.hpp"
 #include "Function/CommandSimulationService.hpp"
+#include "Function/MainFactionExportUtils.hpp"
 
 #include <commctrl.h>
 #include <commdlg.h>
@@ -56,6 +60,7 @@
 #include <array>
 #include <cwctype>
 #include <fstream>
+#include <memory>
 #include <sstream>
 #include <vector>
 
@@ -93,6 +98,8 @@ enum class InternalTabId
   Skills,
   Factions,
   Battles,
+  TradeTax,
+  LocalEngine,
 };
 
 struct TabDefinition
@@ -102,7 +109,7 @@ struct TabDefinition
   const wchar_t* label;
 };
 
-constexpr std::array<TabDefinition, 7> kTabDefinitions = {{
+constexpr std::array<TabDefinition, 9> kTabDefinitions = {{
   { InternalTabId::Reports, 10, L"Loaded Reports" },
   { InternalTabId::Map,     20, L"Map" },
   { InternalTabId::Events,  30, L"Events" },
@@ -110,6 +117,8 @@ constexpr std::array<TabDefinition, 7> kTabDefinitions = {{
   { InternalTabId::Skills,  50, L"Skills" },
   { InternalTabId::Factions, 60, L"Factions" },
   { InternalTabId::Battles, 70, L"Battles" },
+  { InternalTabId::TradeTax, 75, L"Trade/Tax" },
+  { InternalTabId::LocalEngine, 80, L"Local Engine" },
 }};
 
 static RECT getTabDisplayRect(HWND tabControl, const RECT& tabBounds)
@@ -224,30 +233,6 @@ namespace
     return placement;
   }
 
-  UiSizeProfile::Profile uiSizeProfileFromConfigMode(const std::wstring& configuredMode)
-  {
-    std::wstring normalized = configuredMode;
-    for (wchar_t& ch : normalized)
-    {
-      ch = static_cast<wchar_t>(std::towlower(ch));
-    }
-
-    if (normalized == L"compact")
-    {
-      return UiSizeProfile::Profile::Compact;
-    }
-    if (normalized == L"standard")
-    {
-      return UiSizeProfile::Profile::Standard;
-    }
-    if (normalized == L"large")
-    {
-      return UiSizeProfile::Profile::Large;
-    }
-
-    return UiSizeProfile::Profile::Auto;
-  }
-
   struct FontApplyContext
   {
     HFONT normalFont { nullptr };
@@ -346,119 +331,6 @@ namespace
     EnumChildWindows(candidateHwnd, applyFontToChildProc, reinterpret_cast<LPARAM>(&context->fonts));
     InvalidateRect(candidateHwnd, nullptr, TRUE);
     return TRUE;
-  }
-
-  struct MainFactionExportContext
-  {
-    int factionNumber { 0 };
-    std::wstring password;
-    int currentMonth { 0 };
-    int currentYear { 0 };
-    int nextMonth { 0 };
-    int nextYear { 0 };
-  };
-
-  bool isLaterPeriod(int year, int month, int referenceYear, int referenceMonth)
-  {
-    return (year > referenceYear) || (year == referenceYear && month > referenceMonth);
-  }
-
-  bool tryBuildMainFactionExportContext(const AppData& appData,
-                                        MainFactionExportContext& exportContext,
-                                        std::wstring& errorMessage)
-  {
-    const auto& factionRepository = appData.factionRepository();
-    const Faction* mainFaction = nullptr;
-    int mainFactionCount = 0;
-
-    for (std::size_t index = 0; index < factionRepository.size(); ++index)
-    {
-      const Faction& faction = factionRepository.at(index);
-      if (faction.isMainFaction())
-      {
-        ++mainFactionCount;
-        mainFaction = &faction;
-      }
-    }
-
-    if (mainFactionCount == 0 || mainFaction == nullptr)
-    {
-      errorMessage = L"Cannot export orders: no main faction is selected.";
-      return false;
-    }
-
-    if (mainFactionCount > 1)
-    {
-      errorMessage = L"Cannot export orders: more than one main faction is selected.";
-      return false;
-    }
-
-    int latestYear = 0;
-    int latestMonth = 0;
-    bool hasPeriod = false;
-
-    const auto& reportRepository = appData.reportRepository();
-    for (std::size_t index = 0; index < reportRepository.size(); ++index)
-    {
-      const Report& report = reportRepository.at(index);
-      const int month = report.getMonth();
-      const int year = report.getYear();
-      if (month < 1 || month > 12)
-      {
-        continue;
-      }
-
-      if (!hasPeriod || isLaterPeriod(year, month, latestYear, latestMonth))
-      {
-        latestYear = year;
-        latestMonth = month;
-        hasPeriod = true;
-      }
-    }
-
-    if (!hasPeriod)
-    {
-      errorMessage = L"Cannot export orders: no valid month/year was found in loaded reports.";
-      return false;
-    }
-
-    exportContext.currentMonth = latestMonth;
-    exportContext.currentYear = latestYear;
-
-    ++latestMonth;
-    if (latestMonth > 12)
-    {
-      latestMonth = 1;
-      ++latestYear;
-    }
-
-    exportContext.factionNumber = mainFaction->getFactionNumber();
-    exportContext.password = mainFaction->getPassword();
-    exportContext.nextMonth = latestMonth;
-    exportContext.nextYear = latestYear;
-    errorMessage.clear();
-    return true;
-  }
-
-  std::wstring formatTwoDigits(int value)
-  {
-    if (value < 10)
-    {
-      return L"0" + std::to_wstring(value);
-    }
-
-    return std::to_wstring(value);
-  }
-
-  std::wstring buildSuggestedOrdersFilename(const MainFactionExportContext& exportContext)
-  {
-    return L"orders_"
-      + std::to_wstring(exportContext.factionNumber)
-      + L"_"
-      + std::to_wstring(exportContext.nextYear)
-      + L"_"
-      + formatTwoDigits(exportContext.nextMonth)
-      + L".ord";
   }
 
   // Returns the number of units updated on success, or -1 on error.
@@ -688,7 +560,6 @@ namespace
         const int okWidth = 80;
         const int editHeight = clientRect.bottom - clientRect.top - okHeight - (editMargin * 3);
         const int editWidth = clientRect.right - clientRect.left - (editMargin * 2);
-
         CreateWindowExW(
           WS_EX_CLIENTEDGE,
           L"EDIT",
@@ -1102,6 +973,12 @@ namespace
       return currentDir;
     }
 
+    std::error_code ec;
+    if (std::filesystem::is_directory(filePath, ec))
+    {
+      return filePath;
+    }
+
     const std::filesystem::path path(filePath);
     if (path.has_parent_path())
     {
@@ -1122,7 +999,11 @@ namespace
     wchar_t szFile[MAX_PATH] = {};
     wchar_t szDir[MAX_PATH] = {};
 
-    if (!configuredSaveFilePath.empty())
+    std::error_code isDirEc;
+    const bool configuredPathIsDirectory = !configuredSaveFilePath.empty()
+      && std::filesystem::is_directory(configuredSaveFilePath, isDirEc);
+
+    if (!configuredSaveFilePath.empty() && !configuredPathIsDirectory)
     {
       wcsncpy_s(szFile,
                 sizeof(szFile) / sizeof(szFile[0]),
@@ -1183,10 +1064,10 @@ bool MainWindow::create(HINSTANCE instance, AppData& appData)
   appData_->setMagicSkillTriggersCsv(appConfig_.getMagicSkillTriggersCsv());
   appData_->setOnlyLeaderCanTeach(appConfig_.getOnlyLeaderCanTeach());
   appData_->setLeaderMages(appConfig_.getLeaderMages());
-  uiScaleManager_.setProfileOverride(uiSizeProfileFromConfigMode(appConfig_.getUiSizeMode()));
+  uiScaleManager_.setProfileOverride(StringUtils::parseUiSizeProfileMode<UiSizeProfile::Profile>(appConfig_.getUiSizeMode()));
   const UiSizeProfile::DisplayInfo startupDisplay = UiSizeProfile::queryDisplayInfoForWindow(GetDesktopWindow());
   const UiSizeProfile::Profile startupProfile = UiSizeProfile::resolveProfile(
-    uiSizeProfileFromConfigMode(appConfig_.getUiSizeMode()),
+    StringUtils::parseUiSizeProfileMode<UiSizeProfile::Profile>(appConfig_.getUiSizeMode()),
     startupDisplay);
   const UiSizeProfile::Metrics startupMetrics = UiSizeProfile::getMetrics(startupProfile);
   const StartupWindowPlacement startupPlacement = resolveStartupWindowPlacement(appConfig_, startupMetrics);
@@ -1299,6 +1180,8 @@ LRESULT MainWindow::handleMessage(UINT msg, WPARAM wp, LPARAM lp)
       mapTabContent_ = std::make_unique<MapTabContent>();
       factionsTabContent_ = std::make_unique<FactionsTabContent>();
       battlesTabContent_ = std::make_unique<BattlesTabContent>();
+      localEngineTabContent_ = std::make_unique<LocalEngineTabContent>();
+      tradeTaxTabContent_ = std::make_unique<TradeTaxTabContent>();
 
       if (!reportsTabContent_->create(hwnd_, instance_, *appData_, appConfig_)
         || !mapTabContent_->create(hwnd_, instance_, *appData_, appConfig_)
@@ -1306,7 +1189,30 @@ LRESULT MainWindow::handleMessage(UINT msg, WPARAM wp, LPARAM lp)
           || !skillsTabContent_->create(hwnd_, instance_, *appData_)
         || !eventsTabContent_->create(hwnd_, instance_, *appData_)
         || !factionsTabContent_->create(hwnd_, instance_, *appData_)
-        || !battlesTabContent_->create(hwnd_, instance_, *appData_))
+        || !battlesTabContent_->create(hwnd_, instance_, *appData_)
+        || !tradeTaxTabContent_->create(
+          tradeTaxTabIndex_ >= 0 ? tabView_->getPanel(tradeTaxTabIndex_) : nullptr,
+          instance_,
+          *appData_)
+        || !localEngineTabContent_->create(
+          hwnd_,
+          instance_,
+          localEngineTabIndex_ >= 0 ? tabView_->getPanel(localEngineTabIndex_) : nullptr,
+          *appData_,
+          appConfig_,
+          LocalEngineTabContent::Callbacks{
+            [this]() { refreshAllTabContents(); },
+            [this]()
+            {
+              HWND tabControl = tabView_ ? tabView_->getTabControl() : nullptr;
+              if (tabControl && mapTabIndex_ >= 0)
+              {
+                TabCtrl_SetCurSel(tabControl, mapTabIndex_);
+                tabView_->onSelectionChange();
+                updateReportsTabVisibility();
+              }
+            }
+          }))
       {
         MessageBoxW(hwnd_,
                     L"Failed to create one or more tab panels. The application will close.",
@@ -1390,6 +1296,36 @@ LRESULT MainWindow::handleMessage(UINT msg, WPARAM wp, LPARAM lp)
         }
       );
 
+      tradeTaxTabContent_->setMapNavigationCallback(
+        [this](int x, int y, int z)
+        {
+          HWND tabCtrl = tabView_->getTabControl();
+          if (tabCtrl && mapTabIndex_ >= 0)
+          {
+            TabCtrl_SetCurSel(tabCtrl, mapTabIndex_);
+            tabView_->onSelectionChange();
+            updateReportsTabVisibility();
+          }
+          if (mapTabContent_)
+          {
+            mapTabContent_->focusRegion(x, y, z);
+          }
+        }
+      );
+
+      mapTabContent_->setOrdersChangedCallback(
+        [this]()
+        {
+          if (eventsTabContent_)
+          {
+            eventsTabContent_->refresh();
+          }
+          if (tradeTaxTabContent_)
+          {
+            tradeTaxTabContent_->refresh();
+          }
+        });
+
       // Force a layout pass so all newly created child panels are sized correctly.
       refreshUiScaleFromWindow(true);
       SendMessageW(hwnd_, WM_SIZE, SIZE_RESTORED, 0);
@@ -1433,9 +1369,28 @@ LRESULT MainWindow::handleMessage(UINT msg, WPARAM wp, LPARAM lp)
 
     case SettingsDialog::kUiSizingChangedMessage:
     {
-      uiScaleManager_.setProfileOverride(uiSizeProfileFromConfigMode(appConfig_.getUiSizeMode()));
+      uiScaleManager_.setProfileOverride(StringUtils::parseUiSizeProfileMode<UiSizeProfile::Profile>(appConfig_.getUiSizeMode()));
       refreshUiScaleFromWindow(true);
       SendMessageW(hwnd_, WM_SIZE, SIZE_RESTORED, 0);
+      return 0;
+    }
+
+    case LocalEngineTabContent::kProcessOutputMessage:
+    {
+      std::unique_ptr<std::wstring> text(reinterpret_cast<std::wstring*>(lp));
+      if (text && localEngineTabContent_)
+      {
+        localEngineTabContent_->appendProcessOutput(*text);
+      }
+      return 0;
+    }
+
+    case LocalEngineTabContent::kProcessExitedMessage:
+    {
+      if (localEngineTabContent_)
+      {
+        localEngineTabContent_->handleProcessExited();
+      }
       return 0;
     }
 
@@ -1572,6 +1527,11 @@ LRESULT MainWindow::handleMessage(UINT msg, WPARAM wp, LPARAM lp)
         return 0;
       }
 
+      if (tradeTaxTabContent_ && tradeTaxTabContent_->handleNotify(hdr))
+      {
+        return tradeTaxTabContent_->getNotifyResult();
+      }
+
       return 0;
     }
 
@@ -1599,6 +1559,10 @@ LRESULT MainWindow::handleMessage(UINT msg, WPARAM wp, LPARAM lp)
     {
       const auto* drawItem = reinterpret_cast<const DRAWITEMSTRUCT*>(lp);
       if (mapTabContent_ && mapTabContent_->handleDrawItem(drawItem))
+      {
+        return TRUE;
+      }
+      if (tradeTaxTabContent_ && tradeTaxTabContent_->handleDrawItem(drawItem))
       {
         return TRUE;
       }
@@ -1641,6 +1605,16 @@ LRESULT MainWindow::handleMessage(UINT msg, WPARAM wp, LPARAM lp)
       }
 
       if (battlesTabContent_ && battlesTabContent_->handleCommand(id, code))
+      {
+        return 0;
+      }
+
+      if (tradeTaxTabContent_ && tradeTaxTabContent_->handleCommand(id, code))
+      {
+        return 0;
+      }
+
+      if (localEngineTabContent_ && localEngineTabContent_->handleCommand(id, code))
       {
         return 0;
       }
@@ -1739,12 +1713,17 @@ LRESULT MainWindow::handleMessage(UINT msg, WPARAM wp, LPARAM lp)
             mapTabContent_->commitPendingEdits();
           }
 
-          MainFactionExportContext exportContext;
+          MainFactionExportUtils::ExportContext exportContext;
           std::wstring contextError;
-          if (!tryBuildMainFactionExportContext(*appData_, exportContext, contextError))
+          if (!MainFactionExportUtils::tryBuildContext(*appData_, exportContext, contextError))
           {
             MessageBoxW(hwnd_, contextError.c_str(), L"Export Orders", MB_ICONWARNING | MB_OK);
             return 0;
+          }
+
+          if (localEngineTabContent_)
+          {
+            localEngineTabContent_->setMainFactionNumber(exportContext.factionNumber);
           }
 
           std::wstring initialFolder = appConfig_.getExportOrdersFolder();
@@ -1754,7 +1733,7 @@ LRESULT MainWindow::handleMessage(UINT msg, WPARAM wp, LPARAM lp)
           }
 
           std::filesystem::path initialFilePath(initialFolder);
-          initialFilePath /= buildSuggestedOrdersFilename(exportContext);
+          initialFilePath /= MainFactionExportUtils::buildSuggestedOrdersFilename(exportContext);
 
           static constexpr wchar_t kOrdersFilter[] = L"Order Files (*.ord)\0*.ord\0All Files (*)\0*.*\0";
           std::wstring outputFilePath = getFileDialogPath(hwnd_,
@@ -1781,6 +1760,29 @@ LRESULT MainWindow::handleMessage(UINT msg, WPARAM wp, LPARAM lp)
           {
             MessageBoxW(hwnd_, saveError.c_str(), L"Export Orders", MB_ICONERROR | MB_OK);
             return 0;
+          }
+
+          std::wstring localEngineOrdersPath;
+          if (localEngineTabContent_ && localEngineTabContent_->isLocalEnabled())
+          {
+            std::wstring copyError;
+            if (!localEngineTabContent_->copyOrdersToLocalEngineFolder(
+              outputFilePath,
+              exportContext.factionNumber,
+              localEngineOrdersPath,
+              copyError))
+            {
+              MessageBoxW(hwnd_, copyError.c_str(), L"Export Orders", MB_ICONERROR | MB_OK);
+              return 0;
+            }
+          }
+
+          if (localEngineTabContent_)
+          {
+            const std::wstring& displayedPath = localEngineOrdersPath.empty()
+              ? outputFilePath
+              : localEngineOrdersPath;
+            localEngineTabContent_->setOrdersPath(displayedPath);
           }
 
           MessageBoxW(hwnd_, L"Orders exported successfully.", L"Export Orders", MB_ICONINFORMATION | MB_OK);
@@ -1847,7 +1849,7 @@ LRESULT MainWindow::handleMessage(UINT msg, WPARAM wp, LPARAM lp)
         {
           SettingsDialog settingsDialog;
           settingsDialog.showDialog(hwnd_, *appData_, appConfig_);
-          uiScaleManager_.setProfileOverride(uiSizeProfileFromConfigMode(appConfig_.getUiSizeMode()));
+          uiScaleManager_.setProfileOverride(StringUtils::parseUiSizeProfileMode<UiSizeProfile::Profile>(appConfig_.getUiSizeMode()));
           refreshUiScaleFromWindow(true);
           SendMessageW(hwnd_, WM_SIZE, SIZE_RESTORED, 0);
           return 0;
@@ -1918,6 +1920,10 @@ LRESULT MainWindow::handleMessage(UINT msg, WPARAM wp, LPARAM lp)
     }
 
     case WM_DESTROY:
+      if (localEngineTabContent_)
+      {
+        localEngineTabContent_->stopProcess();
+      }
       PostQuitMessage(0);
       return 0;
   }
@@ -1942,6 +1948,8 @@ void MainWindow::initializeTabs()
   skillsTabIndex_ = -1;
   factionsTabIndex_ = -1;
   battlesTabIndex_ = -1;
+  tradeTaxTabIndex_ = -1;
+  localEngineTabIndex_ = -1;
 
   for (int index = 0; index < static_cast<int>(orderedTabs.size()); ++index)
   {
@@ -1970,6 +1978,12 @@ void MainWindow::initializeTabs()
         break;
       case InternalTabId::Battles:
         battlesTabIndex_ = index;
+        break;
+      case InternalTabId::TradeTax:
+        tradeTaxTabIndex_ = index;
+        break;
+      case InternalTabId::LocalEngine:
+        localEngineTabIndex_ = index;
         break;
     }
   }
@@ -2017,6 +2031,7 @@ void MainWindow::refreshAllTabContents()
     [this]() { if (skillsTabContent_) { skillsTabContent_->refresh(); } },
     [this]() { if (factionsTabContent_) { factionsTabContent_->refresh(); } },
     [this]() { if (battlesTabContent_) { battlesTabContent_->refresh(); } },
+    [this]() { if (tradeTaxTabContent_) { tradeTaxTabContent_->refresh(); } },
     // Always re-apply visibility after bulk refresh to prevent controls from
     // non-selected tabs remaining visible.
     [this]() { updateReportsTabVisibility(); }
@@ -2032,7 +2047,8 @@ void MainWindow::updateReportsTabVisibility()
     || !itemsTabContent_ 
     || !skillsTabContent_ 
     || !factionsTabContent_ 
-    || !battlesTabContent_)
+    || !battlesTabContent_
+    || !tradeTaxTabContent_)
   {
     return;
   }
@@ -2051,6 +2067,7 @@ void MainWindow::updateReportsTabVisibility()
   skillsTabContent_->setVisible(selected == skillsTabIndex_);
   factionsTabContent_->setVisible(selected == factionsTabIndex_);
   battlesTabContent_->setVisible(selected == battlesTabIndex_);
+  tradeTaxTabContent_->setVisible(selected == tradeTaxTabIndex_);
 
   RECT displayRect {};
   if (tryGetCurrentTabDisplayRect(displayRect))
@@ -2124,6 +2141,14 @@ void MainWindow::resizeSelectedTabContent(const RECT& displayRect)
   else if (selected == battlesTabIndex_ && battlesTabContent_)
   {
     battlesTabContent_->resize(displayRect);
+  }
+  else if (selected == tradeTaxTabIndex_ && tradeTaxTabContent_)
+  {
+    tradeTaxTabContent_->resize(displayRect);
+  }
+  else if (selected == localEngineTabIndex_ && localEngineTabContent_)
+  {
+    localEngineTabContent_->resize(displayRect);
   }
 }
 

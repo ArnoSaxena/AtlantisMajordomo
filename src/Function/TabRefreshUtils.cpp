@@ -55,6 +55,10 @@ void runRefreshContract(const RefreshCallbacks& callbacks)
   {
     callbacks.refreshBattles();
   }
+  if (callbacks.refreshTradeTax)
+  {
+    callbacks.refreshTradeTax();
+  }
   if (callbacks.afterRefresh)
   {
     callbacks.afterRefresh();

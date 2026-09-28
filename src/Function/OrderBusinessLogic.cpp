@@ -511,6 +511,46 @@ void syncOrderRepositoryForSavedUnit(AppData& appData,
     }
 }
 
+void rebuildUnitNewRepositoryFromOrders(const UnitRepository& unitRepository,
+                                         UnitNewRepository& unitNewRepository,
+                                         int currentMonth,
+                                         int currentYear)
+{
+    unitNewRepository.clear();
+    for (std::size_t unitIndex = 0; unitIndex < unitRepository.size(); ++unitIndex)
+    {
+        const Unit& unit = unitRepository.at(unitIndex);
+        if (unit.getMonth() != currentMonth || unit.getYear() != currentYear)
+        {
+            continue;
+        }
+
+        const std::vector<int> formUnitNumbers =
+            OrderParsingUtils::extractFormNewUnitNumbers(unit.getOrders());
+        for (int formUnitNumber : formUnitNumbers)
+        {
+            unitNewRepository.add(
+                formUnitNumber,
+                L"New Unit",
+                unit.getStructureId(),
+                unit.getXCoordinate(),
+                unit.getYCoordinate(),
+                unit.getZCoordinate(),
+                unit.getFlags(),
+                std::map<std::wstring, int>(),
+                0,
+                0,
+                0,
+                0,
+                0,
+                std::map<std::wstring, int>(),
+                unit.getMonth(),
+                unit.getYear(),
+                unit.getUnitNumber());
+        }
+    }
+}
+
 int computeNextNewUnitNumber(AppData* appData, int x, int y, int z)
 {
     if (!appData)

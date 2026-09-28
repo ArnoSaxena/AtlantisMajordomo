@@ -129,6 +129,10 @@ SettingsDialogQt::SettingsDialogQt(AppData&   appData,
     otherFactionUnitColorEdit_->setPlaceholderText("128, 128, 128");
     formLayout->addRow("Other faction unit text color (R,G,B):", otherFactionUnitColorEdit_);
 
+    alternateUnitRowBackgroundColorEdit_ = new QLineEdit(this);
+    alternateUnitRowBackgroundColorEdit_->setPlaceholderText("245, 245, 245");
+    formLayout->addRow("Alternate unit row background (R,G,B):", alternateUnitRowBackgroundColorEdit_);
+
     // Checkboxes — placed as a horizontal group in a single form row
     onlyLeaderCanTeachCheck_ = new QCheckBox("Only leader can teach", this);
     leaderMagesCheck_         = new QCheckBox("Only leader Mages",     this);
@@ -259,6 +263,12 @@ SettingsDialogQt::SettingsDialogQt(AppData&   appData,
             StringUtils::formatRgbColor(appConfig_->getOtherFactionUnitTextColor())));
     }
 
+    if (alternateUnitRowBackgroundColorEdit_)
+    {
+        alternateUnitRowBackgroundColorEdit_->setText(QString::fromStdWString(
+            StringUtils::formatRgbColor(appConfig_->getAlternateUnitRowBackgroundColor())));
+    }
+
     onlyLeaderCanTeachCheck_->setChecked(appData_->getOnlyLeaderCanTeach());
     leaderMagesCheck_->setChecked(appData_->getLeaderMages());
 
@@ -373,6 +383,17 @@ bool SettingsDialogQt::applySettings()
         return false;
     }
 
+    std::array<int, 3> alternateUnitRowBackgroundColor { 245, 245, 245 };
+    if (alternateUnitRowBackgroundColorEdit_ && !StringUtils::tryParseRgbColor(
+        alternateUnitRowBackgroundColorEdit_->text().toStdWString(), alternateUnitRowBackgroundColor))
+    {
+        QMessageBox::warning(this,
+            "Invalid Value",
+            "Alternate unit row background color must be in format R, G, B with values from 0 to 255.");
+        alternateUnitRowBackgroundColorEdit_->setFocus();
+        return false;
+    }
+
     // Apply to AppData
     appData_->setShipStructureIdThreshold(threshold);
     appData_->setMagicSkillTriggersCsv(buildCsvFromList(magicTriggersList_));
@@ -397,6 +418,7 @@ bool SettingsDialogQt::applySettings()
     }
     appConfig_->setMainFactionUnitTextColor(mainFactionColor);
     appConfig_->setOtherFactionUnitTextColor(otherFactionColor);
+    appConfig_->setAlternateUnitRowBackgroundColor(alternateUnitRowBackgroundColor);
     appConfig_->save();
 
     return true;

@@ -438,6 +438,10 @@ void MapTabContent::saveOrdersToSelectedUnit()
   updateSelectedUnitDetailsByNumber(selectedUnitNumber_);
   populateUnitsForSelectedRegion();
   updateWarningsSummaryLabel();
+  if (ordersChangedCallback_)
+  {
+    ordersChangedCallback_();
+  }
 }
 
 

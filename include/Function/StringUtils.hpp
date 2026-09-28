@@ -26,8 +26,32 @@
 #include <string>
 #include <vector>
 
+class Faction;
+
 namespace StringUtils
 {
+    // Returns a lowercased copy of the string.
+    std::wstring toLower(std::wstring value);
+
+    template <typename ProfileEnum>
+    ProfileEnum parseUiSizeProfileMode(const std::wstring& configuredMode)
+    {
+        const std::wstring normalized = toLower(configuredMode);
+        if (normalized == L"compact")
+        {
+            return ProfileEnum::Compact;
+        }
+        if (normalized == L"standard")
+        {
+            return ProfileEnum::Standard;
+        }
+        if (normalized == L"large")
+        {
+            return ProfileEnum::Large;
+        }
+        return ProfileEnum::Auto;
+    }
+
     // Strips a leading UTF-8/UTF-16 BOM character if present.
     std::wstring trimBom(std::wstring value);
     // Trims leading and trailing whitespace.
@@ -38,12 +62,12 @@ namespace StringUtils
     std::wstring joinLines(const std::vector<std::wstring>& lines, const std::wstring& separator = L"\r\n");
     // Splits text into non-empty, trimmed lines, treating both CRLF and LF as line endings.
     std::vector<std::wstring> splitLines(const std::wstring& text);
-    // Returns a lowercased copy of the string.
-    std::wstring toLower(std::wstring value);
     // Returns an uppercased copy of the string.
     std::wstring toUpper(std::wstring value);
     // Trims whitespace, strips leading/trailing non-alphanumeric characters, and uppercases; used to canonicalize item/skill tokens for comparison.
     std::wstring normalizeToken(std::wstring value);
+    // Builds the display label used for faction entries as "[*] Name (number)".
+    std::wstring formatFactionListLabel(const Faction& faction);
     // Parses the whole trimmed string as an int, returning 0 if it is not a valid number.
     int parseIntSafe(const std::wstring& text);
     // Finds the first leading numeric run (optionally after non-numeric prefix characters) and parses it; returns false if none is found.

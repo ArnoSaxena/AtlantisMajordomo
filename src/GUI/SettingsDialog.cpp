@@ -362,6 +362,33 @@ bool SettingsDialog::applySettingsFromControls(HWND hwnd, bool closeOnSuccess)
     }
   }
 
+  std::array<int, 3> alternateUnitRowBackgroundColor { 245, 245, 245 };
+  if (alternateUnitRowBackgroundColorEdit_)
+  {
+    wchar_t colorBuffer[64] = {};
+    GetWindowTextW(alternateUnitRowBackgroundColorEdit_, colorBuffer, static_cast<int>(std::size(colorBuffer)));
+    if (!StringUtils::tryParseRgbColor(colorBuffer, alternateUnitRowBackgroundColor))
+    {
+      MessageBoxW(hwnd,
+                  L"Alternate unit row background color must be in format R, G, B with values from 0 to 255.",
+                  L"Invalid Settings",
+                  MB_ICONERROR | MB_OK);
+      return false;
+    }
+  }
+
+  std::array<int, 3> guardedRegionBorderColor { 80, 0, 120 };
+  if (guardedRegionBorderColorEdit_)
+  {
+    wchar_t colorBuffer[64] = {};
+    GetWindowTextW(guardedRegionBorderColorEdit_, colorBuffer, static_cast<int>(std::size(colorBuffer)));
+    if (!StringUtils::tryParseRgbColor(colorBuffer, guardedRegionBorderColor))
+    {
+      MessageBoxW(hwnd, L"Guarded region border color must be in format R, G, B with values from 0 to 255.", L"Invalid Settings", MB_ICONERROR | MB_OK);
+      return false;
+    }
+  }
+
   if (appConfig_)
   {
     const LRESULT onlyLeaderChecked = SendMessageW(onlyLeaderCanTeachCheck_, BM_GETCHECK, 0, 0);
@@ -375,6 +402,8 @@ bool SettingsDialog::applySettingsFromControls(HWND hwnd, bool closeOnSuccess)
     appConfig_->setReportImportFolder(reportFolderPath);
     appConfig_->setMainFactionUnitTextColor(mainFactionUnitTextColor);
     appConfig_->setOtherFactionUnitTextColor(otherFactionUnitTextColor);
+    appConfig_->setAlternateUnitRowBackgroundColor(alternateUnitRowBackgroundColor);
+    appConfig_->setGuardedRegionBorderColor(guardedRegionBorderColor);
 
     if (uiSizeModeCombo_)
     {
@@ -953,6 +982,66 @@ int SettingsDialog::showDialog(HWND parentHwnd, AppData& appData, AppConfig& app
     nullptr
   );
 
+  CreateWindowExW(
+    0,
+    L"STATIC",
+    L"Alternate unit row background (R,G,B):",
+    WS_CHILD | WS_VISIBLE,
+    sx(320),
+    sx(182),
+    sx(220),
+    (std::max)(metrics.rowHeight, sx(20)),
+    hwnd_,
+    nullptr,
+    GetModuleHandleW(nullptr),
+    nullptr
+  );
+
+  alternateUnitRowBackgroundColorEdit_ = CreateWindowExW(
+    WS_EX_CLIENTEDGE,
+    L"EDIT",
+    L"",
+    WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
+    sx(540),
+    sx(178),
+    sx(190),
+    (std::max)(metrics.buttonHeight, sx(24)),
+    hwnd_,
+    reinterpret_cast<HMENU>(static_cast<intptr_t>(IDC_ALTERNATE_UNIT_ROW_BACKGROUND_COLOR_EDIT)),
+    GetModuleHandleW(nullptr),
+    nullptr
+  );
+
+  CreateWindowExW(
+    0,
+    L"STATIC",
+    L"Guarded region border (R,G,B):",
+    WS_CHILD | WS_VISIBLE,
+    sx(320),
+    sx(216),
+    sx(220),
+    (std::max)(metrics.rowHeight, sx(20)),
+    hwnd_,
+    nullptr,
+    GetModuleHandleW(nullptr),
+    nullptr
+  );
+
+  guardedRegionBorderColorEdit_ = CreateWindowExW(
+    WS_EX_CLIENTEDGE,
+    L"EDIT",
+    L"",
+    WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
+    sx(540),
+    sx(212),
+    sx(190),
+    (std::max)(metrics.buttonHeight, sx(24)),
+    hwnd_,
+    reinterpret_cast<HMENU>(static_cast<intptr_t>(IDC_GUARDED_REGION_BORDER_COLOR_EDIT)),
+    GetModuleHandleW(nullptr),
+    nullptr
+  );
+
   /*
   CreateWindowExW(
     0,
@@ -1044,7 +1133,7 @@ int SettingsDialog::showDialog(HWND parentHwnd, AppData& appData, AppConfig& app
     L"Full-month orders",
     WS_CHILD | WS_VISIBLE,
     sx(265),
-    sx(180),
+    sx(248),
     sx(180),
     (std::max)(metrics.rowHeight, sx(20)),
     hwnd_,
@@ -1059,7 +1148,7 @@ int SettingsDialog::showDialog(HWND parentHwnd, AppData& appData, AppConfig& app
     L"",
     WS_CHILD | WS_VISIBLE | WS_VSCROLL | LBS_NOTIFY,
     sx(265),
-    sx(204),
+    sx(272),
     sx(220),
     sx(170),
     hwnd_,
@@ -1074,7 +1163,7 @@ int SettingsDialog::showDialog(HWND parentHwnd, AppData& appData, AppConfig& app
     L"",
     WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
     sx(265),
-    sx(384),
+    sx(452),
     sx(220),
     (std::max)(metrics.buttonHeight, sx(24)),
     hwnd_,
@@ -1089,7 +1178,7 @@ int SettingsDialog::showDialog(HWND parentHwnd, AppData& appData, AppConfig& app
     L"Add",
     WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
     sx(265),
-    sx(414),
+    sx(482),
     sx(70),
     (std::max)(metrics.buttonHeight, sx(24)),
     hwnd_,
@@ -1104,7 +1193,7 @@ int SettingsDialog::showDialog(HWND parentHwnd, AppData& appData, AppConfig& app
     L"Remove",
     WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
     sx(345),
-    sx(414),
+    sx(482),
     sx(80),
     (std::max)(metrics.buttonHeight, sx(24)),
     hwnd_,
@@ -1119,7 +1208,7 @@ int SettingsDialog::showDialog(HWND parentHwnd, AppData& appData, AppConfig& app
     L"Magic skill triggers",
     WS_CHILD | WS_VISIBLE,
     sx(20),
-    sx(180),
+    sx(248),
     sx(180),
     (std::max)(metrics.rowHeight, sx(20)),
     hwnd_,
@@ -1134,7 +1223,7 @@ int SettingsDialog::showDialog(HWND parentHwnd, AppData& appData, AppConfig& app
     L"",
     WS_CHILD | WS_VISIBLE | WS_VSCROLL | LBS_NOTIFY,
     sx(20),
-    sx(204),
+    sx(272),
     sx(220),
     sx(170),
     hwnd_,
@@ -1149,7 +1238,7 @@ int SettingsDialog::showDialog(HWND parentHwnd, AppData& appData, AppConfig& app
     L"",
     WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
     sx(20),
-    sx(384),
+    sx(452),
     sx(220),
     (std::max)(metrics.buttonHeight, sx(24)),
     hwnd_,
@@ -1164,7 +1253,7 @@ int SettingsDialog::showDialog(HWND parentHwnd, AppData& appData, AppConfig& app
     L"Add",
     WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
     sx(20),
-    sx(414),
+    sx(482),
     sx(70),
     (std::max)(metrics.buttonHeight, sx(24)),
     hwnd_,
@@ -1179,7 +1268,7 @@ int SettingsDialog::showDialog(HWND parentHwnd, AppData& appData, AppConfig& app
     L"Remove",
     WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
     sx(100),
-    sx(414),
+    sx(482),
     sx(80),
     (std::max)(metrics.buttonHeight, sx(24)),
     hwnd_,
@@ -1283,6 +1372,16 @@ int SettingsDialog::showDialog(HWND parentHwnd, AppData& appData, AppConfig& app
     const std::wstring value = StringUtils::formatRgbColor(appConfig_->getOtherFactionUnitTextColor());
     SetWindowTextW(otherFactionUnitColorEdit_, value.c_str());
   }
+  if (alternateUnitRowBackgroundColorEdit_)
+  {
+    const std::wstring value = StringUtils::formatRgbColor(appConfig_->getAlternateUnitRowBackgroundColor());
+    SetWindowTextW(alternateUnitRowBackgroundColorEdit_, value.c_str());
+  }
+  if (guardedRegionBorderColorEdit_)
+  {
+    const std::wstring value = StringUtils::formatRgbColor(appConfig_->getGuardedRegionBorderColor());
+    SetWindowTextW(guardedRegionBorderColorEdit_, value.c_str());
+  }
   if (leaderMagesCheck_)
   {
     SendMessageW(leaderMagesCheck_,
@@ -1316,6 +1415,7 @@ int SettingsDialog::showDialog(HWND parentHwnd, AppData& appData, AppConfig& app
   mapHexSizeModeCombo_ = nullptr;
   mainFactionUnitColorEdit_ = nullptr;
   otherFactionUnitColorEdit_ = nullptr;
+  alternateUnitRowBackgroundColorEdit_ = nullptr;
   //flyingShipsList_ = nullptr;
   fullMonthOrdersList_ = nullptr;
   magicTriggersList_ = nullptr;
