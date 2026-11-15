@@ -57,18 +57,63 @@
 #include <map>
 #include <regex>
 
+namespace
+{
+  class FileSerializerServices : public DataSerializer::Services
+  {
+  public:
+    std::unique_ptr<std::wistream> openForReading(const std::wstring& filePath) override
+    {
+      auto file = std::make_unique<std::wifstream>(std::filesystem::path(filePath));
+      if (!file->is_open())
+      {
+        return nullptr;
+      }
+      return file;
+    }
+
+    std::unique_ptr<std::wostream> openForWriting(const std::wstring& filePath) override
+    {
+      auto file = std::make_unique<std::wofstream>(std::filesystem::path(filePath));
+      if (!file->is_open())
+      {
+        return nullptr;
+      }
+      return file;
+    }
+
+    void finishLoad(AppData& appData) override
+    {
+      appData.orderRepository().clear();
+      for (std::size_t index = 0; index < appData.unitRepository().size(); ++index)
+      {
+        const int originUnitNumber = appData.unitRepository().at(index).getUnitNumber();
+        OrderBusinessLogic::syncOrderRepositoryForSavedUnit(appData, originUnitNumber, false);
+      }
+      CommandSimulationService::recalculateAfterOrdersValues(appData);
+    }
+  };
+}
+
 std::wstring DataSerializer::lastError_;
 
 bool DataSerializer::saveToFile(const AppData& appData, const std::wstring& filePath)
 {
+  FileSerializerServices services;
+  return saveToFile(appData, filePath, services);
+}
+
+bool DataSerializer::saveToFile(const AppData& appData, const std::wstring& filePath, Services& services)
+{
   try
   {
-    std::wofstream file{std::filesystem::path(filePath)};
-    if (!file.is_open())
+    auto output = services.openForWriting(filePath);
+    if (!output)
     {
       lastError_ = L"Failed to open file for writing: " + filePath;
       return false;
     }
+    std::wostream& file = *output;
 
     file << L"{\n";
     file << L"  \"version\": 1,\n";
@@ -528,7 +573,13 @@ bool DataSerializer::saveToFile(const AppData& appData, const std::wstring& file
     file << L"\n  ]\n";
     file << L"}\n";
 
-    file.close();
+    file.flush();
+    if (!file)
+    {
+      lastError_ = L"Failed to write file: " + filePath;
+      return false;
+    }
+    output.reset();
     lastError_ = L"";
     return true;
   }
@@ -553,7 +604,7 @@ namespace
     if (valueStart >= obj.length())
       return L"";
 
-    size_t valueEnd = valueStart;
+    size_t valueEnd = obj.length();
     if (obj[valueStart] == L'[')
     {
       // Handle array
@@ -1018,18 +1069,29 @@ namespace
 
 bool DataSerializer::loadFromFile(AppData& appData, const std::wstring& filePath)
 {
+  FileSerializerServices services;
+  return loadFromFile(appData, filePath, services);
+}
+
+bool DataSerializer::loadFromFile(AppData& appData, const std::wstring& filePath, Services& services)
+{
   try
   {
-    std::wifstream file{std::filesystem::path(filePath)};
-    if (!file.is_open())
+    auto input = services.openForReading(filePath);
+    if (!input)
     {
       lastError_ = L"Failed to open file for reading: " + filePath;
       return false;
     }
 
-    std::wstring content((std::istreambuf_iterator<wchar_t>(file)),
+    std::wstring content((std::istreambuf_iterator<wchar_t>(*input)),
                         std::istreambuf_iterator<wchar_t>());
-    file.close();
+    if (input->bad())
+    {
+      lastError_ = L"Failed to read file: " + filePath;
+      return false;
+    }
+    input.reset();
 
     appData.clear();
 
@@ -1066,7 +1128,7 @@ bool DataSerializer::loadFromFile(AppData& appData, const std::wstring& filePath
         size_t objStart = factionsArray.find(L'{', pos);
         if (objStart == std::wstring::npos)
           break;
-        size_t objEnd = factionsArray.find(L'}', objStart);
+        size_t objEnd = findMatchingCloseBrace(factionsArray, objStart);
         if (objEnd == std::wstring::npos)
           break;
 
@@ -1137,7 +1199,17 @@ bool DataSerializer::loadFromFile(AppData& appData, const std::wstring& filePath
           else if (fieldName == L"commandUnitNumber")
             parseJsonNumber(fieldValue, commandUnitNumber);
           else if (fieldName == L"defaultAttitude")
-            parseJsonNumber(fieldValue, defaultAttitudeValue);
+          {
+            std::wstring attitudeText;
+            if (parseJsonString(fieldValue, attitudeText))
+            {
+              parseJsonNumber(attitudeText, defaultAttitudeValue);
+            }
+            else
+            {
+              parseJsonNumber(fieldValue, defaultAttitudeValue);
+            }
+          }
           else if (fieldName == L"declaredAttitudes")
           {
             std::map<std::wstring, int> rawMap = parseJsonStringIntMap(fieldValue);
@@ -1667,7 +1739,7 @@ bool DataSerializer::loadFromFile(AppData& appData, const std::wstring& filePath
         size_t objStart = eventsArray.find(L'{', pos);
         if (objStart == std::wstring::npos)
           break;
-        size_t objEnd = eventsArray.find(L'}', objStart);
+        size_t objEnd = findMatchingCloseBrace(eventsArray, objStart);
         if (objEnd == std::wstring::npos)
           break;
 
@@ -1707,10 +1779,7 @@ bool DataSerializer::loadFromFile(AppData& appData, const std::wstring& filePath
 
         if (unitId != 0 && !message.empty())
         {
-          int eventId = appData.eventRepository().getNextEventId();
-          Event newEvent(unitId, eventId, message, month, year);
-          newEvent.setErrorEvent(errorEvent);
-          appData.eventRepository().add(newEvent);
+          appData.eventRepository().add(unitId, message, month, year, errorEvent);
         }
         pos = objEnd + 1;
       }
@@ -1771,7 +1840,7 @@ bool DataSerializer::loadFromFile(AppData& appData, const std::wstring& filePath
         size_t objStart = structuresArray.find(L'{', pos);
         if (objStart == std::wstring::npos)
           break;
-        size_t objEnd = structuresArray.find(L'}', objStart);
+        size_t objEnd = findMatchingCloseBrace(structuresArray, objStart);
         if (objEnd == std::wstring::npos)
           break;
 
@@ -1849,7 +1918,7 @@ bool DataSerializer::loadFromFile(AppData& appData, const std::wstring& filePath
         size_t objStart = structInfoArray.find(L'{', pos);
         if (objStart == std::wstring::npos)
           break;
-        size_t objEnd = structInfoArray.find(L'}', objStart);
+        size_t objEnd = findMatchingCloseBrace(structInfoArray, objStart);
         if (objEnd == std::wstring::npos)
           break;
 
@@ -2119,13 +2188,7 @@ bool DataSerializer::loadFromFile(AppData& appData, const std::wstring& filePath
       appData.reportRepository().setLatestPeriod(latestReportMonth, latestReportYear);
     }
 
-    appData.orderRepository().clear();
-    for (std::size_t index = 0; index < appData.unitRepository().size(); ++index)
-    {
-      const int originUnitNumber = appData.unitRepository().at(index).getUnitNumber();
-      OrderBusinessLogic::syncOrderRepositoryForSavedUnit(appData, originUnitNumber, false);
-    }
-    CommandSimulationService::recalculateAfterOrdersValues(appData);
+    services.finishLoad(appData);
 
     lastError_ = L"";
     return true;

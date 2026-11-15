@@ -27,11 +27,15 @@
 #include <QMainWindow>
 
 class AppData;
+class QCloseEvent;
+class QResizeEvent;
 class QTabWidget;
+class QWidget;
 class BattlesTabContentQt;
 class EventsTabContentQt;
 class FactionsTabContentQt;
 class ItemsTabContentQt;
+class LocalEngineTabContentQt;
 class MapTabContentQt;
 class ReportsTabContentQt;
 class SkillsTabContentQt;
@@ -42,8 +46,7 @@ class TradeTaxTabContentQt;
  *
  * Mirrors the responsibilities of MainWindowWin: owns the tab widget,
  * drives AppConfig, implements all menus, and manages the startup
- * auto-load sequence. Tab content widgets are currently placeholders
- * and will be replaced with real Qt implementations over time.
+ * auto-load sequence.
  */
 class MainWindow : public QMainWindow
 {
@@ -60,7 +63,7 @@ public:
 
     static constexpr const char* kAboutAppName     = "Atlantis Majordomo";
     static constexpr const char* kAboutDescription = "Yet another Atlantis Pbem player client.";
-    static constexpr const char* kAboutVersion     = "1.2.23";
+    static constexpr const char* kAboutVersion     = "1.3.271";
 
 protected:
     void closeEvent(QCloseEvent* event) override;
@@ -90,9 +93,6 @@ private:
     void refreshAllTabs();
     void applyConfigToAppData();
     void applyQtUiSizing();
-    void prepareLocal();
-    void browseLocalEnginePath();
-    void updateLocalEngineControls();
 
     AppData&    appData_;
     AppConfig   appConfig_;
@@ -106,6 +106,7 @@ private:
     SkillsTabContentQt*   skillsTabContent_    { nullptr };
     MapTabContentQt*      mapTabContent_       { nullptr };
     TradeTaxTabContentQt* tradeTaxTabContent_   { nullptr };
+    LocalEngineTabContentQt* localEngineTabContent_ { nullptr };
 
     QWidget*    reportsTab_  { nullptr };
     QWidget*    mapTab_      { nullptr };
@@ -117,9 +118,5 @@ private:
     QWidget*    tradeTaxTab_ { nullptr };
     QWidget*    localEngineTab_ { nullptr };
 
-    QCheckBox* localEngineCheck_ { nullptr };
-    QLabel*    localEngineLabel_ { nullptr };
-    QLineEdit* localEnginePathEdit_ { nullptr };
-    QPushButton* localEngineBrowseButton_ { nullptr };
 };
 

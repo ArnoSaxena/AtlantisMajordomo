@@ -31,14 +31,10 @@
 namespace
 {
 
-std::wstring generateIdentifier()
+std::wstring generateIdentifier(const Battle::IdentifierWordSource& identifierWords)
 {
-  std::random_device randomDevice;
-  std::mt19937_64 generator(randomDevice());
-  std::uniform_int_distribution<std::uint64_t> distribution;
-
-  const std::uint64_t first = distribution(generator);
-  const std::uint64_t second = distribution(generator);
+  const std::uint64_t first = identifierWords();
+  const std::uint64_t second = identifierWords();
 
   std::wstringstream stream;
   stream << std::hex << std::setfill(L'0')
@@ -50,11 +46,29 @@ std::wstring generateIdentifier()
   return stream.str();
 }
 
+std::wstring generateRandomIdentifier()
+{
+  std::random_device randomDevice;
+  std::mt19937_64 generator(randomDevice());
+  std::uniform_int_distribution<std::uint64_t> distribution;
+  return generateIdentifier([&]() { return distribution(generator); });
+}
+
 } // namespace
 
 Battle::Battle()
-  : identifier_(generateIdentifier())
+  : identifier_(generateRandomIdentifier())
 {
+}
+
+Battle::Battle(const IdentifierWordSource& identifierWords)
+  : identifier_(generateIdentifier(identifierWords))
+{
+}
+
+std::unique_ptr<Battle> Battle::clone() const
+{
+  return std::make_unique<Battle>(*this);
 }
 
 const std::wstring& Battle::getIdentifier() const
@@ -198,9 +212,12 @@ void Battle::setDefenderUnitName(std::wstring defenderUnitName)
 
 void Battle::setRegionCoordinates(int xCoordinate, int yCoordinate, int zCoordinate)
 {
-  regionXCoordinate_ = xCoordinate;
-  regionYCoordinate_ = yCoordinate;
-  regionZCoordinate_ = zCoordinate;
+  if (xCoordinate >= 0)
+    regionXCoordinate_ = xCoordinate;
+  if (yCoordinate >= 0)
+    regionYCoordinate_ = yCoordinate;
+  if (zCoordinate >= 1)
+    regionZCoordinate_ = zCoordinate;
 }
 
 void Battle::setMonth(int month)

@@ -34,6 +34,8 @@ class QTableWidget;
 
 class TradeTaxTabContentQt : public QWidget
 {
+    Q_OBJECT
+
 public:
     explicit TradeTaxTabContentQt(AppData& appData, QWidget* parent = nullptr);
     ~TradeTaxTabContentQt() override = default;

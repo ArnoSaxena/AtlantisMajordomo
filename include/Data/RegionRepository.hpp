@@ -37,7 +37,7 @@ class RegionRepository
 {
 public:
   RegionRepository() = default;
-  ~RegionRepository() = default;
+  virtual ~RegionRepository() = default;
 
   RegionRepository(const RegionRepository&) = default;
   RegionRepository& operator=(const RegionRepository&) = default;
@@ -89,7 +89,7 @@ public:
   * @param newYear Year from the report (for temporal tracking).
   * @return true if added/updated, false if region already exists with same or newer month.
   */
-  bool upsertRegion(int xCoordinate,
+  virtual bool upsertRegion(int xCoordinate,
                     int yCoordinate,
                     int zCoordinate,
                     std::wstring regionType,
@@ -109,15 +109,15 @@ public:
   bool removeByCoordinates(int xCoordinate, int yCoordinate, int zCoordinate);
   bool removeByCoordinates(int xCoordinate, int yCoordinate);
 
-  Region* findByCoordinates(int xCoordinate, int yCoordinate, int zCoordinate);
-  const Region* findByCoordinates(int xCoordinate, int yCoordinate, int zCoordinate) const;
-  Region* findByCoordinates(int xCoordinate, int yCoordinate);
-  const Region* findByCoordinates(int xCoordinate, int yCoordinate) const;
+  virtual Region* findByCoordinates(int xCoordinate, int yCoordinate, int zCoordinate);
+  virtual const Region* findByCoordinates(int xCoordinate, int yCoordinate, int zCoordinate) const;
+  virtual Region* findByCoordinates(int xCoordinate, int yCoordinate);
+  virtual const Region* findByCoordinates(int xCoordinate, int yCoordinate) const;
 
-  void clear();
+  virtual void clear();
 
-  std::size_t size() const;
-  const Region& at(std::size_t index) const;
+  virtual std::size_t size() const;
+  virtual const Region& at(std::size_t index) const;
 
   const std::wstring& getLastError() const;
 

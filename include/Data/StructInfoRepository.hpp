@@ -37,7 +37,7 @@ class StructInfoRepository
 {
 public:
   StructInfoRepository() = default;
-  ~StructInfoRepository() = default;
+  virtual ~StructInfoRepository() = default;
 
   StructInfoRepository(const StructInfoRepository&) = default;
   StructInfoRepository& operator=(const StructInfoRepository&) = default;
@@ -57,7 +57,7 @@ public:
            bool isFlying,
            std::wstring itemIdentifierToken = L"");
 
-  bool addOrUpdateByType(std::wstring structureType,
+  virtual bool addOrUpdateByType(std::wstring structureType,
                          int needs,
                          int magesCapacity,
                          bool isShip,
@@ -77,15 +77,15 @@ public:
   /**
   * @brief Find a structure info by structure type (const version).
   */
-  const StructInfo* findByType(const std::wstring& structureType) const;
+  virtual const StructInfo* findByType(const std::wstring& structureType) const;
   StructInfo* findByItemIdentifierToken(const std::wstring& itemIdentifierToken);
   const StructInfo* findByItemIdentifierToken(const std::wstring& itemIdentifierToken) const;
 
-  void clear();
+  virtual void clear();
 
-  std::size_t size() const;
-  StructInfo& at(std::size_t index);
-  const StructInfo& at(std::size_t index) const;
+  virtual std::size_t size() const;
+  virtual StructInfo& at(std::size_t index);
+  virtual const StructInfo& at(std::size_t index) const;
 
   const std::wstring& getLastError() const;
 

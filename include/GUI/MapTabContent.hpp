@@ -340,6 +340,19 @@ private:
   void recalculateVisibleMap();
   void updateMapScrollbars();
   void paintMap(HDC hdc) const;
+  void drawEmptyHexes(HDC memoryDc) const;
+  void drawRegionHexes(HDC memoryDc, bool hasLatestBattlePeriod, int battleMonth, int battleYear) const;
+  void drawRegionHex(HDC memoryDc, const RegionVisual& visual, bool hasLatestBattlePeriod, int battleMonth, int battleYear) const;
+  void drawRegionFill(HDC memoryDc, const RegionVisual& visual, const std::array<POINT, 6>& translated) const;
+  void drawPeasantWedge(HDC memoryDc, const RegionVisual& visual, const std::array<POINT, 6>& translated) const;
+  void drawGuardWedge(HDC memoryDc, const RegionVisual& visual, const std::array<POINT, 6>& translated) const;
+  void drawRoads(HDC memoryDc, const RegionVisual& visual) const;
+  void drawSettlement(HDC memoryDc, const RegionVisual& visual) const;
+  void drawBattleMarker(HDC memoryDc, const RegionVisual& visual, bool hasLatestBattlePeriod, int battleMonth, int battleYear) const;
+  void drawSelectedRegionBorder(HDC memoryDc) const;
+  void drawMovePath(HDC memoryDc) const;
+  void drawStructureMarkers(HDC memoryDc) const;
+  void drawMissingExitEdges(HDC memoryDc) const;
   const RegionVisual* hitTestRegion(POINT pointInMapClient) const;
   bool hitTestMapCoordinate(POINT pointInMapClient, int& xCoordinate, int& yCoordinate) const;
   // buildHexagonPolygon moved to MapUtils::buildHexagonPolygon (Function/MapUtils.hpp)

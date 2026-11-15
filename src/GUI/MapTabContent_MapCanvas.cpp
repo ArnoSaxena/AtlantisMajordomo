@@ -242,6 +242,79 @@ private:
   HWND ownerWindow_ { nullptr };
 };
 
+struct GuardWedgeStyle
+{
+  std::array<int, 3> color { 128, 128, 128 };
+  bool guardPresent { false };
+};
+
+GuardWedgeStyle resolveGuardWedgeStyle(const AppData& appData,
+                                       const AppConfig& appConfig,
+                                       const Region& region)
+{
+  const auto& factionRepository = appData.factionRepository();
+  const Faction* mainFaction = factionRepository.getMainFaction();
+  const int mainFactionNumber = factionRepository.getMainFactionNumber();
+  bool hasOtherGuard = false;
+  bool hasUnfriendlyGuard = false;
+  bool hasFriendlyGuard = false;
+
+  const auto& units = appData.unitRepository();
+  for (std::size_t unitIndex = 0; unitIndex < units.size(); ++unitIndex)
+  {
+    const Unit& unit = units.at(unitIndex);
+    if (!unit.isOnGuard() ||
+        unit.getXCoordinate() != region.getXCoordinate() ||
+        unit.getYCoordinate() != region.getYCoordinate() ||
+        unit.getZCoordinate() != region.getZCoordinate())
+    {
+      continue;
+    }
+
+    if (mainFactionNumber > 0 && unit.getFactionNumber() == mainFactionNumber)
+    {
+      return GuardWedgeStyle { appConfig.getGuardedRegionBorderColor(), true };
+    }
+
+    hasOtherGuard = true;
+    if (!mainFaction)
+    {
+      continue;
+    }
+
+    const auto& declaredAttitudes = mainFaction->getDeclaredAttitudes();
+    const auto attitude = declaredAttitudes.find(unit.getFactionNumber());
+    const Faction::Attitude effectiveAttitude = attitude != declaredAttitudes.end()
+      ? attitude->second
+      : mainFaction->getDefaultAttitude();
+    
+    if (effectiveAttitude == Faction::Attitude::Hostile ||
+        effectiveAttitude == Faction::Attitude::Unfriendly)
+    {
+      hasUnfriendlyGuard = true;
+    }
+    if (effectiveAttitude == Faction::Attitude::Friendly ||
+        effectiveAttitude == Faction::Attitude::Ally)
+    {
+      hasFriendlyGuard = true;
+    }
+  }
+
+  if (hasUnfriendlyGuard)
+  {
+    return GuardWedgeStyle { { 255, 0, 0 }, true };
+  }
+  if (hasOtherGuard)
+  {
+    return GuardWedgeStyle { { 128, 128, 128 }, true };
+  }
+  if (hasFriendlyGuard)
+  {
+    return GuardWedgeStyle { { 0, 255, 0 }, true };
+  }
+  return GuardWedgeStyle { { 128, 128, 128 }, false };
+}
+
 } // namespace
 
 
@@ -762,64 +835,7 @@ void MapTabContent::paintMap(HDC hdc) const
   HPEN borderPen = CreatePen(PS_SOLID, 2, RGB(0, 0, 0));
   HGDIOBJ oldPen = SelectObject(memoryDc, borderPen);
 
-  if (appConfig_ && hasMapBounds_)
-  {
-    std::set<std::pair<int, int>> occupiedCoordinates;
-    int coordinateParity = 0;
-    bool hasCoordinateParity = false;
-    for (const auto& visual : visibleRegions_)
-    {
-      if (!visual.region)
-      {
-        continue;
-      }
-
-      const int regionX = visual.region->getXCoordinate();
-      const int regionY = visual.region->getYCoordinate();
-      occupiedCoordinates.emplace(regionX, regionY);
-      if (!hasCoordinateParity)
-      {
-        coordinateParity = (regionX + regionY) & 1;
-        hasCoordinateParity = true;
-      }
-    }
-
-    const UiSizeProfile::Metrics uiMetrics = resolveUiMetrics();
-    const int hexWidth = resolveScaledMapHexWidth();
-    const int columnStep = (std::max)(10, static_cast<int>(std::lround(hexWidth * 0.75)));
-    HPEN emptyHexPen = CreatePen(PS_SOLID, 1, RGB(192, 192, 192)); // colour of empty hex borders
-    HGDIOBJ oldEmptyPen = SelectObject(memoryDc, emptyHexPen);
-    HGDIOBJ oldEmptyBrush = SelectObject(memoryDc, GetStockObject(NULL_BRUSH));
-
-    for (int x = mapMinX_ - mapLeftPaddingColumns_; x <= mapMaxX_ + mapRightPaddingColumns_; ++x)
-    {
-      for (int y = mapMinY_; y <= mapMaxY_; ++y)
-      {
-        if (hasCoordinateParity && (((x + y) & 1) != coordinateParity))
-        {
-          continue;
-        }
-
-        if (occupiedCoordinates.find({ x, y }) != occupiedCoordinates.end())
-        {
-          continue;
-        }
-
-        const int mapColumn = (x - mapMinX_) + mapLeftPaddingColumns_;
-        const double mapRow = static_cast<double>(y - mapMinY_) / 2.0;
-        const int centerX = kMargin + mapColumn * columnStep + (hexWidth / 2) - scrollX_;
-        const int centerY = kMargin + static_cast<int>(std::lround(mapRow * (std::max)(14, static_cast<int>(std::lround(static_cast<double>(hexWidth) * std::sqrt(3.0) / 2.0)))) ) +
-          ((std::max)(14, static_cast<int>(std::lround(static_cast<double>(hexWidth) * std::sqrt(3.0) / 2.0))) / 2) - scrollY_;
-
-        const std::array<POINT, 6> emptyPolygon = MapUtils::buildHexagonPolygon(centerX, centerY, hexWidth);
-        Polygon(memoryDc, emptyPolygon.data(), static_cast<int>(emptyPolygon.size()));
-      }
-    }
-
-    SelectObject(memoryDc, oldEmptyBrush);
-    SelectObject(memoryDc, oldEmptyPen);
-    DeleteObject(emptyHexPen);
-  }
+  drawEmptyHexes(memoryDc);
 
   // Use the latest REPORT period (not latest battle period) so markers match the displayed data.
   int latestBattlePeriodMonth = 0;
@@ -846,689 +862,18 @@ void MapTabContent::paintMap(HDC hdc) const
   const bool hasLatestBattlePeriod =
     latestBattlePeriodMonth >= 1 && latestBattlePeriodMonth <= 12 && latestBattlePeriodYear > 0;
 
-  const auto hasMainFactionGuard = [this](const Region& region) -> bool {
-    if (!appData_)
-    {
-      return false;
-    }
-
-    const int mainFactionNumber = appData_->factionRepository().getMainFactionNumber();
-    const auto& units = appData_->unitRepository();
-    for (std::size_t unitIndex = 0; unitIndex < units.size(); ++unitIndex)
-    {
-      const Unit& unit = units.at(unitIndex);
-      if (unit.getFactionNumber() == mainFactionNumber && unit.isOnGuard()
-          && unit.getXCoordinate() == region.getXCoordinate()
-          && unit.getYCoordinate() == region.getYCoordinate()
-          && unit.getZCoordinate() == selectedZ_)
-      {
-        return true;
-      }
-    }
-
-    return false;
-  };
-
-  for (const auto& visual : visibleRegions_)
-  {
-    std::array<POINT, 6> translated = visual.polygon;
-    for (auto& point : translated)
-    {
-      point.x -= scrollX_;
-      point.y -= scrollY_;
-    }
-
-    HBRUSH fillBrush = CreateSolidBrush(getRegionFillColor(visual.region->getRegionType()));
-    HGDIOBJ oldBrush = SelectObject(memoryDc, fillBrush);
-
-    Polygon(memoryDc, translated.data(), static_cast<int>(translated.size()));
-    SelectObject(memoryDc, oldBrush);
-    DeleteObject(fillBrush);
-
-    // Peasant colour: outer strip of the NE wedge (center → NE corner → E corner).
-    // Covers the outermost 20% of the wedge depth (min 10 px), drawn as a trapezoid
-    // whose outer edge is the NE–E hex side and whose inner edge is 20% inward toward center.
-    if (appConfig_ && visual.region && !visual.region->getPeasantType().empty()
-        && visual.region->getPeasantNumber() > 0)
-    {
-      const std::array<int, 3> peasantRgb = appConfig_->getPeasantColour(visual.region->getPeasantType());
-      const COLORREF peasantColor = RGB(
-        std::clamp(peasantRgb[0], 0, 255),
-        std::clamp(peasantRgb[1], 0, 255),
-        std::clamp(peasantRgb[2], 0, 255));
-
-      const LONG cx = static_cast<LONG>(visual.center.x - scrollX_);
-      const LONG cy = static_cast<LONG>(visual.center.y - scrollY_);
-      const POINT neCorner = translated[2];
-      const POINT eCorner  = translated[3];
-
-      // Determine strip depth: 20% of the radial distance from center to NE corner,
-      // but at least 10 pixels so the marker is always visible at small hex sizes.
-      const double dxNE = static_cast<double>(neCorner.x - cx);
-      const double dyNE = static_cast<double>(neCorner.y - cy);
-      const double radialDist = std::sqrt(dxNE * dxNE + dyNE * dyNE);
-      const double fraction = (radialDist > 0.0)
-        ? std::min(1.0, std::max(0.20, 10.0 / radialDist))
-        : 0.20;
-
-      // lerp(a, b, t): from a toward b by factor t.
-      auto lerp = [](LONG a, LONG b, double t) -> LONG {
-        return static_cast<LONG>(a + t * static_cast<double>(b - a));
-      };
-
-      // Trapezoid: outer edge = neCorner→eCorner,
-      //            inner edge = points at (1-fraction) of the way from center to each corner.
-      POINT wedge[4];
-      wedge[0] = neCorner;
-      wedge[1] = eCorner;
-      wedge[2] = { lerp(cx, eCorner.x,  1.0 - fraction), lerp(cy, eCorner.y,  1.0 - fraction) };
-      wedge[3] = { lerp(cx, neCorner.x, 1.0 - fraction), lerp(cy, neCorner.y, 1.0 - fraction) };
-
-      HBRUSH peasantBrush    = CreateSolidBrush(peasantColor);
-      HPEN peasantBorderPen  = CreatePen(PS_SOLID, 1, RGB(0, 0, 0));
-      HGDIOBJ oldPBrush      = SelectObject(memoryDc, peasantBrush);
-      HGDIOBJ oldPPen        = SelectObject(memoryDc, peasantBorderPen);
-      Polygon(memoryDc, wedge, 4);
-      SelectObject(memoryDc, oldPBrush);
-      SelectObject(memoryDc, oldPPen);
-      DeleteObject(peasantBrush);
-      DeleteObject(peasantBorderPen);
-    }
-
-    if (appData_ && appConfig_ && visual.region)
-    {
-      std::set<std::wstring> availableExitDirections;
-      for (const auto& exitDirection : visual.region->getExitDirections())
-      {
-        const std::wstring normalizedDirection = HexDirectionUtils::normalizeHexDirection(exitDirection);
-        if (!normalizedDirection.empty())
-        {
-          availableExitDirections.insert(normalizedDirection);
-        }
-      }
-
-      if (!availableExitDirections.empty())
-      {
-        std::set<std::wstring> roadDirectionsToDraw;
-        const auto& structureRepository = appData_->structureRepository();
-        for (std::size_t structureIndex = 0; structureIndex < structureRepository.size(); ++structureIndex)
-        {
-          const Structure& structure = structureRepository.at(structureIndex);
-          if (structure.getXCoordinate() != visual.region->getXCoordinate() ||
-              structure.getYCoordinate() != visual.region->getYCoordinate() ||
-              structure.getZCoordinate() != selectedZ_)
-          {
-            continue;
-          }
-
-          const std::wstring roadDirection = HexDirectionUtils::extractRoadDirectionFromStructure(structure);
-          if (roadDirection.empty() || availableExitDirections.find(roadDirection) == availableExitDirections.end())
-          {
-            continue;
-          }
-
-          roadDirectionsToDraw.insert(roadDirection);
-        }
-
-        if (!roadDirectionsToDraw.empty())
-        {
-          const std::array<int, 3> roadColor = appConfig_->getRoadColor();
-          HPEN roadPen = CreatePen(
-            PS_SOLID,
-            4,
-            RGB(std::clamp(roadColor[0], 0, 255),
-                std::clamp(roadColor[1], 0, 255),
-                std::clamp(roadColor[2], 0, 255)));
-          HGDIOBJ oldRoadPen = SelectObject(memoryDc, roadPen);
-
-          const int centerX = visual.center.x - scrollX_;
-          const int centerY = visual.center.y - scrollY_;
-          for (const auto& direction : roadDirectionsToDraw)
-          {
-            const POINT mapEndpoint = MapUtils::getRoadEndpointForDirection(visual.polygon, direction);
-            MoveToEx(memoryDc, centerX, centerY, nullptr);
-            LineTo(memoryDc, mapEndpoint.x - scrollX_, mapEndpoint.y - scrollY_);
-          }
-
-          SelectObject(memoryDc, oldRoadPen);
-          DeleteObject(roadPen);
-        }
-      }
-    }
-
-    if (visual.region->getContainsSettlement())
-    {
-      const std::wstring settlementType = StringUtils::toLower(visual.region->getSettlementType());
-      const UiSizeProfile::Metrics uiMetrics = resolveUiMetrics();
-      const int markerDiameter = (std::max)(4, resolveScaledMapHexWidth() / 4);
-      const int coreDiameter = (std::max)(2, markerDiameter / 4);
-      const int townRingDiameter = markerDiameter;
-      const int cityInnerRingDiameter = (std::max)(coreDiameter + 3, markerDiameter * 2 / 3);
-      const int cityOuterRingDiameter = markerDiameter;
-      const int centerX = visual.center.x - scrollX_;
-      const int centerY = visual.center.y - scrollY_;
-
-      const COLORREF markerColor = RGB(0, 0, 0);
-      HPEN markerPen = CreatePen(PS_SOLID, 2, markerColor);
-      HBRUSH markerBrush = CreateSolidBrush(markerColor);
-      HGDIOBJ oldMarkerPen = SelectObject(memoryDc, markerPen);
-      HGDIOBJ oldMarkerBrush = SelectObject(memoryDc, markerBrush);
-
-      if (settlementType == L"village")
-      {
-        // Draw village as an unfilled ring (outline only, 2 pixels wide).
-        SelectObject(memoryDc, GetStockObject(NULL_BRUSH));
-        Ellipse(memoryDc,
-                centerX - markerDiameter / 2,
-                centerY - markerDiameter / 2,
-                centerX + markerDiameter / 2,
-                centerY + markerDiameter / 2);
-        // Restore filled brush for subsequent settlement types.
-        SelectObject(memoryDc, markerBrush);
-      }
-      else if (settlementType == L"town")
-      {
-        // Draw town with two rings: filled core + unfilled outer ring.
-        // The filled core circle represents the town center (filled with current brush/pen).
-        Ellipse(memoryDc,
-          centerX - coreDiameter / 2,
-          centerY - coreDiameter / 2,
-          centerX + coreDiameter / 2,
-          centerY + coreDiameter / 2);
-
-        // Switch to NULL_BRUSH to draw subsequent circles unfilled (outline only).
-        SelectObject(memoryDc, GetStockObject(NULL_BRUSH));
-        
-        // Draw outer ring circle to show town's influence/extent area.
-        Ellipse(memoryDc,
-          centerX - townRingDiameter / 2,
-          centerY - townRingDiameter / 2,
-          centerX + townRingDiameter / 2,
-          centerY + townRingDiameter / 2);
-      }
-      else if (settlementType == L"city")
-      {
-        // Draw city with three rings: filled core + two unfilled rings showing influence zones.
-        // The filled core circle represents the city center.
-        Ellipse(memoryDc,
-          centerX - coreDiameter / 2,
-          centerY - coreDiameter / 2,
-          centerX + coreDiameter / 2,
-          centerY + coreDiameter / 2);
-
-        // Switch to NULL_BRUSH for unfilled circles.
-        SelectObject(memoryDc, GetStockObject(NULL_BRUSH));
-        
-        // Draw inner ring (first influence zone).
-        Ellipse(memoryDc,
-          centerX - cityInnerRingDiameter / 2,
-          centerY - cityInnerRingDiameter / 2,
-          centerX + cityInnerRingDiameter / 2,
-          centerY + cityInnerRingDiameter / 2);
-        
-        // Draw outer ring (second influence zone).
-        Ellipse(memoryDc,
-          centerX - cityOuterRingDiameter / 2,
-          centerY - cityOuterRingDiameter / 2,
-          centerX + cityOuterRingDiameter / 2,
-          centerY + cityOuterRingDiameter / 2);
-      }
-      else
-      {
-        // Fallback for unknown settlement types: draw as an unfilled ring (like village).
-        SelectObject(memoryDc, GetStockObject(NULL_BRUSH));
-        Ellipse(memoryDc,
-                centerX - markerDiameter / 2,
-                centerY - markerDiameter / 2,
-                centerX + markerDiameter / 2,
-                centerY + markerDiameter / 2);
-        // Restore filled brush.
-        SelectObject(memoryDc, markerBrush);
-      }
-
-      SelectObject(memoryDc, oldMarkerBrush);
-      SelectObject(memoryDc, oldMarkerPen);
-      DeleteObject(markerBrush);
-      DeleteObject(markerPen);
-    }
-
-    if (hasLatestBattlePeriod && appData_ && visual.region)
-    {
-      const bool hasBattle = appData_->battleRepository().hasBattleInRegionForPeriod(
-        visual.region->getXCoordinate(),
-        visual.region->getYCoordinate(),
-        visual.region->getZCoordinate(),
-        latestBattlePeriodMonth,
-        latestBattlePeriodYear
-      );
-
-      if (hasBattle)
-      {
-        const int centerX = visual.center.x - scrollX_;
-        const int centerY = visual.center.y - scrollY_;
-
-        const UiSizeProfile::Metrics uiMetrics = resolveUiMetrics();
-        const int hexWidth = resolveScaledMapHexWidth();
-        const int hexHeight = (std::max)(14, static_cast<int>(std::lround(static_cast<double>(hexWidth) * std::sqrt(3.0) / 2.0)));
-        const int crossSize = (std::max)(4, (((hexHeight * 2) / 5) * 2) / 3);
-        const int halfCross = crossSize / 2;
-        const int bottomMargin = (std::max)(4, hexHeight / 8);
-        const int crossCenterY = centerY + (hexHeight / 2) - bottomMargin - halfCross;
-
-        HPEN battlePen = CreatePen(PS_SOLID, 3, RGB(200, 0, 0));
-        HGDIOBJ oldBattlePen = SelectObject(memoryDc, battlePen);
-
-        MoveToEx(memoryDc, centerX - halfCross, crossCenterY - halfCross, nullptr);
-        LineTo(memoryDc, centerX + halfCross, crossCenterY + halfCross);
-        MoveToEx(memoryDc, centerX - halfCross, crossCenterY + halfCross, nullptr);
-        LineTo(memoryDc, centerX + halfCross, crossCenterY - halfCross);
-
-        SelectObject(memoryDc, oldBattlePen);
-        DeleteObject(battlePen);
-      }
-    }
-  }
-
-  if (appConfig_)
-  {
-    const std::array<int, 3> guardedColor = appConfig_->getGuardedRegionBorderColor();
-    HPEN guardedPen = CreatePen(
-      PS_SOLID,
-      2,
-      RGB(std::clamp(guardedColor[0], 0, 255),
-          std::clamp(guardedColor[1], 0, 255),
-          std::clamp(guardedColor[2], 0, 255)));
-    HGDIOBJ oldGuardedPen = SelectObject(memoryDc, guardedPen);
-    HGDIOBJ oldGuardedBrush = SelectObject(memoryDc, GetStockObject(NULL_BRUSH));
-
-    for (const auto& visual : visibleRegions_)
-    {
-      if (!visual.region || !hasMainFactionGuard(*visual.region))
-      {
-        continue;
-      }
-
-      std::array<POINT, 6> translated = visual.polygon;
-      for (auto& point : translated)
-      {
-        point.x -= scrollX_;
-        point.y -= scrollY_;
-      }
-      Polygon(memoryDc, translated.data(), static_cast<int>(translated.size()));
-    }
-
-    SelectObject(memoryDc, oldGuardedBrush);
-    SelectObject(memoryDc, oldGuardedPen);
-    DeleteObject(guardedPen);
-  }
+  drawRegionHexes(memoryDc, hasLatestBattlePeriod, latestBattlePeriodMonth, latestBattlePeriodYear);
 
   SelectObject(memoryDc, oldPen);
   DeleteObject(borderPen);
 
-  // Draw selected region border on top in the configured highlight colour.
-  if (hasSelectedRegion_ && appConfig_)
-  {
-    const std::array<int, 3> selColor = appConfig_->getSelectedRegionBorderColor();
-    HPEN selPen = CreatePen(PS_SOLID, 3, RGB(selColor[0], selColor[1], selColor[2]));
-    HGDIOBJ oldSelPen = SelectObject(memoryDc, selPen);
-    HGDIOBJ oldSelBrush = SelectObject(memoryDc, GetStockObject(NULL_BRUSH));
+  drawSelectedRegionBorder(memoryDc);
 
-    for (const auto& visual : visibleRegions_)
-    {
-      if (!visual.region ||
-          visual.region->getXCoordinate() != selectedRegionX_ ||
-          visual.region->getYCoordinate() != selectedRegionY_)
-      {
-        continue;
-      }
+  drawMovePath(memoryDc);
 
-      std::array<POINT, 6> translated = visual.polygon;
-      for (auto& point : translated)
-      {
-        point.x -= scrollX_;
-        point.y -= scrollY_;
-      }
-      Polygon(memoryDc, translated.data(), static_cast<int>(translated.size()));
-      break;
-    }
+  drawStructureMarkers(memoryDc);
 
-    SelectObject(memoryDc, oldSelBrush);
-    SelectObject(memoryDc, oldSelPen);
-    DeleteObject(selPen);
-  }
-
-  // Draw move path arrows
-  if (!movePathCoordinates_.empty() && movePathCoordinates_.size() > 1)
-  {
-    const COLORREF defaultArrowColor = movePathIsSail_ ? RGB(173, 216, 230) : RGB(144, 238, 144); // Light Blue for SAIL, Light Green for MOVE/ADVANCE
-    const COLORREF arrowColor = movePathHasNegativeCapacity_ ? RGB(255, 0, 0) : defaultArrowColor;
-    const COLORREF arrowBorderColor = RGB(0, 0, 0); // Black border
-    
-    HPEN arrowPen = CreatePen(PS_SOLID, 4, arrowColor);
-    HPEN arrowBorderPen = CreatePen(PS_SOLID, 8, arrowBorderColor);
-    HPEN arrowTipBorderPen = CreatePen(PS_SOLID, 2, arrowBorderColor);
-    HBRUSH arrowBrush = CreateSolidBrush(arrowColor);
-    
-    for (size_t i = 0; i < movePathCoordinates_.size() - 1; ++i)
-    {
-      const int x1 = movePathCoordinates_[i].first;
-      const int y1 = movePathCoordinates_[i].second;
-      const int x2 = movePathCoordinates_[i + 1].first;
-      const int y2 = movePathCoordinates_[i + 1].second;
-      
-      // Find visual centers for these coordinates
-      POINT startCenter = {0, 0};
-      POINT endCenter = {0, 0};
-      
-      for (const auto& visual : visibleRegions_)
-      {
-        if (visual.region->getXCoordinate() == x1 && visual.region->getYCoordinate() == y1)
-        {
-          startCenter = visual.center;
-        }
-        if (visual.region->getXCoordinate() == x2 && visual.region->getYCoordinate() == y2)
-        {
-          endCenter = visual.center;
-        }
-      }
-      
-      if (startCenter.x == 0 && startCenter.y == 0)
-        continue;
-      if (endCenter.x == 0 && endCenter.y == 0)
-        continue;
-      
-      // Apply scroll offset
-      startCenter.x -= scrollX_;
-      startCenter.y -= scrollY_;
-      endCenter.x -= scrollX_;
-      endCenter.y -= scrollY_;
-
-      // Keep each arrow segment at 50% of center-to-center distance.
-      const double dx = endCenter.x - startCenter.x;
-      const double dy = endCenter.y - startCenter.y;
-      const double length = std::sqrt(dx * dx + dy * dy);
-
-      int adjustedStartX = startCenter.x;
-      int adjustedStartY = startCenter.y;
-      int adjustedEndX = endCenter.x;
-      int adjustedEndY = endCenter.y;
-
-      if (length > 0)
-      {
-        const double ux = dx / length;
-        const double uy = dy / length;
-        const double shorteningAmount = (std::max)(1.0, length * 0.25);
-        adjustedStartX = static_cast<int>(std::lround(startCenter.x + ux * shorteningAmount));
-        adjustedStartY = static_cast<int>(std::lround(startCenter.y + uy * shorteningAmount));
-        adjustedEndX = static_cast<int>(std::lround(endCenter.x - ux * shorteningAmount));
-        adjustedEndY = static_cast<int>(std::lround(endCenter.y - uy * shorteningAmount));
-      }
-      
-      // Draw border first, then the 4px arrow on top.
-      int shaftEndX = adjustedEndX;
-      int shaftEndY = adjustedEndY;
-      if (length > 0)
-      {
-        const double ux = dx / length;
-        const double uy = dy / length;
-        const double arrowLen = 10.0;
-        shaftEndX = static_cast<int>(std::lround(adjustedEndX - ux * arrowLen));
-        shaftEndY = static_cast<int>(std::lround(adjustedEndY - uy * arrowLen));
-      }
-
-      HGDIOBJ oldBorderPen = SelectObject(memoryDc, arrowBorderPen);
-      MoveToEx(memoryDc, adjustedStartX, adjustedStartY, nullptr);
-      LineTo(memoryDc, shaftEndX, shaftEndY);
-      SelectObject(memoryDc, oldBorderPen);
-
-      HGDIOBJ oldArrowPen = SelectObject(memoryDc, arrowPen);
-      MoveToEx(memoryDc, adjustedStartX, adjustedStartY, nullptr);
-      LineTo(memoryDc, shaftEndX, shaftEndY);
-      SelectObject(memoryDc, oldArrowPen);
-      
-      // Draw arrow head at end
-      if (length > 0)
-      {
-        const double ux = dx / length;
-        const double uy = dy / length;
-        const double arrowLen = 10;
-        const double arrowWidth = 6;
-        
-        // Arrow tip
-        const POINT arrowTip = {adjustedEndX, adjustedEndY};
-        
-        // Arrow base points
-        const POINT arrowBase1 = {
-          static_cast<int>(adjustedEndX - ux * arrowLen + uy * arrowWidth),
-          static_cast<int>(adjustedEndY - uy * arrowLen - ux * arrowWidth)
-        };
-        const POINT arrowBase2 = {
-          static_cast<int>(adjustedEndX - ux * arrowLen - uy * arrowWidth),
-          static_cast<int>(adjustedEndY - uy * arrowLen + ux * arrowWidth)
-        };
-        
-        HGDIOBJ oldBrushArrow = SelectObject(memoryDc, arrowBrush);
-        HGDIOBJ oldTipPen = SelectObject(memoryDc, arrowTipBorderPen);
-        const POINT arrowPoints[] = {arrowTip, arrowBase1, arrowBase2};
-        Polygon(memoryDc, arrowPoints, 3);
-        SelectObject(memoryDc, oldTipPen);
-        SelectObject(memoryDc, oldBrushArrow);
-      }
-    }
-    
-    DeleteObject(arrowPen);
-    DeleteObject(arrowBorderPen);
-    DeleteObject(arrowTipBorderPen);
-    DeleteObject(arrowBrush);
-  }
-
-  // Draw structure markers as a final overlay so they remain visible above map symbols.
-  if (appData_ && appConfig_)
-  {
-    const std::array<int, 3> markerColor = appConfig_->getStructureMarkerColor();
-    const COLORREF defaultMarkerColor = RGB(
-      std::clamp(markerColor[0], 0, 255),
-      std::clamp(markerColor[1], 0, 255),
-      std::clamp(markerColor[2], 0, 255));
-    const COLORREF caravanseraiMarkerColor = RGB(255, 165, 0);
-    const COLORREF shipMarkerColor = RGB(173, 216, 230);
-
-    for (const auto& visual : visibleRegions_)
-    {
-      if (!visual.region)
-      {
-        continue;
-      }
-
-      const auto structuresInRegion = appData_->structureRepository().findByCoordinates(
-        visual.region->getXCoordinate(),
-        visual.region->getYCoordinate(),
-        visual.region->getZCoordinate());
-      if (structuresInRegion.empty())
-      {
-        continue;
-      }
-
-      bool hasNonRoadNonShipStructure = false;
-      bool hasShipStructure = false;
-      bool hasFlyingShipStructure = false;
-      for (const Structure* structure : structuresInRegion)
-      {
-        if (!structure)
-        {
-          continue;
-        }
-
-        const bool isRoadStructure = !HexDirectionUtils::extractRoadDirectionFromStructure(*structure).empty();
-        const StructInfo* structInfo = appData_->structInfoRepository().findByType(structure->getStructureType());
-        const bool isShipStructure = structInfo && structInfo->isShip();
-
-        if (isShipStructure)
-        {
-          hasShipStructure = true;
-          if (structure->isFlying())
-          {
-            hasFlyingShipStructure = true;
-          }
-        }
-
-        if (!isRoadStructure && !isShipStructure)
-        {
-          hasNonRoadNonShipStructure = true;
-        }
-      }
-
-      const bool hasCaravanserai = appData_->structureRepository().findByCoordinatesAndType(
-        visual.region->getXCoordinate(),
-        visual.region->getYCoordinate(),
-        visual.region->getZCoordinate(),
-        L"caravanserai").size() > 0;
-
-      const bool hasShaft = appData_->structureRepository().findByCoordinatesAndType(
-        visual.region->getXCoordinate(),
-        visual.region->getYCoordinate(),
-        visual.region->getZCoordinate(),
-        L"shaft").size() > 0;
-
-      if (!hasNonRoadNonShipStructure && !hasShipStructure)
-      {
-        continue;
-      }
-
-      const POINT northEndpoint = MapUtils::getRoadEndpointForDirection(visual.polygon, L"N");
-      const POINT northWestEndpoint = MapUtils::getRoadEndpointForDirection(visual.polygon, L"NW");
-      const POINT borderMidpoint {
-        (northEndpoint.x + northWestEndpoint.x) / 2,
-        (northEndpoint.y + northWestEndpoint.y) / 2
-      };
-      const POINT southEndpoint = MapUtils::getRoadEndpointForDirection(visual.polygon, L"S");
-      const POINT southWestEndpoint = MapUtils::getRoadEndpointForDirection(visual.polygon, L"SW");
-      const POINT borderMidpointBottomLeft {
-        (southEndpoint.x + southWestEndpoint.x) / 2,
-        (southEndpoint.y + southWestEndpoint.y) / 2
-      };
-
-      const POINT centerPoint { visual.center.x, visual.center.y };
-      const int markerCenterX = borderMidpoint.x + (centerPoint.x - borderMidpoint.x) / 4 - scrollX_;
-      const int markerCenterY = borderMidpoint.y + (centerPoint.y - borderMidpoint.y) / 4 - scrollY_;
-      const int shipMarkerCenterX = borderMidpointBottomLeft.x + (centerPoint.x - borderMidpointBottomLeft.x) / 4 - scrollX_;
-      const int shipMarkerCenterY = borderMidpointBottomLeft.y + (centerPoint.y - borderMidpointBottomLeft.y) / 4 - scrollY_;
-      const int markerRadius = 2;
-
-      if (hasNonRoadNonShipStructure)
-      {
-        const COLORREF topMarkerColor = hasCaravanserai ? caravanseraiMarkerColor : defaultMarkerColor;
-        HBRUSH markerBrush = CreateSolidBrush(topMarkerColor);
-        HGDIOBJ oldMarkerPen = SelectObject(memoryDc, GetStockObject(NULL_PEN));
-        HGDIOBJ oldMarkerBrush = SelectObject(memoryDc, markerBrush);
-        Ellipse(memoryDc,
-            markerCenterX - markerRadius,
-            markerCenterY - markerRadius,
-            markerCenterX + markerRadius + 1,
-            markerCenterY + markerRadius + 1);
-        SelectObject(memoryDc, oldMarkerBrush);
-        SelectObject(memoryDc, oldMarkerPen);
-        DeleteObject(markerBrush);
-
-        if (hasShaft)
-        {
-          HPEN shaftBorderPen = CreatePen(PS_SOLID, 1, RGB(50, 50, 50));
-          HGDIOBJ oldShaftPen = SelectObject(memoryDc, shaftBorderPen);
-          HGDIOBJ oldShaftBrush = SelectObject(memoryDc, GetStockObject(NULL_BRUSH));
-          Ellipse(memoryDc,
-              markerCenterX - markerRadius,
-              markerCenterY - markerRadius,
-              markerCenterX + markerRadius + 1,
-              markerCenterY + markerRadius + 1);
-          SelectObject(memoryDc, oldShaftBrush);
-          SelectObject(memoryDc, oldShaftPen);
-          DeleteObject(shaftBorderPen);
-        }
-      }
-
-      if (hasShipStructure)
-      {
-        HBRUSH shipBrush = CreateSolidBrush(shipMarkerColor);
-        HPEN shipPen = nullptr;
-        HGDIOBJ oldShipPen;
-        if (hasFlyingShipStructure)
-        {
-          shipPen = CreatePen(PS_SOLID, 1, RGB(0, 0, 0));
-          oldShipPen = SelectObject(memoryDc, shipPen);
-        }
-        else
-        {
-          oldShipPen = SelectObject(memoryDc, GetStockObject(NULL_PEN));
-        }
-        HGDIOBJ oldShipBrush = SelectObject(memoryDc, shipBrush);
-        Ellipse(memoryDc,
-            shipMarkerCenterX - markerRadius,
-            shipMarkerCenterY - markerRadius,
-            shipMarkerCenterX + markerRadius + 1,
-            shipMarkerCenterY + markerRadius + 1);
-        SelectObject(memoryDc, oldShipBrush);
-        SelectObject(memoryDc, oldShipPen);
-        DeleteObject(shipBrush);
-        if (shipPen)
-        {
-          DeleteObject(shipPen);
-        }
-      }
-    }
-  }
-
-  if (appData_)
-  {
-    constexpr std::array<const wchar_t*, 6> directions = { L"NW", L"N", L"NE", L"SE", L"S", L"SW" };
-    constexpr std::array<std::pair<std::size_t, std::size_t>, 6> edgeVertices = {
-      std::pair<std::size_t, std::size_t>{ 0, 1 },
-      { 1, 2 },
-      { 2, 3 },
-      { 3, 4 },
-      { 4, 5 },
-      { 5, 0 }
-    };
-    HPEN missingExitPen = CreatePen(PS_SOLID, 2, RGB(255, 0, 0));
-    HGDIOBJ oldMissingExitPen = SelectObject(memoryDc, missingExitPen);
-
-    for (const auto& visual : visibleRegions_)
-    {
-      if (!visual.region || !visual.region->getVisited())
-      {
-        continue;
-      }
-
-      std::set<std::wstring> availableExitDirections;
-      for (const std::wstring& direction : visual.region->getExitDirections())
-      {
-        const std::wstring normalizedDirection = HexDirectionUtils::normalizeHexDirection(direction);
-        if (!normalizedDirection.empty())
-        {
-          availableExitDirections.insert(normalizedDirection);
-        }
-      }
-
-      for (std::size_t index = 0; index < directions.size(); ++index)
-      {
-        if (availableExitDirections.find(directions[index]) != availableExitDirections.end())
-        {
-          continue;
-        }
-
-        const auto [firstVertex, secondVertex] = edgeVertices[index];
-        MoveToEx(memoryDc,
-                 visual.polygon[firstVertex].x - scrollX_,
-                 visual.polygon[firstVertex].y - scrollY_,
-                 nullptr);
-        LineTo(memoryDc,
-               visual.polygon[secondVertex].x - scrollX_,
-               visual.polygon[secondVertex].y - scrollY_);
-      }
-    }
-
-    SelectObject(memoryDc, oldMissingExitPen);
-    DeleteObject(missingExitPen);
-  }
+  drawMissingExitEdges(memoryDc);
 
   BitBlt(
     hdc,
@@ -1545,6 +890,643 @@ void MapTabContent::paintMap(HDC hdc) const
   SelectObject(memoryDc, oldBitmap);
   DeleteObject(bitmap);
   DeleteDC(memoryDc);
+}
+
+void MapTabContent::drawMovePath(HDC memoryDc) const
+{
+  if (movePathCoordinates_.size() < 2)
+  {
+    return;
+  }
+
+  const COLORREF defaultColor = movePathIsSail_ ? RGB(173, 216, 230) : RGB(144, 238, 144);
+  const COLORREF arrowColor = movePathHasNegativeCapacity_ ? RGB(255, 0, 0) : defaultColor;
+  const COLORREF borderColor = RGB(0, 0, 0);
+  HPEN arrowPen = CreatePen(PS_SOLID, 4, arrowColor);
+  HPEN arrowBorderPen = CreatePen(PS_SOLID, 8, borderColor);
+  HPEN arrowTipBorderPen = CreatePen(PS_SOLID, 2, borderColor);
+  HBRUSH arrowBrush = CreateSolidBrush(arrowColor);
+
+  for (std::size_t index = 0; index + 1 < movePathCoordinates_.size(); ++index)
+  {
+    const int startX = movePathCoordinates_[index].first;
+    const int startY = movePathCoordinates_[index].second;
+    const int endX = movePathCoordinates_[index + 1].first;
+    const int endY = movePathCoordinates_[index + 1].second;
+    POINT startCenter { 0, 0 };
+    POINT endCenter { 0, 0 };
+    for (const RegionVisual& visual : visibleRegions_)
+    {
+      if (visual.region && visual.region->getXCoordinate() == startX && visual.region->getYCoordinate() == startY)
+      {
+        startCenter = visual.center;
+      }
+      if (visual.region && visual.region->getXCoordinate() == endX && visual.region->getYCoordinate() == endY)
+      {
+        endCenter = visual.center;
+      }
+    }
+    if ((startCenter.x == 0 && startCenter.y == 0) || (endCenter.x == 0 && endCenter.y == 0))
+    {
+      continue;
+    }
+
+    startCenter.x -= scrollX_;
+    startCenter.y -= scrollY_;
+    endCenter.x -= scrollX_;
+    endCenter.y -= scrollY_;
+    const double dx = endCenter.x - startCenter.x;
+    const double dy = endCenter.y - startCenter.y;
+    const double length = std::sqrt(dx * dx + dy * dy);
+    int startLineX = startCenter.x;
+    int startLineY = startCenter.y;
+    int endLineX = endCenter.x;
+    int endLineY = endCenter.y;
+    if (length > 0.0)
+    {
+      const double ux = dx / length;
+      const double uy = dy / length;
+      const double shortening = (std::max)(1.0, length * 0.25);
+      startLineX = static_cast<int>(std::lround(startCenter.x + ux * shortening));
+      startLineY = static_cast<int>(std::lround(startCenter.y + uy * shortening));
+      endLineX = static_cast<int>(std::lround(endCenter.x - ux * shortening));
+      endLineY = static_cast<int>(std::lround(endCenter.y - uy * shortening));
+    }
+
+    int shaftEndX = endLineX;
+    int shaftEndY = endLineY;
+    if (length > 0.0)
+    {
+      shaftEndX = static_cast<int>(std::lround(endLineX - dx / length * 10.0));
+      shaftEndY = static_cast<int>(std::lround(endLineY - dy / length * 10.0));
+    }
+    HGDIOBJ oldPen = SelectObject(memoryDc, arrowBorderPen);
+    MoveToEx(memoryDc, startLineX, startLineY, nullptr);
+    LineTo(memoryDc, shaftEndX, shaftEndY);
+    SelectObject(memoryDc, arrowPen);
+    MoveToEx(memoryDc, startLineX, startLineY, nullptr);
+    LineTo(memoryDc, shaftEndX, shaftEndY);
+    SelectObject(memoryDc, oldPen);
+
+    if (length > 0.0)
+    {
+      const double ux = dx / length;
+      const double uy = dy / length;
+      constexpr double arrowLength = 10.0;
+      constexpr double arrowWidth = 6.0;
+      const POINT tip { endLineX, endLineY };
+      const POINT baseOne {
+        static_cast<int>(endLineX - ux * arrowLength + uy * arrowWidth),
+        static_cast<int>(endLineY - uy * arrowLength - ux * arrowWidth)
+      };
+      const POINT baseTwo {
+        static_cast<int>(endLineX - ux * arrowLength - uy * arrowWidth),
+        static_cast<int>(endLineY - uy * arrowLength + ux * arrowWidth)
+      };
+      const POINT points[] = { tip, baseOne, baseTwo };
+      HGDIOBJ oldBrush = SelectObject(memoryDc, arrowBrush);
+      oldPen = SelectObject(memoryDc, arrowTipBorderPen);
+      Polygon(memoryDc, points, 3);
+      SelectObject(memoryDc, oldPen);
+      SelectObject(memoryDc, oldBrush);
+    }
+  }
+
+  DeleteObject(arrowPen);
+  DeleteObject(arrowBorderPen);
+  DeleteObject(arrowTipBorderPen);
+  DeleteObject(arrowBrush);
+}
+
+void MapTabContent::drawSelectedRegionBorder(HDC memoryDc) const
+{
+  if (!hasSelectedRegion_ || !appConfig_)
+  {
+    return;
+  }
+
+  const std::array<int, 3> color = appConfig_->getSelectedRegionBorderColor();
+  HPEN selectedPen = CreatePen(PS_SOLID, 3, RGB(color[0], color[1], color[2]));
+  HGDIOBJ oldPen = SelectObject(memoryDc, selectedPen);
+  HGDIOBJ oldBrush = SelectObject(memoryDc, GetStockObject(NULL_BRUSH));
+  for (const RegionVisual& visual : visibleRegions_)
+  {
+    if (!visual.region || visual.region->getXCoordinate() != selectedRegionX_ ||
+        visual.region->getYCoordinate() != selectedRegionY_)
+    {
+      continue;
+    }
+    std::array<POINT, 6> translated = visual.polygon;
+    for (POINT& point : translated)
+    {
+      point.x -= scrollX_;
+      point.y -= scrollY_;
+    }
+    Polygon(memoryDc, translated.data(), static_cast<int>(translated.size()));
+    break;
+  }
+  SelectObject(memoryDc, oldBrush);
+  SelectObject(memoryDc, oldPen);
+  DeleteObject(selectedPen);
+}
+
+void MapTabContent::drawStructureMarkers(HDC memoryDc) const
+{
+  if (!appData_ || !appConfig_)
+  {
+    return;
+  }
+
+  const std::array<int, 3> markerRgb = appConfig_->getStructureMarkerColor();
+  const COLORREF defaultMarkerColor = RGB(std::clamp(markerRgb[0], 0, 255),
+                                          std::clamp(markerRgb[1], 0, 255),
+                                          std::clamp(markerRgb[2], 0, 255));
+  const COLORREF caravanseraiColor = RGB(255, 165, 0);
+  const COLORREF shipColor = RGB(173, 216, 230);
+
+  for (const RegionVisual& visual : visibleRegions_)
+  {
+    if (!visual.region)
+    {
+      continue;
+    }
+
+    const auto structures = appData_->structureRepository().findByCoordinates(
+      visual.region->getXCoordinate(), visual.region->getYCoordinate(), visual.region->getZCoordinate());
+    bool hasRegionMarker = false;
+    bool hasShip = false;
+    bool hasFlyingShip = false;
+    for (const Structure* structure : structures)
+    {
+      if (!structure)
+      {
+        continue;
+      }
+      const bool isRoad = !HexDirectionUtils::extractRoadDirectionFromStructure(*structure).empty();
+      const StructInfo* info = appData_->structInfoRepository().findByType(structure->getStructureType());
+      const bool isShip = info && info->isShip();
+      hasShip = hasShip || isShip;
+      hasFlyingShip = hasFlyingShip || (isShip && structure->isFlying());
+      hasRegionMarker = hasRegionMarker || (!isRoad && !isShip);
+    }
+    if (!hasRegionMarker && !hasShip)
+    {
+      continue;
+    }
+
+    const bool hasCaravanserai = !appData_->structureRepository().findByCoordinatesAndType(
+      visual.region->getXCoordinate(), visual.region->getYCoordinate(), visual.region->getZCoordinate(),
+      L"caravanserai").empty();
+    const bool hasShaft = !appData_->structureRepository().findByCoordinatesAndType(
+      visual.region->getXCoordinate(), visual.region->getYCoordinate(), visual.region->getZCoordinate(),
+      L"shaft").empty();
+
+    const POINT north = MapUtils::getRoadEndpointForDirection(visual.polygon, L"N");
+    const POINT northWest = MapUtils::getRoadEndpointForDirection(visual.polygon, L"NW");
+    const POINT south = MapUtils::getRoadEndpointForDirection(visual.polygon, L"S");
+    const POINT southWest = MapUtils::getRoadEndpointForDirection(visual.polygon, L"SW");
+    const POINT topMidpoint { (north.x + northWest.x) / 2, (north.y + northWest.y) / 2 };
+    const POINT bottomMidpoint { (south.x + southWest.x) / 2, (south.y + southWest.y) / 2 };
+    const int markerX = topMidpoint.x + (visual.center.x - topMidpoint.x) / 4 - scrollX_;
+    const int markerY = topMidpoint.y + (visual.center.y - topMidpoint.y) / 4 - scrollY_;
+    const int shipX = bottomMidpoint.x + (visual.center.x - bottomMidpoint.x) / 4 - scrollX_;
+    const int shipY = bottomMidpoint.y + (visual.center.y - bottomMidpoint.y) / 4 - scrollY_;
+    constexpr int markerRadius = 2;
+
+    if (hasRegionMarker)
+    {
+      HBRUSH brush = CreateSolidBrush(hasCaravanserai ? caravanseraiColor : defaultMarkerColor);
+      HGDIOBJ oldPen = SelectObject(memoryDc, GetStockObject(NULL_PEN));
+      HGDIOBJ oldBrush = SelectObject(memoryDc, brush);
+      Ellipse(memoryDc, markerX - markerRadius, markerY - markerRadius,
+              markerX + markerRadius + 1, markerY + markerRadius + 1);
+      SelectObject(memoryDc, oldBrush);
+      SelectObject(memoryDc, oldPen);
+      DeleteObject(brush);
+
+      if (hasShaft)
+      {
+        HPEN shaftPen = CreatePen(PS_SOLID, 1, RGB(50, 50, 50));
+        oldPen = SelectObject(memoryDc, shaftPen);
+        oldBrush = SelectObject(memoryDc, GetStockObject(NULL_BRUSH));
+        Ellipse(memoryDc, markerX - markerRadius, markerY - markerRadius,
+                markerX + markerRadius + 1, markerY + markerRadius + 1);
+        SelectObject(memoryDc, oldBrush);
+        SelectObject(memoryDc, oldPen);
+        DeleteObject(shaftPen);
+      }
+    }
+
+    if (hasShip)
+    {
+      HBRUSH brush = CreateSolidBrush(shipColor);
+      HPEN shipPen = hasFlyingShip ? CreatePen(PS_SOLID, 1, RGB(0, 0, 0)) : nullptr;
+      HGDIOBJ penObject = shipPen ? static_cast<HGDIOBJ>(shipPen) : GetStockObject(NULL_PEN);
+      HGDIOBJ oldPen = SelectObject(memoryDc, penObject);
+      HGDIOBJ oldBrush = SelectObject(memoryDc, brush);
+      Ellipse(memoryDc, shipX - markerRadius, shipY - markerRadius,
+              shipX + markerRadius + 1, shipY + markerRadius + 1);
+      SelectObject(memoryDc, oldBrush);
+      SelectObject(memoryDc, oldPen);
+      DeleteObject(brush);
+      if (shipPen)
+      {
+        DeleteObject(shipPen);
+      }
+    }
+  }
+}
+
+void MapTabContent::drawMissingExitEdges(HDC memoryDc) const
+{
+  if (!appData_)
+  {
+    return;
+  }
+
+  constexpr std::array<const wchar_t*, 6> directions = { L"NW", L"N", L"NE", L"SE", L"S", L"SW" };
+  constexpr std::array<std::pair<std::size_t, std::size_t>, 6> edgeVertices = {
+    std::pair<std::size_t, std::size_t>{ 0, 1 }, { 1, 2 }, { 2, 3 }, { 3, 4 }, { 4, 5 }, { 5, 0 }
+  };
+  HPEN missingExitPen = CreatePen(PS_SOLID, 2, RGB(255, 0, 0));
+  HGDIOBJ oldPen = SelectObject(memoryDc, missingExitPen);
+  for (const RegionVisual& visual : visibleRegions_)
+  {
+    if (!visual.region || !visual.region->getVisited())
+    {
+      continue;
+    }
+    std::set<std::wstring> availableDirections;
+    for (const std::wstring& direction : visual.region->getExitDirections())
+    {
+      const std::wstring normalized = HexDirectionUtils::normalizeHexDirection(direction);
+      if (!normalized.empty())
+      {
+        availableDirections.insert(normalized);
+      }
+    }
+    for (std::size_t index = 0; index < directions.size(); ++index)
+    {
+      if (availableDirections.find(directions[index]) != availableDirections.end())
+      {
+        continue;
+      }
+      const auto [firstVertex, secondVertex] = edgeVertices[index];
+      MoveToEx(memoryDc, visual.polygon[firstVertex].x - scrollX_,
+               visual.polygon[firstVertex].y - scrollY_, nullptr);
+      LineTo(memoryDc, visual.polygon[secondVertex].x - scrollX_,
+             visual.polygon[secondVertex].y - scrollY_);
+    }
+  }
+  SelectObject(memoryDc, oldPen);
+  DeleteObject(missingExitPen);
+}
+
+void MapTabContent::drawEmptyHexes(HDC memoryDc) const
+{
+  if (!appConfig_ || !hasMapBounds_)
+  {
+    return;
+  }
+
+  std::set<std::pair<int, int>> occupiedCoordinates;
+  int coordinateParity = 0;
+  bool hasCoordinateParity = false;
+  for (const RegionVisual& visual : visibleRegions_)
+  {
+    if (!visual.region)
+    {
+      continue;
+    }
+    const int xCoordinate = visual.region->getXCoordinate();
+    const int yCoordinate = visual.region->getYCoordinate();
+    occupiedCoordinates.emplace(xCoordinate, yCoordinate);
+    if (!hasCoordinateParity)
+    {
+      coordinateParity = (xCoordinate + yCoordinate) & 1;
+      hasCoordinateParity = true;
+    }
+  }
+
+  const int hexWidth = resolveScaledMapHexWidth();
+  const int hexHeight = (std::max)(14, static_cast<int>(std::lround(static_cast<double>(hexWidth) * std::sqrt(3.0) / 2.0)));
+  const int columnStep = (std::max)(10, static_cast<int>(std::lround(hexWidth * 0.75)));
+  HPEN emptyHexPen = CreatePen(PS_SOLID, 1, RGB(192, 192, 192));
+  HGDIOBJ oldPen = SelectObject(memoryDc, emptyHexPen);
+  HGDIOBJ oldBrush = SelectObject(memoryDc, GetStockObject(NULL_BRUSH));
+
+  for (int xCoordinate = mapMinX_ - mapLeftPaddingColumns_;
+       xCoordinate <= mapMaxX_ + mapRightPaddingColumns_;
+       ++xCoordinate)
+  {
+    for (int yCoordinate = mapMinY_; yCoordinate <= mapMaxY_; ++yCoordinate)
+    {
+      if ((hasCoordinateParity && (((xCoordinate + yCoordinate) & 1) != coordinateParity)) ||
+          occupiedCoordinates.find({ xCoordinate, yCoordinate }) != occupiedCoordinates.end())
+      {
+        continue;
+      }
+
+      const int mapColumn = (xCoordinate - mapMinX_) + mapLeftPaddingColumns_;
+      const double mapRow = static_cast<double>(yCoordinate - mapMinY_) / 2.0;
+      const int centerX = kMargin + mapColumn * columnStep + (hexWidth / 2) - scrollX_;
+      const int centerY = kMargin + static_cast<int>(std::lround(mapRow * hexHeight)) + (hexHeight / 2) - scrollY_;
+      const std::array<POINT, 6> polygon = MapUtils::buildHexagonPolygon(centerX, centerY, hexWidth);
+      Polygon(memoryDc, polygon.data(), static_cast<int>(polygon.size()));
+    }
+  }
+
+  SelectObject(memoryDc, oldBrush);
+  SelectObject(memoryDc, oldPen);
+  DeleteObject(emptyHexPen);
+}
+
+void MapTabContent::drawRegionHexes(HDC memoryDc,
+                                    bool hasLatestBattlePeriod,
+                                    int battleMonth,
+                                    int battleYear) const
+{
+  for (const RegionVisual& visual : visibleRegions_)
+  {
+    if (visual.region)
+    {
+      drawRegionHex(memoryDc, visual, hasLatestBattlePeriod, battleMonth, battleYear);
+    }
+  }
+}
+
+void MapTabContent::drawRegionHex(HDC memoryDc,
+                                  const RegionVisual& visual,
+                                  bool hasLatestBattlePeriod,
+                                  int battleMonth,
+                                  int battleYear) const
+{
+  std::array<POINT, 6> translated = visual.polygon;
+  for (POINT& point : translated)
+  {
+    point.x -= scrollX_;
+    point.y -= scrollY_;
+  }
+
+  drawRegionFill(memoryDc, visual, translated);
+  drawPeasantWedge(memoryDc, visual, translated);
+  drawGuardWedge(memoryDc, visual, translated);
+  drawRoads(memoryDc, visual);
+  drawSettlement(memoryDc, visual);
+  drawBattleMarker(memoryDc, visual, hasLatestBattlePeriod, battleMonth, battleYear);
+}
+
+void MapTabContent::drawRegionFill(HDC memoryDc,
+                                  const RegionVisual& visual,
+                                  const std::array<POINT, 6>& translated) const
+{
+  HBRUSH fillBrush = CreateSolidBrush(getRegionFillColor(visual.region->getRegionType()));
+  HGDIOBJ oldBrush = SelectObject(memoryDc, fillBrush);
+  Polygon(memoryDc, translated.data(), static_cast<int>(translated.size()));
+  SelectObject(memoryDc, oldBrush);
+  DeleteObject(fillBrush);
+}
+
+void MapTabContent::drawPeasantWedge(HDC memoryDc,
+                                     const RegionVisual& visual,
+                                     const std::array<POINT, 6>& translated) const
+{
+  // Peasant wedge: color-coded trapezoid along the northeast edge, framed in black.
+  if (!appConfig_ || visual.region->getPeasantType().empty() || visual.region->getPeasantNumber() <= 0)
+  {
+    return;
+  }
+
+  const std::array<int, 3> peasantRgb = appConfig_->getPeasantColour(visual.region->getPeasantType());
+  const COLORREF peasantColor = RGB(std::clamp(peasantRgb[0], 0, 255),
+                                    std::clamp(peasantRgb[1], 0, 255),
+                                    std::clamp(peasantRgb[2], 0, 255));
+  const LONG centerX = static_cast<LONG>(visual.center.x - scrollX_);
+  const LONG centerY = static_cast<LONG>(visual.center.y - scrollY_);
+  const POINT neCorner = translated[2];
+  const POINT eCorner = translated[3];
+  const double dx = static_cast<double>(neCorner.x - centerX);
+  const double dy = static_cast<double>(neCorner.y - centerY);
+  const double radialDistance = std::sqrt(dx * dx + dy * dy);
+  const double fraction = radialDistance > 0.0
+    ? std::min(1.0, std::max(0.20, 10.0 / radialDistance))
+    : 0.20;
+  const auto lerp = [](LONG from, LONG to, double amount)
+  {
+    return static_cast<LONG>(from + amount * static_cast<double>(to - from));
+  };
+
+  const POINT wedge[4] = {
+    neCorner,
+    eCorner,
+    { lerp(centerX, eCorner.x, 1.0 - fraction), lerp(centerY, eCorner.y, 1.0 - fraction) },
+    { lerp(centerX, neCorner.x, 1.0 - fraction), lerp(centerY, neCorner.y, 1.0 - fraction) }
+  };
+  HBRUSH brush = CreateSolidBrush(peasantColor);
+  HPEN framePen = CreatePen(PS_SOLID, 1, RGB(0, 0, 0));
+  HGDIOBJ oldBrush = SelectObject(memoryDc, brush);
+  HGDIOBJ oldPen = SelectObject(memoryDc, framePen);
+  Polygon(memoryDc, wedge, 4);
+  SelectObject(memoryDc, oldBrush);
+  SelectObject(memoryDc, oldPen);
+  DeleteObject(brush);
+  DeleteObject(framePen);
+}
+
+void MapTabContent::drawGuardWedge(HDC memoryDc,
+                                   const RegionVisual& visual,
+                                   const std::array<POINT, 6>& translated) const
+{
+  // Guard wedge: guarding-faction trapezoid along the north edge, framed in black.
+  if (!appData_ || !appConfig_)
+  {
+    return;
+  }
+
+  const GuardWedgeStyle style = resolveGuardWedgeStyle(*appData_, *appConfig_, *visual.region);
+  // no guard, no wedge
+  if (!style.guardPresent)
+  {
+    return;
+  }
+
+  const LONG centerX = static_cast<LONG>(visual.center.x - scrollX_);
+  const LONG centerY = static_cast<LONG>(visual.center.y - scrollY_);
+  const POINT nwCorner = translated[1];
+  const POINT neCorner = translated[2];
+  const double dx = static_cast<double>(nwCorner.x - centerX);
+  const double dy = static_cast<double>(nwCorner.y - centerY);
+  const double radialDistance = std::sqrt(dx * dx + dy * dy);
+  const double fraction = radialDistance > 0.0
+    ? std::min(1.0, std::max(0.20, 10.0 / radialDistance))
+    : 0.20;
+  const auto lerp = [](LONG from, LONG to, double amount)
+  {
+    return static_cast<LONG>(from + amount * static_cast<double>(to - from));
+  };
+
+  const POINT wedge[4] = {
+    nwCorner,
+    neCorner,
+    { lerp(centerX, neCorner.x, 1.0 - fraction), lerp(centerY, neCorner.y, 1.0 - fraction) },
+    { lerp(centerX, nwCorner.x, 1.0 - fraction), lerp(centerY, nwCorner.y, 1.0 - fraction) }
+  };
+  COLORREF fillColor = RGB(std::clamp(style.color[0], 0, 255),
+                           std::clamp(style.color[1], 0, 255),
+                           std::clamp(style.color[2], 0, 255));
+  if (!style.guardPresent)
+  {
+    fillColor = getRegionFillColor(visual.region->getRegionType());
+  }
+
+  HBRUSH brush = CreateSolidBrush(fillColor);
+  HPEN framePen = CreatePen(PS_SOLID, 1, RGB(0, 0, 0));
+  HGDIOBJ oldBrush = SelectObject(memoryDc, brush);
+  HGDIOBJ oldPen = SelectObject(memoryDc, framePen);
+  Polygon(memoryDc, wedge, 4);
+  SelectObject(memoryDc, oldBrush);
+  SelectObject(memoryDc, oldPen);
+  DeleteObject(brush);
+  DeleteObject(framePen);
+}
+
+void MapTabContent::drawRoads(HDC memoryDc, const RegionVisual& visual) const
+{
+  if (!appData_ || !appConfig_)
+  {
+    return;
+  }
+
+  std::set<std::wstring> availableExits;
+  for (const std::wstring& exitDirection : visual.region->getExitDirections())
+  {
+    const std::wstring normalized = HexDirectionUtils::normalizeHexDirection(exitDirection);
+    if (!normalized.empty())
+    {
+      availableExits.insert(normalized);
+    }
+  }
+  if (availableExits.empty())
+  {
+    return;
+  }
+
+  std::set<std::wstring> roadDirections;
+  const auto& structures = appData_->structureRepository();
+  for (std::size_t index = 0; index < structures.size(); ++index)
+  {
+    const Structure& structure = structures.at(index);
+    if (structure.getXCoordinate() != visual.region->getXCoordinate() ||
+        structure.getYCoordinate() != visual.region->getYCoordinate() ||
+        structure.getZCoordinate() != selectedZ_)
+    {
+      continue;
+    }
+    const std::wstring direction = HexDirectionUtils::extractRoadDirectionFromStructure(structure);
+    if (!direction.empty() && availableExits.find(direction) != availableExits.end())
+    {
+      roadDirections.insert(direction);
+    }
+  }
+  if (roadDirections.empty())
+  {
+    return;
+  }
+
+  const std::array<int, 3> roadRgb = appConfig_->getRoadColor();
+  HPEN roadPen = CreatePen(PS_SOLID, 4,
+                           RGB(std::clamp(roadRgb[0], 0, 255),
+                               std::clamp(roadRgb[1], 0, 255),
+                               std::clamp(roadRgb[2], 0, 255)));
+  HGDIOBJ oldPen = SelectObject(memoryDc, roadPen);
+  const int centerX = visual.center.x - scrollX_;
+  const int centerY = visual.center.y - scrollY_;
+  for (const std::wstring& direction : roadDirections)
+  {
+    const POINT endpoint = MapUtils::getRoadEndpointForDirection(visual.polygon, direction);
+    MoveToEx(memoryDc, centerX, centerY, nullptr);
+    LineTo(memoryDc, endpoint.x - scrollX_, endpoint.y - scrollY_);
+  }
+  SelectObject(memoryDc, oldPen);
+  DeleteObject(roadPen);
+}
+
+void MapTabContent::drawSettlement(HDC memoryDc, const RegionVisual& visual) const
+{
+  if (!visual.region->getContainsSettlement())
+  {
+    return;
+  }
+
+  const std::wstring settlementType = StringUtils::toLower(visual.region->getSettlementType());
+  const int markerDiameter = (std::max)(4, resolveScaledMapHexWidth() / 4);
+  const int coreDiameter = (std::max)(2, markerDiameter / 4);
+  const int centerX = visual.center.x - scrollX_;
+  const int centerY = visual.center.y - scrollY_;
+  HPEN markerPen = CreatePen(PS_SOLID, 2, RGB(0, 0, 0));
+  HBRUSH markerBrush = CreateSolidBrush(RGB(0, 0, 0));
+  HGDIOBJ oldPen = SelectObject(memoryDc, markerPen);
+  HGDIOBJ oldBrush = SelectObject(memoryDc, markerBrush);
+
+  if (settlementType == L"town" || settlementType == L"city")
+  {
+    Ellipse(memoryDc, centerX - coreDiameter / 2, centerY - coreDiameter / 2,
+            centerX + coreDiameter / 2, centerY + coreDiameter / 2);
+    SelectObject(memoryDc, GetStockObject(NULL_BRUSH));
+    const int firstRing = settlementType == L"town"
+      ? markerDiameter
+      : (std::max)(coreDiameter + 3, markerDiameter * 2 / 3);
+    Ellipse(memoryDc, centerX - firstRing / 2, centerY - firstRing / 2,
+            centerX + firstRing / 2, centerY + firstRing / 2);
+    if (settlementType == L"city")
+    {
+      Ellipse(memoryDc, centerX - markerDiameter / 2, centerY - markerDiameter / 2,
+              centerX + markerDiameter / 2, centerY + markerDiameter / 2);
+    }
+  }
+  else
+  {
+    SelectObject(memoryDc, GetStockObject(NULL_BRUSH));
+    Ellipse(memoryDc, centerX - markerDiameter / 2, centerY - markerDiameter / 2,
+            centerX + markerDiameter / 2, centerY + markerDiameter / 2);
+  }
+
+  SelectObject(memoryDc, oldBrush);
+  SelectObject(memoryDc, oldPen);
+  DeleteObject(markerBrush);
+  DeleteObject(markerPen);
+}
+
+void MapTabContent::drawBattleMarker(HDC memoryDc,
+                                     const RegionVisual& visual,
+                                     bool hasLatestBattlePeriod,
+                                     int battleMonth,
+                                     int battleYear) const
+{
+  if (!hasLatestBattlePeriod || !appData_ ||
+      !appData_->battleRepository().hasBattleInRegionForPeriod(
+        visual.region->getXCoordinate(), visual.region->getYCoordinate(), visual.region->getZCoordinate(),
+        battleMonth, battleYear))
+  {
+    return;
+  }
+
+  const int centerX = visual.center.x - scrollX_;
+  const int centerY = visual.center.y - scrollY_;
+  const int hexWidth = resolveScaledMapHexWidth();
+  const int hexHeight = (std::max)(14, static_cast<int>(std::lround(static_cast<double>(hexWidth) * std::sqrt(3.0) / 2.0)));
+  const int crossSize = (std::max)(4, (((hexHeight * 2) / 5) * 2) / 3);
+  const int halfCross = crossSize / 2;
+  const int bottomMargin = (std::max)(4, hexHeight / 8);
+  const int crossCenterY = centerY + (hexHeight / 2) - bottomMargin - halfCross;
+  HPEN battlePen = CreatePen(PS_SOLID, 3, RGB(200, 0, 0));
+  HGDIOBJ oldPen = SelectObject(memoryDc, battlePen);
+  MoveToEx(memoryDc, centerX - halfCross, crossCenterY - halfCross, nullptr);
+  LineTo(memoryDc, centerX + halfCross, crossCenterY + halfCross);
+  MoveToEx(memoryDc, centerX - halfCross, crossCenterY + halfCross, nullptr);
+  LineTo(memoryDc, centerX + halfCross, crossCenterY - halfCross);
+  SelectObject(memoryDc, oldPen);
+  DeleteObject(battlePen);
 }
 
 const MapTabContent::RegionVisual* MapTabContent::hitTestRegion(POINT pointInMapClient) const

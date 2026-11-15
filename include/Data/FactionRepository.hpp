@@ -38,14 +38,14 @@ class FactionRepository
 {
 public:
   FactionRepository() = default;
-  ~FactionRepository() = default;
+  virtual ~FactionRepository() = default;
 
   FactionRepository(const FactionRepository&) = default;
   FactionRepository& operator=(const FactionRepository&) = default;
   FactionRepository(FactionRepository&&) = default;
   FactionRepository& operator=(FactionRepository&&) = default;
 
-  bool add(int factionNumber,
+  virtual bool add(int factionNumber,
           std::wstring name,
           bool mainFaction,
           int month = 0,
@@ -68,17 +68,17 @@ public:
   bool updateName(int factionNumber, std::wstring newName);
   bool setMainFaction(int factionNumber, bool mainFaction);
 
-  Faction* findByNumber(int factionNumber);
-  const Faction* findByNumber(int factionNumber) const;
+  virtual Faction* findByNumber(int factionNumber);
+  virtual const Faction* findByNumber(int factionNumber) const;
 
   int getMainFactionNumber() const;
   Faction* getMainFaction();
   const Faction* getMainFaction() const;
 
-  void clear();
+  virtual void clear();
 
-  std::size_t size() const;
-  const Faction& at(std::size_t index) const;
+  virtual std::size_t size() const;
+  virtual const Faction& at(std::size_t index) const;
 
   const std::wstring& getLastError() const;
 

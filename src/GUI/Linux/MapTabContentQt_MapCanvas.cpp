@@ -27,10 +27,12 @@
 
 #include "AppConfig.hpp"
 #include "Data/AppData.hpp"
+#include "Data/Faction.hpp"
 #include "Data/StructInfo.hpp"
 #include "Data/Structure.hpp"
 #include "Data/Region.hpp"
 #include "Data/RegionRepository.hpp"
+#include "Data/Unit.hpp"
 #include "Function/HexDirectionUtils.hpp"
 #include "Function/MapUtils.hpp"
 #include "Function/CoordinateFormattingUtils.hpp"
@@ -75,6 +77,68 @@ QPoint getRoadEndpointForDirection(const QPolygon& polygon, const std::wstring& 
 
     const POINT endpoint = MapUtils::getRoadEndpointForDirection(points, direction);
     return QPoint(static_cast<int>(endpoint.x), static_cast<int>(endpoint.y));
+}
+
+struct GuardWedgeStyle
+{
+    std::array<int, 3> color { 128, 128, 128 };
+    bool guardPresent { false };
+};
+
+GuardWedgeStyle resolveGuardWedgeStyle(const AppData& appData,
+                                       const AppConfig& appConfig,
+                                       const Region& region)
+{
+    const auto& factionRepository = appData.factionRepository();
+    const Faction* mainFaction = factionRepository.getMainFaction();
+    const int mainFactionNumber = factionRepository.getMainFactionNumber();
+    bool hasOtherGuard = false;
+    bool hasUnfriendlyGuard = false;
+
+    const auto& units = appData.unitRepository();
+    for (std::size_t unitIndex = 0; unitIndex < units.size(); ++unitIndex)
+    {
+        const Unit& unit = units.at(unitIndex);
+        if (!unit.isOnGuard() ||
+            unit.getXCoordinate() != region.getXCoordinate() ||
+            unit.getYCoordinate() != region.getYCoordinate() ||
+            unit.getZCoordinate() != region.getZCoordinate())
+        {
+            continue;
+        }
+
+        if (mainFactionNumber > 0 && unit.getFactionNumber() == mainFactionNumber)
+        {
+            return GuardWedgeStyle { appConfig.getGuardedRegionBorderColor(), true };
+        }
+
+        hasOtherGuard = true;
+        if (!mainFaction)
+        {
+            continue;
+        }
+
+        const auto& declaredAttitudes = mainFaction->getDeclaredAttitudes();
+        const auto attitude = declaredAttitudes.find(unit.getFactionNumber());
+        const Faction::Attitude effectiveAttitude = attitude != declaredAttitudes.end()
+            ? attitude->second
+            : mainFaction->getDefaultAttitude();
+        if (effectiveAttitude == Faction::Attitude::Hostile ||
+            effectiveAttitude == Faction::Attitude::Unfriendly)
+        {
+            hasUnfriendlyGuard = true;
+        }
+    }
+
+    if (hasUnfriendlyGuard)
+    {
+        return GuardWedgeStyle { { 255, 0, 0 }, true };
+    }
+    if (hasOtherGuard)
+    {
+        return GuardWedgeStyle { { 128, 128, 128 }, true };
+    }
+    return GuardWedgeStyle { { 128, 128, 128 }, false };
 }
 
 } // namespace
@@ -123,6 +187,16 @@ void MapCanvasWidget::setSelectedRegion(bool hasSelectedRegion, int selectedRegi
     hasSelectedRegion_ = hasSelectedRegion;
     selectedRegionX_ = selectedRegionX;
     selectedRegionY_ = selectedRegionY;
+}
+
+int MapCanvasWidget::scaledHexWidth() const
+{
+    const int base = (std::max)(12, appConfig_ ? appConfig_->getMapHexWidth() : 40);
+    const QString mode = appConfig_
+        ? QString::fromStdWString(appConfig_->getMapHexSizeMode()).toLower()
+        : QString();
+    const double scale = mode == "small" ? 0.95 : mode == "large" ? 1.4 : 1.0;
+    return (std::max)(12, static_cast<int>(std::lround(base * scale)));
 }
 
 void MapCanvasWidget::recalculateVisibleMap()
@@ -263,7 +337,7 @@ void MapCanvasWidget::recalculateVisibleMap()
     mapRightPaddingColumns_ = rightPaddingColumns;
     hasMapBounds_ = true;
 
-    const int hexWidth = (std::max)(12, appConfig_->getMapHexWidth());
+    const int hexWidth = scaledHexWidth();
     const int hexHeight = (std::max)(14, static_cast<int>(std::lround(static_cast<double>(hexWidth) * std::sqrt(3.0) / 2.0)));
     const int columnStep = (std::max)(10, static_cast<int>(std::lround(hexWidth * 0.75)));
     const int rowStep = hexHeight;
@@ -343,6 +417,7 @@ void MapCanvasWidget::recalculateVisibleMap()
     }
 
     updateScrollbars();
+    update();
 }
 
 bool MapCanvasWidget::centerOnRegion(int regionX, int regionY)
@@ -418,65 +493,7 @@ void MapCanvasWidget::paintEvent(QPaintEvent* event)
     painter.setClipRect(viewport);
     painter.fillRect(viewport, palette().color(QPalette::Base));
 
-    if (appConfig_ && hasMapBounds_)
-    {
-        std::set<std::pair<int, int>> occupiedCoordinates;
-        int coordinateParity = 0;
-        bool hasCoordinateParity = false;
-        for (const RegionVisual& visual : visibleRegions_)
-        {
-            if (!visual.region)
-            {
-                continue;
-            }
-
-            const int regionX = visual.region->getXCoordinate();
-            const int regionY = visual.region->getYCoordinate();
-            occupiedCoordinates.emplace(regionX, regionY);
-            if (!hasCoordinateParity)
-            {
-                coordinateParity = (regionX + regionY) & 1;
-                hasCoordinateParity = true;
-            }
-        }
-
-        const int hexWidth = (std::max)(12, appConfig_->getMapHexWidth());
-        const int hexHeight = (std::max)(14, static_cast<int>(std::lround(static_cast<double>(hexWidth) * std::sqrt(3.0) / 2.0)));
-        const int columnStep = (std::max)(10, static_cast<int>(std::lround(hexWidth * 0.75)));
-        const int rowStep = hexHeight;
-
-        painter.setPen(QPen(QColor(192, 192, 192), 1));
-        painter.setBrush(Qt::NoBrush);
-
-        for (int x = mapMinX_ - mapLeftPaddingColumns_; x <= mapMaxX_ + mapRightPaddingColumns_; ++x)
-        {
-            for (int y = mapMinY_; y <= mapMaxY_; ++y)
-            {
-                if (hasCoordinateParity && (((x + y) & 1) != coordinateParity))
-                {
-                    continue;
-                }
-
-                if (occupiedCoordinates.find({ x, y }) != occupiedCoordinates.end())
-                {
-                    continue;
-                }
-
-                const int mapColumn = (x - mapMinX_) + mapLeftPaddingColumns_;
-                const double mapRow = static_cast<double>(y - mapMinY_) / 2.0;
-                const int centerX = kMargin + mapColumn * columnStep + (hexWidth / 2) - scrollX_;
-                const int centerY = kMargin + static_cast<int>(std::lround(mapRow * rowStep)) + (hexHeight / 2) - scrollY_;
-
-                QPolygon emptyPolygon = toQPolygon(MapUtils::buildHexagonPolygon(centerX, centerY, hexWidth));
-                if (!emptyPolygon.boundingRect().intersects(viewport))
-                {
-                    continue;
-                }
-
-                painter.drawPolygon(emptyPolygon);
-            }
-        }
-    }
+    drawEmptyHexes(painter, viewport);
 
     int latestBattlePeriodMonth = 0;
     int latestBattlePeriodYear = 0;
@@ -488,461 +505,237 @@ void MapCanvasWidget::paintEvent(QPaintEvent* event)
             const Report& report = reportRepository.at(i);
             const int reportMonth = report.getMonth();
             const int reportYear = report.getYear();
-            if (reportMonth >= 1 && reportMonth <= 12 && reportYear > 0)
+            if (reportMonth >= 1 && reportMonth <= 12 && reportYear > 0 &&
+                (reportYear > latestBattlePeriodYear ||
+                 (reportYear == latestBattlePeriodYear && reportMonth > latestBattlePeriodMonth)))
             {
-                if (reportYear > latestBattlePeriodYear ||
-                    (reportYear == latestBattlePeriodYear && reportMonth > latestBattlePeriodMonth))
-                {
-                    latestBattlePeriodMonth = reportMonth;
-                    latestBattlePeriodYear = reportYear;
-                }
+                latestBattlePeriodMonth = reportMonth;
+                latestBattlePeriodYear = reportYear;
             }
         }
     }
     const bool hasLatestBattlePeriod =
         latestBattlePeriodMonth >= 1 && latestBattlePeriodMonth <= 12 && latestBattlePeriodYear > 0;
 
-    painter.setPen(QPen(QColor(0, 0, 0), 2));
+    drawRegionHexes(painter, viewport, hasLatestBattlePeriod, latestBattlePeriodMonth, latestBattlePeriodYear);
+
+    drawStructureMarkers(painter, viewport);
+
+    drawSelectedRegionBorder(painter);
+
+    drawMovePath(painter);
+
+    drawMissingExitEdges(painter);
+}
+
+void MapCanvasWidget::drawSelectedRegionBorder(QPainter& painter) const
+{
+    if (!hasSelectedRegion_ || !appConfig_)
+    {
+        return;
+    }
+
+    const std::array<int, 3> color = appConfig_->getSelectedRegionBorderColor();
+    painter.setPen(QPen(QColor(std::clamp(color[0], 0, 255),
+                               std::clamp(color[1], 0, 255),
+                               std::clamp(color[2], 0, 255)),
+                        3));
+    painter.setBrush(Qt::NoBrush);
+    for (const RegionVisual& visual : visibleRegions_)
+    {
+        if (!visual.region || visual.region->getXCoordinate() != selectedRegionX_ ||
+            visual.region->getYCoordinate() != selectedRegionY_)
+        {
+            continue;
+        }
+        painter.drawPolygon(visual.polygon.translated(-scrollX_, -scrollY_));
+        break;
+    }
+}
+
+void MapCanvasWidget::drawMovePath(QPainter& painter) const
+{
+    if (movePathCoordinates_.size() < 2)
+    {
+        return;
+    }
+
+    const QColor defaultColor = movePathIsSail_ ? QColor(173, 216, 230) : QColor(144, 238, 144);
+    const QColor arrowColor = movePathHasNegativeCapacity_ ? QColor(255, 0, 0) : defaultColor;
+    const QColor borderColor(0, 0, 0);
+    for (std::size_t index = 0; index + 1 < movePathCoordinates_.size(); ++index)
+    {
+        const auto [startX, startY] = movePathCoordinates_[index];
+        const auto [endX, endY] = movePathCoordinates_[index + 1];
+        QPoint startCenter;
+        QPoint endCenter;
+        bool startFound = false;
+        bool endFound = false;
+        for (const RegionVisual& visual : visibleRegions_)
+        {
+            if (visual.region && visual.region->getXCoordinate() == startX && visual.region->getYCoordinate() == startY)
+            {
+                startCenter = visual.center;
+                startFound = true;
+            }
+            if (visual.region && visual.region->getXCoordinate() == endX && visual.region->getYCoordinate() == endY)
+            {
+                endCenter = visual.center;
+                endFound = true;
+            }
+            if (startFound && endFound)
+            {
+                break;
+            }
+        }
+        if (!startFound || !endFound)
+        {
+            continue;
+        }
+
+        startCenter -= QPoint(scrollX_, scrollY_);
+        endCenter -= QPoint(scrollX_, scrollY_);
+        const double dx = static_cast<double>(endCenter.x() - startCenter.x());
+        const double dy = static_cast<double>(endCenter.y() - startCenter.y());
+        const double length = std::sqrt(dx * dx + dy * dy);
+        int startLineX = startCenter.x();
+        int startLineY = startCenter.y();
+        int endLineX = endCenter.x();
+        int endLineY = endCenter.y();
+        if (length > 0.0)
+        {
+            const double ux = dx / length;
+            const double uy = dy / length;
+            const double shortening = (std::max)(1.0, length * 0.25);
+            startLineX = static_cast<int>(std::lround(startCenter.x() + ux * shortening));
+            startLineY = static_cast<int>(std::lround(startCenter.y() + uy * shortening));
+            endLineX = static_cast<int>(std::lround(endCenter.x() - ux * shortening));
+            endLineY = static_cast<int>(std::lround(endCenter.y() - uy * shortening));
+        }
+
+        int shaftEndX = endLineX;
+        int shaftEndY = endLineY;
+        if (length > 0.0)
+        {
+            shaftEndX = static_cast<int>(std::lround(endLineX - dx / length * 10.0));
+            shaftEndY = static_cast<int>(std::lround(endLineY - dy / length * 10.0));
+        }
+        painter.setPen(QPen(borderColor, 8));
+        painter.setBrush(Qt::NoBrush);
+        painter.drawLine(QPoint(startLineX, startLineY), QPoint(shaftEndX, shaftEndY));
+        painter.setPen(QPen(arrowColor, 4));
+        painter.drawLine(QPoint(startLineX, startLineY), QPoint(shaftEndX, shaftEndY));
+
+        if (length > 0.0)
+        {
+            const double ux = dx / length;
+            const double uy = dy / length;
+            const QPoint tip(endLineX, endLineY);
+            const QPoint baseOne(
+                static_cast<int>(std::lround(endLineX - ux * 10.0 + uy * 6.0)),
+                static_cast<int>(std::lround(endLineY - uy * 10.0 - ux * 6.0)));
+            const QPoint baseTwo(
+                static_cast<int>(std::lround(endLineX - ux * 10.0 - uy * 6.0)),
+                static_cast<int>(std::lround(endLineY - uy * 10.0 + ux * 6.0)));
+            QPolygon arrowHead;
+            arrowHead << tip << baseOne << baseTwo;
+            painter.setPen(QPen(borderColor, 2));
+            painter.setBrush(QBrush(arrowColor));
+            painter.drawPolygon(arrowHead);
+        }
+    }
+}
+
+void MapCanvasWidget::drawStructureMarkers(QPainter& painter, const QRect& viewport) const
+{
+    if (!appData_ || !appConfig_)
+    {
+        return;
+    }
+
+    const std::array<int, 3> markerColor = appConfig_->getStructureMarkerColor();
+    const QColor defaultMarkerColor(std::clamp(markerColor[0], 0, 255),
+                                    std::clamp(markerColor[1], 0, 255),
+                                    std::clamp(markerColor[2], 0, 255));
+    const QColor caravanseraiMarkerColor(255, 165, 0);
+    const QColor shipMarkerColor(173, 216, 230);
 
     for (const RegionVisual& visual : visibleRegions_)
     {
-        if (!visual.region)
+        if (!visual.region || !visual.polygon.translated(-scrollX_, -scrollY_).boundingRect().intersects(viewport))
         {
             continue;
         }
 
-        QPolygon translated = visual.polygon.translated(-scrollX_, -scrollY_);
-        if (!translated.boundingRect().intersects(viewport))
+        const auto structures = appData_->structureRepository().findByCoordinates(
+            visual.region->getXCoordinate(), visual.region->getYCoordinate(), visual.region->getZCoordinate());
+        bool hasRegionMarker = false;
+        bool hasShip = false;
+        bool hasFlyingShip = false;
+        for (const Structure* structure : structures)
+        {
+            if (!structure)
+            {
+                continue;
+            }
+            const bool isRoad = !HexDirectionUtils::extractRoadDirectionFromStructure(*structure).empty();
+            const StructInfo* info = appData_->structInfoRepository().findByType(structure->getStructureType());
+            const bool isShip = info && info->isShip();
+            hasShip = hasShip || isShip;
+            hasFlyingShip = hasFlyingShip || (isShip && structure->isFlying());
+            hasRegionMarker = hasRegionMarker || (!isRoad && !isShip);
+        }
+        if (!hasRegionMarker && !hasShip)
         {
             continue;
         }
 
-        painter.setBrush(QBrush(getRegionFillColor(visual.region->getRegionType())));
-        painter.drawPolygon(translated);
+        const bool hasCaravanserai = !appData_->structureRepository().findByCoordinatesAndType(
+            visual.region->getXCoordinate(), visual.region->getYCoordinate(), visual.region->getZCoordinate(),
+            L"caravanserai").empty();
+        const bool hasShaft = !appData_->structureRepository().findByCoordinatesAndType(
+            visual.region->getXCoordinate(), visual.region->getYCoordinate(), visual.region->getZCoordinate(),
+            L"shaft").empty();
 
-        if (appConfig_ && !visual.region->getPeasantType().empty() && visual.region->getPeasantNumber() > 0)
+        const QPoint north = getRoadEndpointForDirection(visual.polygon, L"N");
+        const QPoint northWest = getRoadEndpointForDirection(visual.polygon, L"NW");
+        const QPoint south = getRoadEndpointForDirection(visual.polygon, L"S");
+        const QPoint southWest = getRoadEndpointForDirection(visual.polygon, L"SW");
+        const QPoint topMidpoint((north.x() + northWest.x()) / 2, (north.y() + northWest.y()) / 2);
+        const QPoint bottomMidpoint((south.x() + southWest.x()) / 2, (south.y() + southWest.y()) / 2);
+        const QPoint center = visual.center;
+        const int markerX = topMidpoint.x() + (center.x() - topMidpoint.x()) / 4 - scrollX_;
+        const int markerY = topMidpoint.y() + (center.y() - topMidpoint.y()) / 4 - scrollY_;
+        const int shipX = bottomMidpoint.x() + (center.x() - bottomMidpoint.x()) / 4 - scrollX_;
+        const int shipY = bottomMidpoint.y() + (center.y() - bottomMidpoint.y()) / 4 - scrollY_;
+
+        if (hasRegionMarker)
         {
-            const std::array<int, 3> peasantRgb = appConfig_->getPeasantColour(visual.region->getPeasantType());
-            const QColor peasantColor(
-                std::clamp(peasantRgb[0], 0, 255),
-                std::clamp(peasantRgb[1], 0, 255),
-                std::clamp(peasantRgb[2], 0, 255));
-
-            const int centerX = visual.center.x() - scrollX_;
-            const int centerY = visual.center.y() - scrollY_;
-            const QPoint neCorner = translated[2];
-            const QPoint eCorner = translated[3];
-
-            const double dxNe = static_cast<double>(neCorner.x() - centerX);
-            const double dyNe = static_cast<double>(neCorner.y() - centerY);
-            const double radialDistance = std::sqrt(dxNe * dxNe + dyNe * dyNe);
-            const double fraction = (radialDistance > 0.0)
-                ? std::min(1.0, std::max(0.20, 10.0 / radialDistance))
-                : 0.20;
-
-            auto lerp = [](int from, int to, double factor) -> int
+            painter.setPen(Qt::NoPen);
+            painter.setBrush(QBrush(hasCaravanserai ? caravanseraiMarkerColor : defaultMarkerColor));
+            painter.drawEllipse(QPoint(markerX, markerY), 2, 2);
+            if (hasShaft)
             {
-                return static_cast<int>(std::lround(from + factor * static_cast<double>(to - from)));
-            };
-
-            QPolygon wedge;
-            wedge << neCorner
-                  << eCorner
-                  << QPoint(lerp(centerX, eCorner.x(), 1.0 - fraction),
-                            lerp(centerY, eCorner.y(), 1.0 - fraction))
-                  << QPoint(lerp(centerX, neCorner.x(), 1.0 - fraction),
-                            lerp(centerY, neCorner.y(), 1.0 - fraction));
-
-            painter.setPen(QPen(QColor(0, 0, 0), 1));
-            painter.setBrush(QBrush(peasantColor));
-            painter.drawPolygon(wedge);
-            painter.setPen(QPen(QColor(0, 0, 0), 2));
-        }
-
-        if (appData_ && appConfig_)
-        {
-            std::set<std::wstring> availableExitDirections;
-            for (const auto& exitDirection : visual.region->getExitDirections())
-            {
-                const std::wstring normalizedDirection = HexDirectionUtils::normalizeHexDirection(exitDirection);
-                if (!normalizedDirection.empty())
-                {
-                    availableExitDirections.insert(normalizedDirection);
-                }
-            }
-
-            if (!availableExitDirections.empty())
-            {
-                std::set<std::wstring> roadDirectionsToDraw;
-                const auto& structureRepository = appData_->structureRepository();
-                for (std::size_t structureIndex = 0; structureIndex < structureRepository.size(); ++structureIndex)
-                {
-                    const Structure& structure = structureRepository.at(structureIndex);
-                    if (structure.getXCoordinate() != visual.region->getXCoordinate() ||
-                        structure.getYCoordinate() != visual.region->getYCoordinate() ||
-                        structure.getZCoordinate() != selectedZ_)
-                    {
-                        continue;
-                    }
-
-                    const std::wstring roadDirection = HexDirectionUtils::extractRoadDirectionFromStructure(structure);
-                    if (roadDirection.empty() || availableExitDirections.find(roadDirection) == availableExitDirections.end())
-                    {
-                        continue;
-                    }
-
-                    roadDirectionsToDraw.insert(roadDirection);
-                }
-
-                if (!roadDirectionsToDraw.empty())
-                {
-                    const std::array<int, 3> roadColor = appConfig_->getRoadColor();
-                    painter.setPen(QPen(QColor(std::clamp(roadColor[0], 0, 255),
-                                               std::clamp(roadColor[1], 0, 255),
-                                               std::clamp(roadColor[2], 0, 255)),
-                                        4));
-                    painter.setBrush(Qt::NoBrush);
-
-                    const int centerX = visual.center.x() - scrollX_;
-                    const int centerY = visual.center.y() - scrollY_;
-                    for (const auto& direction : roadDirectionsToDraw)
-                    {
-                        const QPoint endpoint = getRoadEndpointForDirection(visual.polygon, direction);
-                        painter.drawLine(QPoint(centerX, centerY),
-                                         QPoint(endpoint.x() - scrollX_, endpoint.y() - scrollY_));
-                    }
-
-                    painter.setPen(QPen(QColor(0, 0, 0), 2));
-                }
+                painter.setPen(QPen(QColor(50, 50, 50), 1));
+                painter.setBrush(Qt::NoBrush);
+                painter.drawEllipse(QPoint(markerX, markerY), 2, 2);
             }
         }
-
-        if (visual.region->getContainsSettlement() && appConfig_)
+        if (hasShip)
         {
-            const std::wstring settlementType = StringUtils::toLower(visual.region->getSettlementType());
-            const int markerDiameter = (std::max)(4, (std::max)(12, appConfig_->getMapHexWidth()) / 4);
-            const int coreDiameter = (std::max)(2, markerDiameter / 4);
-            const int townRingDiameter = markerDiameter;
-            const int cityInnerRingDiameter = (std::max)(coreDiameter + 3, markerDiameter * 2 / 3);
-            const int cityOuterRingDiameter = markerDiameter;
-            const int centerX = visual.center.x() - scrollX_;
-            const int centerY = visual.center.y() - scrollY_;
-
-            painter.setPen(QPen(QColor(0, 0, 0), 2));
-            painter.setBrush(QBrush(QColor(0, 0, 0)));
-
-            if (settlementType == L"village")
-            {
-                painter.setBrush(Qt::NoBrush);
-                painter.drawEllipse(QPoint(centerX, centerY), markerDiameter / 2, markerDiameter / 2);
-                painter.setBrush(QBrush(QColor(0, 0, 0)));
-            }
-            else if (settlementType == L"town")
-            {
-                painter.drawEllipse(QPoint(centerX, centerY), coreDiameter / 2, coreDiameter / 2);
-                painter.setBrush(Qt::NoBrush);
-                painter.drawEllipse(QPoint(centerX, centerY), townRingDiameter / 2, townRingDiameter / 2);
-            }
-            else if (settlementType == L"city")
-            {
-                painter.drawEllipse(QPoint(centerX, centerY), coreDiameter / 2, coreDiameter / 2);
-                painter.setBrush(Qt::NoBrush);
-                painter.drawEllipse(QPoint(centerX, centerY), cityInnerRingDiameter / 2, cityInnerRingDiameter / 2);
-                painter.drawEllipse(QPoint(centerX, centerY), cityOuterRingDiameter / 2, cityOuterRingDiameter / 2);
-            }
-            else
-            {
-                painter.setBrush(Qt::NoBrush);
-                painter.drawEllipse(QPoint(centerX, centerY), markerDiameter / 2, markerDiameter / 2);
-                painter.setBrush(QBrush(QColor(0, 0, 0)));
-            }
-        }
-
-        if (hasLatestBattlePeriod && appData_)
-        {
-            const bool hasBattle = appData_->battleRepository().hasBattleInRegionForPeriod(
-                visual.region->getXCoordinate(),
-                visual.region->getYCoordinate(),
-                visual.region->getZCoordinate(),
-                latestBattlePeriodMonth,
-                latestBattlePeriodYear);
-
-            if (hasBattle)
-            {
-                const int centerX = visual.center.x() - scrollX_;
-                const int centerY = visual.center.y() - scrollY_;
-
-                const int hexWidth = (std::max)(12, appConfig_ ? appConfig_->getMapHexWidth() : 12);
-                const int hexHeight = (std::max)(14, static_cast<int>(std::lround(static_cast<double>(hexWidth) * std::sqrt(3.0) / 2.0)));
-                const int crossSize = (std::max)(4, (((hexHeight * 2) / 5) * 2) / 3);
-                const int halfCross = crossSize / 2;
-                const int bottomMargin = (std::max)(4, hexHeight / 8);
-                const int crossCenterY = centerY + (hexHeight / 2) - bottomMargin - halfCross;
-
-                painter.setPen(QPen(QColor(200, 0, 0), 3));
-                painter.drawLine(QPoint(centerX - halfCross, crossCenterY - halfCross),
-                                 QPoint(centerX + halfCross, crossCenterY + halfCross));
-                painter.drawLine(QPoint(centerX - halfCross, crossCenterY + halfCross),
-                                 QPoint(centerX + halfCross, crossCenterY - halfCross));
-                painter.setPen(QPen(QColor(0, 0, 0), 2));
-            }
+            painter.setPen(hasFlyingShip ? QPen(QColor(0, 0, 0), 1) : Qt::NoPen);
+            painter.setBrush(QBrush(shipMarkerColor));
+            painter.drawEllipse(QPoint(shipX, shipY), 2, 2);
         }
     }
+}
 
-    if (appData_ && appConfig_)
-    {
-        const std::array<int, 3> markerColor = appConfig_->getStructureMarkerColor();
-        const QColor defaultMarkerColor(std::clamp(markerColor[0], 0, 255),
-                                        std::clamp(markerColor[1], 0, 255),
-                                        std::clamp(markerColor[2], 0, 255));
-        const QColor caravanseraiMarkerColor(255, 165, 0);
-        const QColor shipMarkerColor(173, 216, 230);
-
-        for (const RegionVisual& visual : visibleRegions_)
-        {
-            if (!visual.region)
-            {
-                continue;
-            }
-
-            QPolygon translated = visual.polygon.translated(-scrollX_, -scrollY_);
-            if (!translated.boundingRect().intersects(viewport))
-            {
-                continue;
-            }
-
-            const auto structuresInRegion = appData_->structureRepository().findByCoordinates(
-                visual.region->getXCoordinate(),
-                visual.region->getYCoordinate(),
-                visual.region->getZCoordinate());
-            if (structuresInRegion.empty())
-            {
-                continue;
-            }
-
-            bool hasNonRoadNonShipStructure = false;
-            bool hasShipStructure = false;
-            bool hasFlyingShipStructure = false;
-            for (const Structure* structure : structuresInRegion)
-            {
-                if (!structure)
-                {
-                    continue;
-                }
-
-                const bool isRoadStructure = !HexDirectionUtils::extractRoadDirectionFromStructure(*structure).empty();
-                const StructInfo* structInfo = appData_->structInfoRepository().findByType(structure->getStructureType());
-                const bool isShipStructure = structInfo && structInfo->isShip();
-
-                if (isShipStructure)
-                {
-                    hasShipStructure = true;
-                    if (structure->isFlying())
-                    {
-                        hasFlyingShipStructure = true;
-                    }
-                }
-
-                if (!isRoadStructure && !isShipStructure)
-                {
-                    hasNonRoadNonShipStructure = true;
-                }
-            }
-
-            const bool hasCaravanserai = !appData_->structureRepository().findByCoordinatesAndType(
-                visual.region->getXCoordinate(),
-                visual.region->getYCoordinate(),
-                visual.region->getZCoordinate(),
-                L"caravanserai").empty();
-
-            const bool hasShaft = !appData_->structureRepository().findByCoordinatesAndType(
-                visual.region->getXCoordinate(),
-                visual.region->getYCoordinate(),
-                visual.region->getZCoordinate(),
-                L"shaft").empty();
-
-            if (!hasNonRoadNonShipStructure && !hasShipStructure)
-            {
-                continue;
-            }
-
-            const QPoint northEndpoint = getRoadEndpointForDirection(visual.polygon, L"N");
-            const QPoint northWestEndpoint = getRoadEndpointForDirection(visual.polygon, L"NW");
-            const QPoint borderMidpoint((northEndpoint.x() + northWestEndpoint.x()) / 2,
-                                        (northEndpoint.y() + northWestEndpoint.y()) / 2);
-            const QPoint southEndpoint = getRoadEndpointForDirection(visual.polygon, L"S");
-            const QPoint southWestEndpoint = getRoadEndpointForDirection(visual.polygon, L"SW");
-            const QPoint borderMidpointBottomLeft((southEndpoint.x() + southWestEndpoint.x()) / 2,
-                                                  (southEndpoint.y() + southWestEndpoint.y()) / 2);
-
-            const QPoint centerPoint = visual.center;
-            const int markerCenterX = borderMidpoint.x() + (centerPoint.x() - borderMidpoint.x()) / 4 - scrollX_;
-            const int markerCenterY = borderMidpoint.y() + (centerPoint.y() - borderMidpoint.y()) / 4 - scrollY_;
-            const int shipMarkerCenterX = borderMidpointBottomLeft.x() + (centerPoint.x() - borderMidpointBottomLeft.x()) / 4 - scrollX_;
-            const int shipMarkerCenterY = borderMidpointBottomLeft.y() + (centerPoint.y() - borderMidpointBottomLeft.y()) / 4 - scrollY_;
-            const int markerRadius = 2;
-
-            if (hasNonRoadNonShipStructure)
-            {
-                const QColor topMarkerColor = hasCaravanserai ? caravanseraiMarkerColor : defaultMarkerColor;
-                painter.setPen(Qt::NoPen);
-                painter.setBrush(QBrush(topMarkerColor));
-                painter.drawEllipse(QPoint(markerCenterX, markerCenterY), markerRadius, markerRadius);
-
-                if (hasShaft)
-                {
-                    painter.setPen(QPen(QColor(50, 50, 50), 1));
-                    painter.setBrush(Qt::NoBrush);
-                    painter.drawEllipse(QPoint(markerCenterX, markerCenterY), markerRadius, markerRadius);
-                }
-            }
-
-            if (hasShipStructure)
-            {
-                painter.setPen(hasFlyingShipStructure ? QPen(QColor(0, 0, 0), 1) : Qt::NoPen);
-                painter.setBrush(QBrush(shipMarkerColor));
-                painter.drawEllipse(QPoint(shipMarkerCenterX, shipMarkerCenterY), markerRadius, markerRadius);
-            }
-        }
-    }
-
-    if (hasSelectedRegion_ && appConfig_)
-    {
-        const std::array<int, 3> selectedColor = appConfig_->getSelectedRegionBorderColor();
-        painter.setPen(QPen(QColor(std::clamp(selectedColor[0], 0, 255),
-                                   std::clamp(selectedColor[1], 0, 255),
-                                   std::clamp(selectedColor[2], 0, 255)),
-                            3));
-        painter.setBrush(Qt::NoBrush);
-
-        for (const RegionVisual& visual : visibleRegions_)
-        {
-            if (!visual.region ||
-                visual.region->getXCoordinate() != selectedRegionX_ ||
-                visual.region->getYCoordinate() != selectedRegionY_)
-            {
-                continue;
-            }
-
-            const QPolygon translated = visual.polygon.translated(-scrollX_, -scrollY_);
-            painter.drawPolygon(translated);
-            break;
-        }
-    }
-
-    if (movePathCoordinates_.size() > 1)
-    {
-        const QColor defaultArrowColor = movePathIsSail_ ? QColor(173, 216, 230) : QColor(144, 238, 144);
-        const QColor arrowColor = movePathHasNegativeCapacity_ ? QColor(255, 0, 0) : defaultArrowColor;
-        const QColor arrowBorderColor(0, 0, 0);
-
-        for (std::size_t i = 0; i + 1 < movePathCoordinates_.size(); ++i)
-        {
-            const int x1 = movePathCoordinates_[i].first;
-            const int y1 = movePathCoordinates_[i].second;
-            const int x2 = movePathCoordinates_[i + 1].first;
-            const int y2 = movePathCoordinates_[i + 1].second;
-
-            QPoint startCenter;
-            QPoint endCenter;
-            bool startFound = false;
-            bool endFound = false;
-            for (const RegionVisual& visual : visibleRegions_)
-            {
-                if (visual.region && visual.region->getXCoordinate() == x1 && visual.region->getYCoordinate() == y1)
-                {
-                    startCenter = visual.center;
-                    startFound = true;
-                }
-                if (visual.region && visual.region->getXCoordinate() == x2 && visual.region->getYCoordinate() == y2)
-                {
-                    endCenter = visual.center;
-                    endFound = true;
-                }
-                if (startFound && endFound)
-                {
-                    break;
-                }
-            }
-
-            if (!startFound || !endFound)
-            {
-                continue;
-            }
-
-            startCenter -= QPoint(scrollX_, scrollY_);
-            endCenter -= QPoint(scrollX_, scrollY_);
-
-            const double dx = static_cast<double>(endCenter.x() - startCenter.x());
-            const double dy = static_cast<double>(endCenter.y() - startCenter.y());
-            const double length = std::sqrt(dx * dx + dy * dy);
-
-            int adjustedStartX = startCenter.x();
-            int adjustedStartY = startCenter.y();
-            int adjustedEndX = endCenter.x();
-            int adjustedEndY = endCenter.y();
-
-            if (length > 0.0)
-            {
-                const double ux = dx / length;
-                const double uy = dy / length;
-                const double shorteningAmount = (std::max)(1.0, length * 0.25);
-                adjustedStartX = static_cast<int>(std::lround(startCenter.x() + ux * shorteningAmount));
-                adjustedStartY = static_cast<int>(std::lround(startCenter.y() + uy * shorteningAmount));
-                adjustedEndX = static_cast<int>(std::lround(endCenter.x() - ux * shorteningAmount));
-                adjustedEndY = static_cast<int>(std::lround(endCenter.y() - uy * shorteningAmount));
-            }
-
-            int shaftEndX = adjustedEndX;
-            int shaftEndY = adjustedEndY;
-            if (length > 0.0)
-            {
-                const double ux = dx / length;
-                const double uy = dy / length;
-                const double arrowLength = 10.0;
-                shaftEndX = static_cast<int>(std::lround(adjustedEndX - ux * arrowLength));
-                shaftEndY = static_cast<int>(std::lround(adjustedEndY - uy * arrowLength));
-            }
-
-            painter.setPen(QPen(arrowBorderColor, 8));
-            painter.setBrush(Qt::NoBrush);
-            painter.drawLine(QPoint(adjustedStartX, adjustedStartY), QPoint(shaftEndX, shaftEndY));
-
-            painter.setPen(QPen(arrowColor, 4));
-            painter.drawLine(QPoint(adjustedStartX, adjustedStartY), QPoint(shaftEndX, shaftEndY));
-
-            if (length > 0.0)
-            {
-                const double ux = dx / length;
-                const double uy = dy / length;
-                const double arrowLength = 10.0;
-                const double arrowWidth = 6.0;
-
-                const QPoint arrowTip(adjustedEndX, adjustedEndY);
-                const QPoint arrowBase1(
-                    static_cast<int>(std::lround(adjustedEndX - ux * arrowLength + uy * arrowWidth)),
-                    static_cast<int>(std::lround(adjustedEndY - uy * arrowLength - ux * arrowWidth)));
-                const QPoint arrowBase2(
-                    static_cast<int>(std::lround(adjustedEndX - ux * arrowLength - uy * arrowWidth)),
-                    static_cast<int>(std::lround(adjustedEndY - uy * arrowLength + ux * arrowWidth)));
-
-                QPolygon arrowHead;
-                arrowHead << arrowTip << arrowBase1 << arrowBase2;
-                painter.setPen(QPen(arrowBorderColor, 2));
-                painter.setBrush(QBrush(arrowColor));
-                painter.drawPolygon(arrowHead);
-            }
-        }
-    }
-
+void MapCanvasWidget::drawMissingExitEdges(QPainter& painter) const
+{
     constexpr std::array<const wchar_t*, 6> directions = { L"NW", L"N", L"NE", L"SE", L"S", L"SW" };
     constexpr std::array<std::pair<std::size_t, std::size_t>, 6> edgeVertices = {
-        std::pair<std::size_t, std::size_t>{ 0, 1 },
-        { 1, 2 },
-        { 2, 3 },
-        { 3, 4 },
-        { 4, 5 },
-        { 5, 0 }
+        std::pair<std::size_t, std::size_t>{ 0, 1 }, { 1, 2 }, { 2, 3 },
+        { 3, 4 }, { 4, 5 }, { 5, 0 }
     };
     painter.setPen(QPen(QColor(255, 0, 0), 4));
     painter.setBrush(Qt::NoBrush);
@@ -954,27 +747,351 @@ void MapCanvasWidget::paintEvent(QPaintEvent* event)
             continue;
         }
 
-        std::set<std::wstring> availableExitDirections;
+        std::set<std::wstring> availableDirections;
         for (const std::wstring& direction : visual.region->getExitDirections())
         {
-            const std::wstring normalizedDirection = HexDirectionUtils::normalizeHexDirection(direction);
-            if (!normalizedDirection.empty())
+            const std::wstring normalized = HexDirectionUtils::normalizeHexDirection(direction);
+            if (!normalized.empty())
             {
-                availableExitDirections.insert(normalizedDirection);
+                availableDirections.insert(normalized);
             }
         }
 
         for (std::size_t index = 0; index < directions.size(); ++index)
         {
-            if (availableExitDirections.find(directions[index]) != availableExitDirections.end())
+            if (availableDirections.find(directions[index]) != availableDirections.end())
             {
                 continue;
             }
-
             const auto [firstVertex, secondVertex] = edgeVertices[index];
             painter.drawLine(visual.polygon[static_cast<int>(firstVertex)] - QPoint(scrollX_, scrollY_),
                              visual.polygon[static_cast<int>(secondVertex)] - QPoint(scrollX_, scrollY_));
         }
+    }
+}
+
+void MapCanvasWidget::drawRegionHex(QPainter& painter,
+                                    const RegionVisual& visual,
+                                    bool hasLatestBattlePeriod,
+                                    int battleMonth,
+                                    int battleYear) const
+{
+    if (!visual.region)
+    {
+        return;
+    }
+
+    const QPolygon translated = visual.polygon.translated(-scrollX_, -scrollY_);
+    drawRegionFill(painter, visual, translated);
+    drawPeasantWedge(painter, visual, translated);
+    drawGuardWedge(painter, visual, translated);
+    drawRoads(painter, visual);
+    drawSettlement(painter, visual);
+    drawBattleMarker(painter, visual, hasLatestBattlePeriod, battleMonth, battleYear);
+}
+
+void MapCanvasWidget::drawRegionFill(QPainter& painter,
+                                     const RegionVisual& visual,
+                                     const QPolygon& translated) const
+{
+    painter.setPen(QPen(QColor(0, 0, 0), 2));
+    painter.setBrush(QBrush(getRegionFillColor(visual.region->getRegionType())));
+    painter.drawPolygon(translated);
+}
+
+void MapCanvasWidget::drawPeasantWedge(QPainter& painter,
+                                       const RegionVisual& visual,
+                                       const QPolygon& translated) const
+{
+    // Peasant wedge: color-coded trapezoid along the northeast edge, with a black frame.
+    if (!appConfig_ || visual.region->getPeasantType().empty() || visual.region->getPeasantNumber() <= 0)
+    {
+        return;
+    }
+
+    const std::array<int, 3> peasantRgb = appConfig_->getPeasantColour(visual.region->getPeasantType());
+    const QColor peasantColor(std::clamp(peasantRgb[0], 0, 255),
+                              std::clamp(peasantRgb[1], 0, 255),
+                              std::clamp(peasantRgb[2], 0, 255));
+    const int centerX = visual.center.x() - scrollX_;
+    const int centerY = visual.center.y() - scrollY_;
+    const QPoint neCorner = translated[2];
+    const QPoint eCorner = translated[3];
+    const double dxNe = static_cast<double>(neCorner.x() - centerX);
+    const double dyNe = static_cast<double>(neCorner.y() - centerY);
+    const double radialDistance = std::sqrt(dxNe * dxNe + dyNe * dyNe);
+    const double fraction = radialDistance > 0.0
+        ? std::min(1.0, std::max(0.20, 10.0 / radialDistance))
+        : 0.20;
+    const auto lerp = [](int from, int to, double factor)
+    {
+        return static_cast<int>(std::lround(from + factor * static_cast<double>(to - from)));
+    };
+
+    QPolygon wedge;
+    wedge << neCorner
+          << eCorner
+          << QPoint(lerp(centerX, eCorner.x(), 1.0 - fraction),
+                    lerp(centerY, eCorner.y(), 1.0 - fraction))
+          << QPoint(lerp(centerX, neCorner.x(), 1.0 - fraction),
+                    lerp(centerY, neCorner.y(), 1.0 - fraction));
+
+    painter.setPen(QPen(QColor(0, 0, 0), 1));
+    painter.setBrush(QBrush(peasantColor));
+    painter.drawPolygon(wedge);
+    painter.setPen(QPen(QColor(0, 0, 0), 2));
+}
+
+void MapCanvasWidget::drawGuardWedge(QPainter& painter,
+                                     const RegionVisual& visual,
+                                     const QPolygon& translated) const
+{
+    // Guard wedge: guarding-faction trapezoid along the north edge, with a black frame.
+    if (!appConfig_ || !appData_)
+    {
+        return;
+    }
+
+    const GuardWedgeStyle guardStyle = resolveGuardWedgeStyle(*appData_, *appConfig_, *visual.region);
+    if (!guardStyle.guardPresent)
+    {
+        return;
+    }
+    const int centerX = visual.center.x() - scrollX_;
+    const int centerY = visual.center.y() - scrollY_;
+    const QPoint nwCorner = translated[1];
+    const QPoint neCorner = translated[2];
+    const double dxNw = static_cast<double>(nwCorner.x() - centerX);
+    const double dyNw = static_cast<double>(nwCorner.y() - centerY);
+    const double radialDistance = std::sqrt(dxNw * dxNw + dyNw * dyNw);
+    const double fraction = radialDistance > 0.0
+        ? std::min(1.0, std::max(0.20, 10.0 / radialDistance))
+        : 0.20;
+    const auto lerp = [](int from, int to, double amount)
+    {
+        return static_cast<int>(std::lround(from + amount * static_cast<double>(to - from)));
+    };
+
+    QPolygon wedge;
+    wedge << nwCorner
+          << neCorner
+          << QPoint(lerp(centerX, neCorner.x(), 1.0 - fraction),
+                    lerp(centerY, neCorner.y(), 1.0 - fraction))
+          << QPoint(lerp(centerX, nwCorner.x(), 1.0 - fraction),
+                    lerp(centerY, nwCorner.y(), 1.0 - fraction));
+
+    QColor fillColor(guardStyle.color[0], guardStyle.color[1], guardStyle.color[2]);
+    painter.setPen(QPen(QColor(0, 0, 0), 1));
+    painter.setBrush(QBrush(fillColor));
+    painter.drawPolygon(wedge);
+    painter.setPen(QPen(QColor(0, 0, 0), 2));
+}
+
+void MapCanvasWidget::drawRoads(QPainter& painter, const RegionVisual& visual) const
+{
+    if (!appData_ || !appConfig_)
+    {
+        return;
+    }
+
+    std::set<std::wstring> availableExitDirections;
+    for (const std::wstring& exitDirection : visual.region->getExitDirections())
+    {
+        const std::wstring normalizedDirection = HexDirectionUtils::normalizeHexDirection(exitDirection);
+        if (!normalizedDirection.empty())
+        {
+            availableExitDirections.insert(normalizedDirection);
+        }
+    }
+    if (availableExitDirections.empty())
+    {
+        return;
+    }
+
+    std::set<std::wstring> roadDirections;
+    const auto& structureRepository = appData_->structureRepository();
+    for (std::size_t index = 0; index < structureRepository.size(); ++index)
+    {
+        const Structure& structure = structureRepository.at(index);
+        if (structure.getXCoordinate() != visual.region->getXCoordinate() ||
+            structure.getYCoordinate() != visual.region->getYCoordinate() ||
+            structure.getZCoordinate() != selectedZ_)
+        {
+            continue;
+        }
+        const std::wstring roadDirection = HexDirectionUtils::extractRoadDirectionFromStructure(structure);
+        if (!roadDirection.empty() && availableExitDirections.find(roadDirection) != availableExitDirections.end())
+        {
+            roadDirections.insert(roadDirection);
+        }
+    }
+    if (roadDirections.empty())
+    {
+        return;
+    }
+
+    const std::array<int, 3> roadColor = appConfig_->getRoadColor();
+    painter.setPen(QPen(QColor(std::clamp(roadColor[0], 0, 255),
+                               std::clamp(roadColor[1], 0, 255),
+                               std::clamp(roadColor[2], 0, 255)),
+                        4));
+    painter.setBrush(Qt::NoBrush);
+    const int centerX = visual.center.x() - scrollX_;
+    const int centerY = visual.center.y() - scrollY_;
+    for (const std::wstring& direction : roadDirections)
+    {
+        const QPoint endpoint = getRoadEndpointForDirection(visual.polygon, direction);
+        painter.drawLine(QPoint(centerX, centerY), QPoint(endpoint.x() - scrollX_, endpoint.y() - scrollY_));
+    }
+    painter.setPen(QPen(QColor(0, 0, 0), 2));
+}
+
+void MapCanvasWidget::drawSettlement(QPainter& painter, const RegionVisual& visual) const
+{
+    if (!visual.region->getContainsSettlement() || !appConfig_)
+    {
+        return;
+    }
+
+    const std::wstring settlementType = StringUtils::toLower(visual.region->getSettlementType());
+    const int markerDiameter = (std::max)(4, scaledHexWidth() / 4);
+    const int coreDiameter = (std::max)(2, markerDiameter / 4);
+    const int townRingDiameter = markerDiameter;
+    const int cityInnerRingDiameter = (std::max)(coreDiameter + 3, markerDiameter * 2 / 3);
+    const int cityOuterRingDiameter = markerDiameter;
+    const int centerX = visual.center.x() - scrollX_;
+    const int centerY = visual.center.y() - scrollY_;
+    painter.setPen(QPen(QColor(0, 0, 0), 2));
+    painter.setBrush(QBrush(QColor(0, 0, 0)));
+
+    if (settlementType == L"village")
+    {
+        painter.setBrush(Qt::NoBrush);
+        painter.drawEllipse(QPoint(centerX, centerY), markerDiameter / 2, markerDiameter / 2);
+    }
+    else if (settlementType == L"town")
+    {
+        painter.drawEllipse(QPoint(centerX, centerY), coreDiameter / 2, coreDiameter / 2);
+        painter.setBrush(Qt::NoBrush);
+        painter.drawEllipse(QPoint(centerX, centerY), townRingDiameter / 2, townRingDiameter / 2);
+    }
+    else if (settlementType == L"city")
+    {
+        painter.drawEllipse(QPoint(centerX, centerY), coreDiameter / 2, coreDiameter / 2);
+        painter.setBrush(Qt::NoBrush);
+        painter.drawEllipse(QPoint(centerX, centerY), cityInnerRingDiameter / 2, cityInnerRingDiameter / 2);
+        painter.drawEllipse(QPoint(centerX, centerY), cityOuterRingDiameter / 2, cityOuterRingDiameter / 2);
+    }
+    else
+    {
+        painter.setBrush(Qt::NoBrush);
+        painter.drawEllipse(QPoint(centerX, centerY), markerDiameter / 2, markerDiameter / 2);
+    }
+    painter.setPen(QPen(QColor(0, 0, 0), 2));
+    painter.setBrush(QBrush(QColor(0, 0, 0)));
+}
+
+void MapCanvasWidget::drawBattleMarker(QPainter& painter,
+                                       const RegionVisual& visual,
+                                       bool hasLatestBattlePeriod,
+                                       int battleMonth,
+                                       int battleYear) const
+{
+    if (!hasLatestBattlePeriod || !appData_ ||
+        !appData_->battleRepository().hasBattleInRegionForPeriod(
+            visual.region->getXCoordinate(), visual.region->getYCoordinate(), visual.region->getZCoordinate(),
+            battleMonth, battleYear))
+    {
+        return;
+    }
+
+    const int centerX = visual.center.x() - scrollX_;
+    const int centerY = visual.center.y() - scrollY_;
+    const int hexWidth = scaledHexWidth();
+    const int hexHeight = (std::max)(14, static_cast<int>(std::lround(static_cast<double>(hexWidth) * std::sqrt(3.0) / 2.0)));
+    const int crossSize = (std::max)(4, (((hexHeight * 2) / 5) * 2) / 3);
+    const int halfCross = crossSize / 2;
+    const int bottomMargin = (std::max)(4, hexHeight / 8);
+    const int crossCenterY = centerY + (hexHeight / 2) - bottomMargin - halfCross;
+    painter.setPen(QPen(QColor(200, 0, 0), 3));
+    painter.drawLine(QPoint(centerX - halfCross, crossCenterY - halfCross),
+                     QPoint(centerX + halfCross, crossCenterY + halfCross));
+    painter.drawLine(QPoint(centerX - halfCross, crossCenterY + halfCross),
+                     QPoint(centerX + halfCross, crossCenterY - halfCross));
+    painter.setPen(QPen(QColor(0, 0, 0), 2));
+}
+
+void MapCanvasWidget::drawEmptyHexes(QPainter& painter, const QRect& viewport) const
+{
+    if (!appConfig_ || !hasMapBounds_)
+    {
+        return;
+    }
+
+    std::set<std::pair<int, int>> occupiedCoordinates;
+    int coordinateParity = 0;
+    bool hasCoordinateParity = false;
+    for (const RegionVisual& visual : visibleRegions_)
+    {
+        if (!visual.region)
+        {
+            continue;
+        }
+        const int xCoordinate = visual.region->getXCoordinate();
+        const int yCoordinate = visual.region->getYCoordinate();
+        occupiedCoordinates.emplace(xCoordinate, yCoordinate);
+        if (!hasCoordinateParity)
+        {
+            coordinateParity = (xCoordinate + yCoordinate) & 1;
+            hasCoordinateParity = true;
+        }
+    }
+
+    const int hexWidth = scaledHexWidth();
+    const int hexHeight = (std::max)(14, static_cast<int>(std::lround(static_cast<double>(hexWidth) * std::sqrt(3.0) / 2.0)));
+    const int columnStep = (std::max)(10, static_cast<int>(std::lround(hexWidth * 0.75)));
+    painter.setPen(QPen(QColor(192, 192, 192), 1));
+    painter.setBrush(Qt::NoBrush);
+
+    for (int xCoordinate = mapMinX_ - mapLeftPaddingColumns_;
+         xCoordinate <= mapMaxX_ + mapRightPaddingColumns_;
+         ++xCoordinate)
+    {
+        for (int yCoordinate = mapMinY_; yCoordinate <= mapMaxY_; ++yCoordinate)
+        {
+            if ((hasCoordinateParity && (((xCoordinate + yCoordinate) & 1) != coordinateParity)) ||
+                occupiedCoordinates.find({ xCoordinate, yCoordinate }) != occupiedCoordinates.end())
+            {
+                continue;
+            }
+
+            const int mapColumn = (xCoordinate - mapMinX_) + mapLeftPaddingColumns_;
+            const double mapRow = static_cast<double>(yCoordinate - mapMinY_) / 2.0;
+            const int centerX = kMargin + mapColumn * columnStep + (hexWidth / 2) - scrollX_;
+            const int centerY = kMargin + static_cast<int>(std::lround(mapRow * hexHeight)) + (hexHeight / 2) - scrollY_;
+            const QPolygon polygon = toQPolygon(MapUtils::buildHexagonPolygon(centerX, centerY, hexWidth));
+            if (polygon.boundingRect().intersects(viewport))
+            {
+                painter.drawPolygon(polygon);
+            }
+        }
+    }
+}
+
+void MapCanvasWidget::drawRegionHexes(QPainter& painter,
+                                      const QRect& viewport,
+                                      bool hasLatestBattlePeriod,
+                                      int battleMonth,
+                                      int battleYear) const
+{
+    painter.setPen(QPen(QColor(0, 0, 0), 2));
+    for (const RegionVisual& visual : visibleRegions_)
+    {
+        if (!visual.region || !visual.polygon.translated(-scrollX_, -scrollY_).boundingRect().intersects(viewport))
+        {
+            continue;
+        }
+        drawRegionHex(painter, visual, hasLatestBattlePeriod, battleMonth, battleYear);
     }
 }
 
@@ -1016,7 +1133,7 @@ bool MapCanvasWidget::hitTestMapCoordinate(const QPoint& pointInMapClient, int& 
         break;
     }
 
-    const int hexWidth = (std::max)(12, appConfig_->getMapHexWidth());
+    const int hexWidth = scaledHexWidth();
     const int hexHeight = (std::max)(14, static_cast<int>(std::lround(static_cast<double>(hexWidth) * std::sqrt(3.0) / 2.0)));
     const int columnStep = (std::max)(10, static_cast<int>(std::lround(hexWidth * 0.75)));
     const int rowStep = hexHeight;

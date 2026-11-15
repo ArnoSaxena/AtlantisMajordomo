@@ -23,6 +23,7 @@
 #include "Data/Commands.hpp"
 
 #include "Data/AppData.hpp"
+#include "Data/Faction.hpp"
 #include "Data/Item.hpp"
 #include "Data/Region.hpp"
 #include "Data/Skill.hpp"
@@ -78,12 +79,7 @@ namespace
   /**
   * @brief Quantity semantics for GIVE/TAKE-like commands.
   */
-  enum class GiveMode
-  {
-    Quantity, /**< Transfer exactly N items. */
-    All, /**< Transfer all available items. */
-    AllExcept /**< Transfer all except N items. */
-  };
+  using GiveMode = OrderParsingUtils::WarningGiveMode;
 
   /**
   * @brief GIVE command category recognized by the parser.
@@ -103,7 +99,6 @@ namespace
     GiveKind kind { GiveKind::ItemTransfer }; /**< Parsed GIVE/TAKE command kind. */
     int receiverUnitId { 0 }; /**< Target unit number as parsed from the order. */
     bool receiverIsNewUnit { false }; /**< True when the target is a NEW unit syntax. */
-    int transferredUnitId { 0 }; /**< Unit id for GIVE UNIT syntax when present. */
     std::wstring itemToken; /**< Resolved normalized item token. */
     std::wstring itemOperand; /**< Raw item operand from the order text. */
     bool itemOperandWasQuoted { false }; /**< True when operand was originally quoted. */
@@ -444,147 +439,13 @@ namespace
   }
 
   /**
-  * @brief Parses a unit reference token, allowing optional NEW prefix before the number.
-  */
-  bool tryParseUnitReference(const std::vector<std::wstring>& tokens,
-                             std::size_t& tokenIndex,
-                             int& unitNumber,
-                             bool& isNewUnit)
-  {
-    if (tokenIndex >= tokens.size())
-    {
-      return false;
-    }
-
-    const std::wstring upperToken = StringUtils::toUpper(tokens[tokenIndex]);
-    if (upperToken == L"NEW")
-    {
-      ++tokenIndex;
-      if (tokenIndex >= tokens.size() || !tryParseInt(tokens[tokenIndex], unitNumber) || unitNumber <= 0)
-      {
-        return false;
-      }
-
-      isNewUnit = true;
-      ++tokenIndex;
-      return true;
-    }
-
-    if (!tryParseInt(tokens[tokenIndex], unitNumber) || unitNumber <= 0)
-    {
-      return false;
-    }
-
-    isNewUnit = false;
-    ++tokenIndex;
-    return true;
-  }
-
-  /**
   * @brief Tokenizes an order line, preserving quoted-token metadata.
   */
   bool tokenizeCommandLine(const std::wstring& line,
                           std::vector<std::wstring>& tokens,
                           std::vector<bool>& tokenWasQuoted)
   {
-    tokens.clear();
-    tokenWasQuoted.clear();
-
-    const std::wstring input =  StringUtils::trimWhitespace(line);
-    if (input.empty())
-    {
-      return true;
-    }
-
-    std::wstring currentToken;
-    bool currentWasQuoted = false;
-    bool inQuotes = false;
-    bool escapeNext = false;
-
-    for (std::size_t i = 0; i < input.size(); ++i)
-    {
-      const wchar_t ch = input[i];
-
-      if (escapeNext)
-      {
-        currentToken.push_back(ch);
-        escapeNext = false;
-        continue;
-      }
-
-      if (ch == L'\\')
-      {
-        // In quoted strings, keep standard escaping behavior.
-        if (inQuotes)
-        {
-          escapeNext = true;
-          continue;
-        }
-
-        // Be tolerant of legacy backslash-quoted values like \"silver\".
-        if (i + 1 < input.size() && input[i + 1] == L'"')
-        {
-          continue;
-        }
-
-        currentToken.push_back(ch);
-        continue;
-      }
-
-      if (ch == L'"')
-      {
-        inQuotes = !inQuotes;
-        currentWasQuoted = true;
-        continue;
-      }
-
-      if (!inQuotes && ch == L';')
-      {
-        // Inline comments: ignore everything after ';' outside quotes.
-        break;
-      }
-
-      if (!inQuotes && ch == L'@')
-      {
-        // Support trailing inline comments like "TAX @ note".
-        // Preserve legacy leading @command syntax by keeping parsing alive
-        // when '@' is the first non-space character.
-        const bool isLeadingCommandPrefix = tokens.empty() && currentToken.empty();
-        if (isLeadingCommandPrefix)
-        {
-          continue;
-        }
-
-        break;
-      }
-
-      if (!inQuotes && iswspace(ch))
-      {
-        if (!currentToken.empty())
-        {
-          tokens.push_back(currentToken);
-          tokenWasQuoted.push_back(currentWasQuoted);
-          currentToken.clear();
-          currentWasQuoted = false;
-        }
-        continue;
-      }
-
-      currentToken.push_back(ch);
-    }
-
-    if (escapeNext || inQuotes)
-    {
-      return false;
-    }
-
-    if (!currentToken.empty())
-    {
-      tokens.push_back(currentToken);
-      tokenWasQuoted.push_back(currentWasQuoted);
-    }
-
-    return true;
+    return OrderParsingUtils::tokenizeOrderLine(line, tokens, tokenWasQuoted);
   }
 
   /**
@@ -797,167 +658,23 @@ namespace
   */
   bool tryParseGiveCommand(const std::wstring& line, GiveCommand& command)
   {
-    std::vector<std::wstring> tokens;
-    std::vector<bool> tokenWasQuoted;
-    if (!tokenizeCommandLine(line, tokens, tokenWasQuoted) || tokens.empty())
+    OrderParsingUtils::WarningGiveTakeOrder parsed;
+    if (!OrderParsingUtils::tryParseGiveTakeOrder(line, parsed))
     {
       return false;
     }
 
-    std::size_t tokenIndex = 0;
-    if (!tokens.empty() && !tokens.front().empty() && tokens.front().front() == L'@')
-    {
-      if (tokens.front().size() == 1)
-      {
-        tokenIndex = 1;
-      }
-      else
-      {
-        tokens.front().erase(tokens.front().begin());
-      }
-    }
-
-    if (tokenIndex >= tokens.size())
-    {
-      return false;
-    }
-
-    const std::wstring verbToken = StringUtils::toUpper(tokens[tokenIndex]);
-    if (verbToken == L"GIVE")
-    {
-      command.isTake = false;
-    }
-    else if (verbToken == L"TAKE")
-    {
-      command.isTake = true;
-    }
-    else
-    {
-      return false;
-    }
-    ++tokenIndex;
-
-    if (command.isTake)
-    {
-      // Only accept the explicit "TAKE FROM <unit> ..." syntax.
-      if (tokenIndex >= tokens.size() || StringUtils::toUpper(tokens[tokenIndex]) != L"FROM")
-      {
-        return false;
-      }
-      ++tokenIndex;
-    }
-
-    if (!tryParseUnitReference(tokens, tokenIndex, command.receiverUnitId, command.receiverIsNewUnit))
-    {
-      return false;
-    }
-
-    // GIVE [unit id] UNIT [unit id] - valid syntax in Atlantis, but unit transfer
-    // effects are not modeled yet. Recognize and ignore safely.
-    if (!command.isTake && tokenIndex < tokens.size() && StringUtils::toUpper(tokens[tokenIndex]) == L"UNIT")
-    {
-      ++tokenIndex;
-      if (tokenIndex >= tokens.size() || !tryParseInt(tokens[tokenIndex], command.transferredUnitId) || command.transferredUnitId <= 0)
-      {
-        return false;
-      }
-      ++tokenIndex;
-
-      command.kind = GiveKind::UnitTransfer;
-      return tokenIndex == tokens.size();
-    }
-
-    if (tokenIndex >= tokens.size())
-    {
-      return false;
-    }
-
-    const std::wstring quantityToken = tokens[tokenIndex++];
-    const std::wstring upperQuantityToken = StringUtils::toUpper(quantityToken);
-    if (upperQuantityToken == L"ALL")
-    {
-      command.mode = GiveMode::All;
-      command.quantity = 0;
-
-      if (tokenIndex >= tokens.size())
-      {
-        return false;
-      }
-      command.itemOperand = tokens[tokenIndex];
-      command.itemOperandWasQuoted = tokenWasQuoted[tokenIndex];
-      ++tokenIndex;
-
-      if (tokenIndex < tokens.size())
-      {
-        if (StringUtils::toUpper(tokens[tokenIndex]) != L"EXCEPT")
-        {
-          return false;
-        }
-        ++tokenIndex;
-
-        if (tokenIndex >= tokens.size() || !tryParseInt(tokens[tokenIndex], command.exceptQuantity) || command.exceptQuantity < 0)
-        {
-          return false;
-        }
-        ++tokenIndex;
-
-        command.mode = GiveMode::AllExcept;
-      }
-      else
-      {
-        command.exceptQuantity = 0;
-      }
-
-      return tokenIndex == tokens.size();
-    }
-
-    if (upperQuantityToken == L"EXCEPT")
-    {
-      if (tokenIndex >= tokens.size() || !tryParseInt(tokens[tokenIndex], command.exceptQuantity) || command.exceptQuantity < 0)
-      {
-        return false;
-      }
-      ++tokenIndex;
-
-      if (tokenIndex >= tokens.size())
-      {
-        return false;
-      }
-
-      command.mode = GiveMode::AllExcept;
-      command.quantity = 0;
-      command.itemOperand = tokens[tokenIndex];
-      command.itemOperandWasQuoted = tokenWasQuoted[tokenIndex];
-      ++tokenIndex;
-      return tokenIndex == tokens.size();
-    }
-
-    if (!tryParseInt(quantityToken, command.quantity) || command.quantity <= 0)
-    {
-      // Alternate form: GIVE <unit> <item> <quantity>
-      command.itemOperand = quantityToken;
-      command.itemOperandWasQuoted = tokenWasQuoted[tokenIndex - 1];
-      if (tokenIndex >= tokens.size() || !tryParseInt(tokens[tokenIndex], command.quantity) || command.quantity <= 0)
-      {
-        return false;
-      }
-      ++tokenIndex;
-      command.mode = GiveMode::Quantity;
-      command.exceptQuantity = 0;
-      return tokenIndex == tokens.size();
-    }
-
-    if (tokenIndex >= tokens.size())
-    {
-      return false;
-    }
-
-    command.mode = GiveMode::Quantity;
-    command.itemOperand = tokens[tokenIndex];
-    command.itemOperandWasQuoted = tokenWasQuoted[tokenIndex];
-    ++tokenIndex;
-    command.exceptQuantity = 0;
-    return tokenIndex == tokens.size();
+    command = {};
+    command.isTake = parsed.isTake;
+    command.kind = parsed.isUnitTransfer ? GiveKind::UnitTransfer : GiveKind::ItemTransfer;
+    command.receiverUnitId = parsed.otherUnitNumber;
+    command.receiverIsNewUnit = parsed.otherUnitIsNew;
+    command.itemOperand = std::move(parsed.itemOperand);
+    command.itemOperandWasQuoted = parsed.itemOperandWasQuoted;
+    command.quantity = parsed.quantity;
+    command.exceptQuantity = parsed.exceptQuantity;
+    command.mode = parsed.mode;
+    return true;
   }
   /**
   * @brief Parses a CLAIM command and captures the claimed silver amount.
@@ -1077,104 +794,21 @@ namespace
   */
   bool tryParseTransportCommand(const std::wstring& line, TransportCommand& command)
   {
-    std::vector<std::wstring> tokens;
-    std::vector<bool> tokenWasQuoted;
-    if (!tokenizeCommandLine(line, tokens, tokenWasQuoted) || tokens.empty())
+    OrderParsingUtils::TransportOrder parsed;
+    if (!OrderParsingUtils::tryParseTransportOrder(line, parsed))
     {
       return false;
     }
 
-    std::size_t tokenIndex = 0;
-    if (!tokens.empty() && !tokens.front().empty() && tokens.front().front() == L'@')
-    {
-      if (tokens.front().size() == 1)
-      {
-        tokenIndex = 1;
-      }
-      else
-      {
-        tokens.front().erase(tokens.front().begin());
-      }
-    }
-
-    if (tokenIndex >= tokens.size())
-    {
-      return false;
-    }
-
-    const std::wstring commandKeyword = StringUtils::toUpper(tokens[tokenIndex]);
-    if (commandKeyword != L"TRANSPORT" && commandKeyword != L"DISTRIBUTE")
-    {
-      return false;
-    }
-    ++tokenIndex;
-
-    if (!tryParseUnitReference(tokens, tokenIndex, command.targetUnitId, command.targetIsNewUnit))
-    {
-      return false;
-    }
-
-    if (tokenIndex >= tokens.size())
-    {
-      return false;
-    }
-
-    const std::wstring quantityToken = tokens[tokenIndex++];
-    const std::wstring upperQuantityToken = StringUtils::toUpper(quantityToken);
-    if (upperQuantityToken == L"ALL")
-    {
-      command.mode = GiveMode::All;
-      command.quantity = 0;
-
-      if (tokenIndex >= tokens.size())
-      {
-        return false;
-      }
-
-      command.itemOperand = tokens[tokenIndex];
-      command.itemOperandWasQuoted = tokenWasQuoted[tokenIndex];
-      ++tokenIndex;
-
-      if (tokenIndex < tokens.size())
-      {
-        if (StringUtils::toUpper(tokens[tokenIndex]) != L"EXCEPT")
-        {
-          return false;
-        }
-        ++tokenIndex;
-
-        if (tokenIndex >= tokens.size() || !tryParseInt(tokens[tokenIndex], command.exceptQuantity) || command.exceptQuantity < 0)
-        {
-          return false;
-        }
-        ++tokenIndex;
-
-        command.mode = GiveMode::AllExcept;
-      }
-      else
-      {
-        command.exceptQuantity = 0;
-      }
-
-      return tokenIndex == tokens.size();
-    }
-
-    if (!tryParseInt(quantityToken, command.quantity) || command.quantity <= 0)
-    {
-      return false;
-    }
-
-    if (tokenIndex >= tokens.size())
-    {
-      return false;
-    }
-
-    command.mode = GiveMode::Quantity;
-    command.itemOperand = tokens[tokenIndex];
-    command.itemOperandWasQuoted = tokenWasQuoted[tokenIndex];
-    ++tokenIndex;
-    command.exceptQuantity = 0;
-    return tokenIndex == tokens.size();
+    command = {};
+    command.targetUnitId = parsed.targetUnitNumber;
+    command.targetIsNewUnit = parsed.targetIsNewUnit;
+    command.mode = parsed.mode;
+    command.quantity = parsed.quantity;
+    command.exceptQuantity = parsed.exceptQuantity;
+    command.itemOperand = std::move(parsed.itemOperand);
+    command.itemOperandWasQuoted = parsed.itemOperandWasQuoted;
+    return true;
   }
 
   /**
@@ -1474,7 +1108,7 @@ namespace
                               targetUnit.getYCoordinate()) <= 2;
   }
 
-  [[maybe_unused]] bool isWithinTransportRange(const UnitNew& sourceUnit, const Unit& targetUnit)
+  bool isWithinTransportRange(const UnitNew& sourceUnit, const Unit& targetUnit)
   {
     if (sourceUnit.getZCoordinate() != targetUnit.getZCoordinate())
     {
@@ -1487,7 +1121,7 @@ namespace
                               targetUnit.getYCoordinate()) <= 2;
   }
 
-  [[maybe_unused]] bool isWithinTransportRange(const UnitNew& sourceUnit, const UnitNew& targetUnit)
+  bool isWithinTransportRange(const UnitNew& sourceUnit, const UnitNew& targetUnit)
   {
     if (sourceUnit.getZCoordinate() != targetUnit.getZCoordinate())
     {
@@ -1635,7 +1269,7 @@ namespace
       return false;
     }
 
-    if (Skill::trainingDaysToLevel(unit->getSkillDays(L"QUAM")) <= 0)
+    if (appData.skillRepository().trainingDaysToLevel(unit->getSkillDays(L"QUAM")) <= 0)
     {
       return false;
     }
@@ -2033,7 +1667,7 @@ namespace
   /**
   * @brief Returns true when a unit appears to have COMB level 1 or higher.
   */
-  bool hasCombSkillAtLeastOne(const Unit& unit)
+  bool hasCombSkillAtLeastOne(const AppData& appData, const Unit& unit)
   {
     auto lineHasCombAtLeastOne = [](const std::wstring& skillLine) -> bool
     {
@@ -2102,7 +1736,7 @@ namespace
 
       if (StringUtils::toUpper(skillToken) == L"COMB")
       {
-        const int level = Skill::trainingDaysToLevel(days);
+        const int level = appData.skillRepository().trainingDaysToLevel(days);
         if (level >= 1)
         {
           return true;
@@ -2122,7 +1756,7 @@ namespace
     return false;
   }
 
-  bool hasCombSkillAtLeastOne(const std::map<std::wstring, int>& unitSkills)
+  bool hasCombSkillAtLeastOne(const AppData& appData, const std::map<std::wstring, int>& unitSkills)
   {
     for (const auto& [skillToken, days] : unitSkills)
     {
@@ -2132,7 +1766,7 @@ namespace
         continue;
       }
 
-      if (Skill::trainingDaysToLevel(days) >= 1)
+      if (appData.skillRepository().trainingDaysToLevel(days) >= 1)
       {
         return true;
       }
@@ -2248,7 +1882,9 @@ namespace
     return maxDaysAtLimit;
   }
 
-  bool hasStudyPrerequisites(const std::map<std::wstring, int>& unitSkills, const Skill& studiedSkill)
+  bool hasStudyPrerequisites(const AppData& appData,
+                            const std::map<std::wstring, int>& unitSkills,
+                            const Skill& studiedSkill)
   {
     for (const SkillPrerequisite& prerequisite : studiedSkill.getPrerequisites())
     {
@@ -2264,7 +1900,8 @@ namespace
         {
           continue;
         }
-        return Skill::trainingDaysToLevel(days);
+        knownLevel = appData.skillRepository().trainingDaysToLevel(days);
+        break;
       }      
 
       if (knownLevel < prerequisite.requiredLevel)
@@ -2324,7 +1961,7 @@ namespace
         }
       }
 
-      const int unitSkillLevel = Skill::trainingDaysToLevel(requiredSkillDays);
+      const int unitSkillLevel = appData.skillRepository().trainingDaysToLevel(requiredSkillDays);
       if (unitSkillLevel >= requiredLevel)
       {
         bestQualifiedLevel = std::max(bestQualifiedLevel, unitSkillLevel);
@@ -2483,31 +2120,40 @@ namespace
           destinationUnit = destinationUnitIter->second;
         }
 
-        if (transportCommand.targetIsNewUnit)
+        const auto canReachDestination = [&](const auto& source)
         {
-          if (!isWithinTransportRange(*originUnit, *destinationNewUnit))
+          return transportCommand.targetIsNewUnit
+            ? isWithinTransportRange(source, *destinationNewUnit)
+            : isWithinTransportRange(source, *destinationUnit);
+        };
+
+        if (isNewUnit)
+        {
+          const auto sourceNewIter = simulation.nearbyNewUnits.find(originUnitNumber);
+          if (sourceNewIter == simulation.nearbyNewUnits.end() || !sourceNewIter->second ||
+              !canReachDestination(*sourceNewIter->second))
           {
             return;
           }
         }
-        else
+        else if (!canReachDestination(*originUnit))
         {
-          if (!isWithinTransportRange(*originUnit, *destinationUnit))
-          {
-            return;
-          }
+          return;
         }
 
-        const bool originIsQualifiedOwner = unitOwnsCaravanseraiAndHasQuam(appData, originUnitNumber);
+        const bool originIsQualifiedOwner =
+          !isNewUnit && unitOwnsCaravanseraiAndHasQuam(appData, originUnitNumber);
         const bool destinationIsQualifiedOwner =
+          !transportCommand.targetIsNewUnit &&
           unitOwnsCaravanseraiAndHasQuam(appData, transportCommand.targetUnitId);
         if (!originIsQualifiedOwner && !destinationIsQualifiedOwner)
         {
           return;
         }
 
-        auto sourceCountsIter = simulation.itemCountsByUnit.find(originUnitNumber);
-        if (sourceCountsIter == simulation.itemCountsByUnit.end())
+        auto& sourceCountsMap = isNewUnit ? simulation.itemCountsByNewUnit : simulation.itemCountsByUnit;
+        auto sourceCountsIter = sourceCountsMap.find(originUnitNumber);
+        if (sourceCountsIter == sourceCountsMap.end())
         {
           return;
         }
@@ -2765,8 +2411,8 @@ namespace
 
         const auto originSkillsIter = originSkillsMap.find(originUnitNumber);
         const bool hasCombatSkill = originSkillsIter != originSkillsMap.end()
-          ? hasCombSkillAtLeastOne(originSkillsIter->second)
-          : (!isNewUnit && originUnit && hasCombSkillAtLeastOne(*originUnit));
+          ? hasCombSkillAtLeastOne(appData, originSkillsIter->second)
+          : (!isNewUnit && originUnit && hasCombSkillAtLeastOne(appData, *originUnit));
         if (!hasCombatSkill)
         {
           return;
@@ -3153,7 +2799,7 @@ namespace
           }
         }
 
-        const int entertainSkillLevel =  Skill::trainingDaysToLevel(entertainDays);
+        const int entertainSkillLevel = appData.skillRepository().trainingDaysToLevel(entertainDays);
         if (entertainSkillLevel <= 0)
         {
           return;
@@ -3477,7 +3123,8 @@ namespace
         }
 
         const std::wstring studyOperand = StringUtils::trimWhitespace(parsedCommand.study.skillToken);
-        const Skill* studiedSkill = findSkillByTokenOrNameNormalized(appData, studyOperand);
+        const Skill* studiedSkill =
+          appData.skillRepository().findByIdentifier(StringUtils::toUpper(studyOperand));
 
         if (!studiedSkill)
         {
@@ -3503,7 +3150,7 @@ namespace
         const std::map<std::wstring, int>& unitSkillsForPrereq =
           (skillsIter != originSkillsMap.end()) ? skillsIter->second
           : (fallbackSkillsPtr ? *fallbackSkillsPtr : emptySkills);
-        if (!hasStudyPrerequisites(unitSkillsForPrereq, *studiedSkill))
+        if (!hasStudyPrerequisites(appData, unitSkillsForPrereq, *studiedSkill))
         {
           return;
         }
@@ -3643,19 +3290,20 @@ namespace
 
           // Find what skill the student is studying from repository-backed orders
           std::wstring studiedSkillToken;
-          const std::vector<Order>* studentOrders =
-            appData.orderRepository().getOrdersForUnit(studentUnitNumber, false);
-          if (!studentOrders)
+          const auto studentOrders =
+            appData.orderRepository().getOrderReferencesForUnit(studentUnitNumber, false);
+          if (studentOrders.empty())
           {
             continue; // Student has no tracked orders
           }
 
-          for (const Order& order : *studentOrders)
+          for (const Order& order : studentOrders)
           {
             StudyCommand studyCmd;
             if (tryParseStudyCommand(order.getFullOrderText(), studyCmd))
             {
-              const Skill* skill = findSkillByTokenOrNameNormalized(appData, studyCmd.skillToken);
+              const Skill* skill =
+                appData.skillRepository().findByIdentifier(StringUtils::toUpper(studyCmd.skillToken));
               if (skill)
               {
                 studiedSkillToken = skill->getIdentifierToken();
@@ -3676,7 +3324,7 @@ namespace
             continue; // Teacher doesn't know this skill
           }
 
-          int teacherSkillLevel = Skill::trainingDaysToLevel(teacherSkillIter->second);
+          int teacherSkillLevel = appData.skillRepository().trainingDaysToLevel(teacherSkillIter->second);
           auto studentSkillsIter = simulation.skillsByUnit.find(studentUnitNumber);
           int studentSkillLevel = 0;
           if (studentSkillsIter != simulation.skillsByUnit.end())
@@ -3684,7 +3332,7 @@ namespace
             auto studentSkillIter = studentSkillsIter->second.find(studiedSkillToken);
             if (studentSkillIter != studentSkillsIter->second.end())
             {
-              studentSkillLevel = Skill::trainingDaysToLevel(studentSkillIter->second);
+              studentSkillLevel = appData.skillRepository().trainingDaysToLevel(studentSkillIter->second);
             }
           }
 
@@ -3804,7 +3452,7 @@ namespace
       case SimulatedCommandKind::Sail:
       {
         // SAIL is display-only for now and valid only for ship owners.
-        if (!isUnitShipOwnerAtCurrentLocation(appData, *originUnit))
+        if (!originUnit || !isUnitShipOwnerAtCurrentLocation(appData, *originUnit))
         {
           return;
         }
@@ -4059,13 +3707,13 @@ namespace
       }
 
       const bool originIsLocal = simulation.regionUnits.find(originUnitNumber) != simulation.regionUnits.end();
-      const std::vector<Order>* storedOrders = appData.orderRepository().getOrdersForUnit(originUnitNumber, false);
-      if (!storedOrders)
+      const auto storedOrders = appData.orderRepository().getOrderReferencesForUnit(originUnitNumber, false);
+      if (storedOrders.empty())
       {
         continue;
       }
 
-      for (const Order& storedOrder : *storedOrders)
+      for (const Order& storedOrder : storedOrders)
       {
         ParsedOrderCommand parsedCommand;
         if (!tryParseSupportedOrderCommand(storedOrder.getFullOrderText(), parsedCommand))
@@ -4090,13 +3738,13 @@ namespace
       }
 
       const bool originIsLocal = simulation.regionNewUnits.find(originUnitNumber) != simulation.regionNewUnits.end();
-      const std::vector<Order>* storedOrders = appData.orderRepository().getOrdersForUnit(originUnitNumber, true);
-      if (!storedOrders)
+      const auto storedOrders = appData.orderRepository().getOrderReferencesForUnit(originUnitNumber, true);
+      if (storedOrders.empty())
       {
         continue;
       }
 
-      for (const Order& storedOrder : *storedOrders)
+      for (const Order& storedOrder : storedOrders)
       {
         // OrderRepository groups UnitNew orders by unit number only. When the same
         // UnitNew number exists at different coordinates, keep only orders that match
@@ -4188,13 +3836,13 @@ std::map<std::wstring, int> Commands::calculateAfterGiveTransfersForUnit(const A
   // Start from the unit's normalized current inventory
   std::map<std::wstring, int> remaining = normalizeItemCountsMap(unit.getItems());
 
-  const std::vector<Order>* orders = appData.orderRepository().getOrdersForUnit(unit.getUnitNumber(), false);
-  if (!orders)
+  const auto orders = appData.orderRepository().getOrderReferencesForUnit(unit.getUnitNumber(), false);
+  if (orders.empty())
   {
     return remaining;
   }
 
-  for (const Order& order : *orders)
+  for (const Order& order : orders)
   {
     // Consider both GIVE and TRANSPORT/DISTRIBUTE as outgoing transfers
     GiveCommand giveParsed;
@@ -4254,13 +3902,13 @@ std::map<std::wstring, int> Commands::calculateAfterGiveTransfersForUnitNew(cons
 {
   std::map<std::wstring, int> remaining = normalizeItemCountsMap(unitNew.getItems());
 
-  const std::vector<Order>* orders = appData.orderRepository().getOrdersForUnit(unitNew.getUnitNumber(), true);
-  if (!orders)
+  const auto orders = appData.orderRepository().getOrderReferencesForUnit(unitNew.getUnitNumber(), true);
+  if (orders.empty())
   {
     return remaining;
   }
 
-  for (const Order& order : *orders)
+  for (const Order& order : orders)
   {
     // Ensure orders correspond to this UnitNew snapshot coordinates
     if (order.getXCoordinate() != unitNew.getXCoordinate() ||
@@ -4527,20 +4175,15 @@ Commands::ClaimSummary Commands::summarizeClaims(const AppData& appData)
   ClaimSummary summary;
   const auto& orderRepository = appData.orderRepository();
 
-  const auto collectForOrders = [&](const std::vector<Order>* orders,
+  const auto collectForOrders = [&](const std::vector<std::reference_wrapper<const Order>>& orders,
                                     int unitNumber,
                                     bool isNewUnit,
                                     int xCoordinate,
                                     int yCoordinate,
                                     int zCoordinate)
   {
-    if (!orders)
-    {
-      return;
-    }
-
     bool hasClaimOrder = false;
-    for (const Order& order : *orders)
+    for (const Order& order : orders)
     {
       ClaimCommand parsedClaim;
       if (!tryParseClaimCommand(order.getFullOrderText(), parsedClaim))
@@ -4570,7 +4213,7 @@ Commands::ClaimSummary Commands::summarizeClaims(const AppData& appData)
   for (std::size_t index = 0; index < unitRepository.size(); ++index)
   {
     const Unit& unit = unitRepository.at(index);
-    collectForOrders(orderRepository.getOrdersForUnit(unit.getUnitNumber(), false),
+    collectForOrders(orderRepository.getOrderReferencesForUnit(unit.getUnitNumber(), false),
                      unit.getUnitNumber(),
                      false,
                      unit.getXCoordinate(),
@@ -4582,7 +4225,89 @@ Commands::ClaimSummary Commands::summarizeClaims(const AppData& appData)
   for (std::size_t index = 0; index < unitNewRepository.size(); ++index)
   {
     const UnitNew& unitNew = unitNewRepository.at(index);
-    collectForOrders(orderRepository.getOrdersForUnit(unitNew.getUnitNumber(), true),
+    collectForOrders(orderRepository.getOrderReferencesForUnit(unitNew.getUnitNumber(), true),
+                     unitNew.getUnitNumber(),
+                     true,
+                     unitNew.getXCoordinate(),
+                     unitNew.getYCoordinate(),
+                     unitNew.getZCoordinate());
+  }
+
+  return summary;
+}
+
+Commands::ClaimSummary Commands::summarizeMainFactionClaims(const AppData& appData)
+{
+  ClaimSummary summary;
+  const auto& orderRepository = appData.orderRepository();
+  
+  // Only count claims from the main faction
+  const Faction* mainFaction = appData.factionRepository().getMainFaction();
+  if (!mainFaction)
+  {
+    return summary;
+  }
+  const int mainFactionNumber = mainFaction->getFactionNumber();
+
+  const auto collectForOrders = [&](const std::vector<std::reference_wrapper<const Order>>& orders,
+                                    int unitNumber,
+                                    bool isNewUnit,
+                                    int xCoordinate,
+                                    int yCoordinate,
+                                    int zCoordinate)
+  {
+    bool hasClaimOrder = false;
+    for (const Order& order : orders)
+    {
+      ClaimCommand parsedClaim;
+      if (!tryParseClaimCommand(order.getFullOrderText(), parsedClaim))
+      {
+        continue;
+      }
+
+      summary.totalClaimAmount += parsedClaim.amount;
+      hasClaimOrder = true;
+    }
+
+    if (!hasClaimOrder)
+    {
+      return;
+    }
+
+    summary.issuers.push_back({
+      unitNumber,
+      isNewUnit,
+      xCoordinate,
+      yCoordinate,
+      zCoordinate,
+    });
+  };
+
+  const auto& unitRepository = appData.unitRepository();
+  for (std::size_t index = 0; index < unitRepository.size(); ++index)
+  {
+    const Unit& unit = unitRepository.at(index);
+    if (unit.getFactionNumber() != mainFactionNumber)
+    {
+      continue;
+    }
+    collectForOrders(orderRepository.getOrderReferencesForUnit(unit.getUnitNumber(), false),
+                     unit.getUnitNumber(),
+                     false,
+                     unit.getXCoordinate(),
+                     unit.getYCoordinate(),
+                     unit.getZCoordinate());
+  }
+
+  const auto& unitNewRepository = appData.unitNewRepository();
+  for (std::size_t index = 0; index < unitNewRepository.size(); ++index)
+  {
+    const UnitNew& unitNew = unitNewRepository.at(index);
+    // UnitNew objects are created only by main faction orders, so they are implicitly
+    // part of the main faction's claims. We don't filter by faction number because
+    // UnitNew::getFactionNumber() returns the global singleton's main faction, which
+    // may differ in test contexts where a local appData is used.
+    collectForOrders(orderRepository.getOrderReferencesForUnit(unitNew.getUnitNumber(), true),
                      unitNew.getUnitNumber(),
                      true,
                      unitNew.getXCoordinate(),

@@ -39,8 +39,20 @@ enum class WarningGiveMode
 struct WarningGiveTakeOrder
 {
   bool isTake { false };
+  bool isUnitTransfer { false };
   int otherUnitNumber { 0 };
   bool otherUnitIsNew { false };
+  WarningGiveMode mode { WarningGiveMode::Quantity };
+  int quantity { 0 };
+  int exceptQuantity { 0 };
+  std::wstring itemOperand;
+  bool itemOperandWasQuoted { false };
+};
+
+struct TransportOrder
+{
+  int targetUnitNumber { 0 };
+  bool targetIsNewUnit { false };
   WarningGiveMode mode { WarningGiveMode::Quantity };
   int quantity { 0 };
   int exceptQuantity { 0 };
@@ -58,7 +70,19 @@ bool tryExtractOrderKeywordUpper(const std::wstring& orderLine, std::wstring& ke
 bool isMonthLongOrderLine(const std::wstring& orderLine);
 std::wstring findMonthLongOrderText(const std::vector<std::wstring>& orders);
 
+/**
+ * GIVE accepts unit quantity item, unit ALL operand, unit ALL item EXCEPT quantity,
+ * or unit UNIT. ALL operands can name an item or an item class; class expansion
+ * is not performed here. A single leading @ is a repeat marker, never a comment.
+ * TAKE requires FROM before the unit and accepts the item-transfer forms only.
+ */
 bool tryParseGiveTakeOrder(const std::wstring& orderLine, WarningGiveTakeOrder& parsedOrder);
+
+/**
+ * TRANSPORT accepts unit quantity item, unit ALL item, or unit ALL item EXCEPT amount.
+ * DISTRIBUTE retains the same grammar. A leading @ and NEW unit references are supported.
+ */
+bool tryParseTransportOrder(const std::wstring& orderLine, TransportOrder& parsedOrder);
 
 bool tryResolveItemTokenForWarning(const AppData& appData,
                                    const std::wstring& operand,

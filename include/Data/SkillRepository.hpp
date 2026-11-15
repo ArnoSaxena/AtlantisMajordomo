@@ -39,7 +39,7 @@ class SkillRepository
 {
 public:
   SkillRepository() = default;
-  ~SkillRepository() = default;
+  virtual ~SkillRepository() = default;
 
   SkillRepository(const SkillRepository&) = default;
   SkillRepository& operator=(const SkillRepository&) = default;
@@ -49,7 +49,7 @@ public:
   // Add level data to a skill, creating the Skill entry if it does not exist.
   // Returns true when the level was added; false when that level already exists
   // for the given token (existing data is preserved).
-  bool addLevel(const std::wstring& identifierToken,
+  virtual bool addLevel(const std::wstring& identifierToken,
                 std::wstring name,
                 int level,
                 std::map<std::wstring, int> productionItems = {},
@@ -57,14 +57,20 @@ public:
 
   bool removeByIdentifier(const std::wstring& identifierToken);
 
-  Skill* findByIdentifier(const std::wstring& identifierToken);
-  const Skill* findByIdentifier(const std::wstring& identifierToken) const;
+  virtual Skill* findByIdentifier(const std::wstring& identifierToken);
+  virtual const Skill* findByIdentifier(const std::wstring& identifierToken) const;
 
-  void clear();
+  virtual void clear();
 
-  std::size_t size() const;
+  virtual std::size_t size() const;
   Skill& at(std::size_t index);
-  const Skill& at(std::size_t index) const;
+  virtual const Skill& at(std::size_t index) const;
+
+  /** @brief Resolves a training-day total through the shared skill-level rules. */
+  virtual int trainingDaysToLevel(int trainingDays) const
+  {
+    return Skill::trainingDaysToLevel(trainingDays);
+  }
 
   const std::wstring& getLastError() const;
 

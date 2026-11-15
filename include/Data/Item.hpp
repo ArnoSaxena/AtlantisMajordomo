@@ -48,16 +48,16 @@ public:
       int swimCapacity,
       int flyCapacity,
       bool man);
-  ~Item() = default;
+  virtual ~Item() = default;
 
   Item(const Item&) = default;
   Item& operator=(const Item&) = default;
   Item(Item&&) = default;
   Item& operator=(Item&&) = default;
 
-  const std::wstring& getIdentifierToken() const;
-  const std::wstring& getItemName() const;
-  const std::wstring& getItemNamePlural() const;
+  virtual const std::wstring& getIdentifierToken() const;
+  virtual const std::wstring& getItemName() const;
+  virtual const std::wstring& getItemNamePlural() const;
 
   /**
   * @brief Returns the English plural of @p name.
@@ -68,56 +68,56 @@ public:
   *   - otherwise      → append "s"
   */
   static std::wstring pluralizeName(const std::wstring& name);
-  int getWeight() const;
-  bool isMeeleWeapon() const;
-  bool isRangedWeapon() const;
-  bool isArmour() const;
-  bool isResource() const;
-  bool isMount() const;
+  virtual int getWeight() const;
+  virtual bool isMeeleWeapon() const;
+  virtual bool isRangedWeapon() const;
+  virtual bool isArmour() const;
+  virtual bool isResource() const;
+  virtual bool isMount() const;
   /** True when the item was auto-created from a skill description and is
    *  awaiting its real definition from an "Item reports:" entry. */
-  bool isProvisional() const;
-  int getMoves() const;
-  int getWalkCapacity() const;
-  int getRideCapacity() const;
-  int getSwimCapacity() const;
-  int getFlyCapacity() const;
-  int getShipSpeedHexesPerMonth() const;
-  int getShipSailingSkillRequired() const;
-  int getMagesStudy() const;
-  bool isMan() const;
-  int getDefaultSkillMax() const;
-  const std::wstring& getFullText() const;
-  const std::map<std::wstring, int>& getResources() const;
-  const std::map<std::wstring, int>& getSkillsMax() const;
-  const std::map<std::wstring, int>& getProductionSkill() const;
-  const std::map<std::wstring, int>& getProductionHelp() const;
+  virtual bool isProvisional() const;
+  virtual int getMoves() const;
+  virtual int getWalkCapacity() const;
+  virtual int getRideCapacity() const;
+  virtual int getSwimCapacity() const;
+  virtual int getFlyCapacity() const;
+  virtual int getShipSpeedHexesPerMonth() const;
+  virtual int getShipSailingSkillRequired() const;
+  virtual int getMagesStudy() const;
+  virtual bool isMan() const;
+  virtual int getDefaultSkillMax() const;
+  virtual const std::wstring& getFullText() const;
+  virtual const std::map<std::wstring, int>& getResources() const;
+  virtual const std::map<std::wstring, int>& getSkillsMax() const;
+  virtual const std::map<std::wstring, int>& getProductionSkill() const;
+  virtual const std::map<std::wstring, int>& getProductionHelp() const;
 
-  void setItemName(std::wstring itemName);
-  void setItemNamePlural(std::wstring itemNamePlural);
-  void setWeight(int weight);
-  void setMeeleWeapon(bool meeleWeapon);
-  void setRangedWeapon(bool rangedWeapon);
-  void setArmour(bool armour);
-  void setResource(bool resource);
-  void setMount(bool mount);
-  void setProvisional(bool provisional);
-  void setMoves(int moves);
-  void setWalkCapacity(int walkCapacity);
-  void setRideCapacity(int rideCapacity);
-  void setSwimCapacity(int swimCapacity);
-  void setFlyCapacity(int flyCapacity);
-  void setShipSpeedHexesPerMonth(int shipSpeedHexesPerMonth);
-  void setShipSailingSkillRequired(int shipSailingSkillRequired);
-  void setMagesStudy(int magesStudy);
-  void setMan(bool man);
-  void setDefaultSkillMax(int defaultSkillMax);
-  void setFullText(std::wstring fullText);
-  void setResources(std::map<std::wstring, int> resources);
-  void setSkillsMax(std::map<std::wstring, int> skillsMax);
-  void setProductionSkill(std::map<std::wstring, int> productionSkill);
-  void setProductionSkillLevel(std::wstring skillId, int level);
-  void setProductionHelp(std::map<std::wstring, int> productionHelp);
+  virtual void setItemName(std::wstring itemName);
+  virtual void setItemNamePlural(std::wstring itemNamePlural);
+  virtual void setWeight(int weight);
+  virtual void setMeeleWeapon(bool meeleWeapon);
+  virtual void setRangedWeapon(bool rangedWeapon);
+  virtual void setArmour(bool armour);
+  virtual void setResource(bool resource);
+  virtual void setMount(bool mount);
+  virtual void setProvisional(bool provisional);
+  virtual void setMoves(int moves);
+  virtual void setWalkCapacity(int walkCapacity);
+  virtual void setRideCapacity(int rideCapacity);
+  virtual void setSwimCapacity(int swimCapacity);
+  virtual void setFlyCapacity(int flyCapacity);
+  virtual void setShipSpeedHexesPerMonth(int shipSpeedHexesPerMonth);
+  virtual void setShipSailingSkillRequired(int shipSailingSkillRequired);
+  virtual void setMagesStudy(int magesStudy);
+  virtual void setMan(bool man);
+  virtual void setDefaultSkillMax(int defaultSkillMax);
+  virtual void setFullText(std::wstring fullText);
+  virtual void setResources(std::map<std::wstring, int> resources);
+  virtual void setSkillsMax(std::map<std::wstring, int> skillsMax);
+  virtual void setProductionSkill(std::map<std::wstring, int> productionSkill);
+  virtual void setProductionSkillLevel(std::wstring skillId, int level);
+  virtual void setProductionHelp(std::map<std::wstring, int> productionHelp);
 
 private:
   std::wstring identifierToken_;

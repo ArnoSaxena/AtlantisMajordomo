@@ -44,32 +44,32 @@ public:
             bool isClosed,
             int month,
             int year);
-  ~Structure() = default;
+  virtual ~Structure() = default;
 
   Structure(const Structure&) = default;
   Structure& operator=(const Structure&) = default;
   Structure(Structure&&) = default;
   Structure& operator=(Structure&&) = default;
 
-  int getStructureId() const;
-  int getXCoordinate() const;
-  int getYCoordinate() const;
-  int getZCoordinate() const;
-  const std::wstring& getStructureType() const;
-  const std::wstring& getStructureName() const;
-  bool isClosed() const;
+  virtual int getStructureId() const;
+  virtual int getXCoordinate() const;
+  virtual int getYCoordinate() const;
+  virtual int getZCoordinate() const;
+  virtual const std::wstring& getStructureType() const;
+  virtual const std::wstring& getStructureName() const;
+  virtual bool isClosed() const;
   bool isFlying() const;
-  int getOwnerUnitId() const;
-  const std::map<std::wstring, int>& getFleetItems() const;
+  virtual int getOwnerUnitId() const;
+  virtual const std::map<std::wstring, int>& getFleetItems() const;
   const std::map<std::wstring, int>& getFleetItemsAfterOrders() const;
-  int getMonth() const;
-  int getYear() const;
+  virtual int getMonth() const;
+  virtual int getYear() const;
 
   void setStructureType(std::wstring structureType);
   void setStructureName(std::wstring structureName);
   void setIsClosed(bool isClosed);
-  void setOwnerUnitId(int ownerUnitId);
-  void setFleetItems(std::map<std::wstring, int> fleetItems);
+  virtual void setOwnerUnitId(int ownerUnitId);
+  virtual void setFleetItems(std::map<std::wstring, int> fleetItems);
   void setFleetItemsAfterOrders(std::map<std::wstring, int> fleetItemsAfterOrders);
   void setFleetItem(std::wstring itemToken, int amount);
   void setFleetItemAfterOrders(std::wstring itemToken, int amount);

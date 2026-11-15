@@ -39,6 +39,7 @@ class Region;
 class QEvent;
 class QMouseEvent;
 class QPaintEvent;
+class QPainter;
 class QResizeEvent;
 class QScrollBar;
 class QWheelEvent;
@@ -94,8 +95,22 @@ protected:
     void leaveEvent(QEvent* event) override;
 
 private:
+    int scaledHexWidth() const;
     QRect viewportRect() const;
     void updateScrollbars();
+    void drawEmptyHexes(QPainter& painter, const QRect& viewport) const;
+    void drawRegionHexes(QPainter& painter, const QRect& viewport, bool hasLatestBattlePeriod, int battleMonth, int battleYear) const;
+    void drawRegionHex(QPainter& painter, const RegionVisual& visual, bool hasLatestBattlePeriod, int battleMonth, int battleYear) const;
+    void drawRegionFill(QPainter& painter, const RegionVisual& visual, const QPolygon& translated) const;
+    void drawPeasantWedge(QPainter& painter, const RegionVisual& visual, const QPolygon& translated) const;
+    void drawGuardWedge(QPainter& painter, const RegionVisual& visual, const QPolygon& translated) const;
+    void drawRoads(QPainter& painter, const RegionVisual& visual) const;
+    void drawSettlement(QPainter& painter, const RegionVisual& visual) const;
+    void drawBattleMarker(QPainter& painter, const RegionVisual& visual, bool hasLatestBattlePeriod, int battleMonth, int battleYear) const;
+    void drawStructureMarkers(QPainter& painter, const QRect& viewport) const;
+    void drawSelectedRegionBorder(QPainter& painter) const;
+    void drawMovePath(QPainter& painter) const;
+    void drawMissingExitEdges(QPainter& painter) const;
     void onMapLeftClick(const QPoint& pointInMapClient);
     void onMapDoubleClick(const QPoint& pointInMapClient);
     void onMapRightClick(const QPoint& pointInMapClient, const QPoint& screenPos);

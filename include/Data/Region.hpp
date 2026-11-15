@@ -65,42 +65,42 @@ public:
          int month = 0,
          int year = 0,
          bool visited = false);
-  ~Region() = default;
+  virtual ~Region() = default;
 
   Region(const Region&) = default;
   Region& operator=(const Region&) = default;
   Region(Region&&) = default;
   Region& operator=(Region&&) = default;
 
-  int getXCoordinate() const;
-  int getYCoordinate() const;
-  int getZCoordinate() const;
-  int getMonth() const;
-  int getYear() const;
-  const std::wstring& getRegionType() const;
-  const std::wstring& getProvinceName() const;
-  bool getContainsSettlement() const;
-  const std::wstring& getSettlementName() const;
-  const std::wstring& getSettlementType() const;
-  const std::wstring& getPeasantType() const;
-  int getPeasantNumber() const;
-  double getWages() const;
-  int getWagesMax() const;
+  virtual int getXCoordinate() const;
+  virtual int getYCoordinate() const;
+  virtual int getZCoordinate() const;
+  virtual int getMonth() const;
+  virtual int getYear() const;
+  virtual const std::wstring& getRegionType() const;
+  virtual const std::wstring& getProvinceName() const;
+  virtual bool getContainsSettlement() const;
+  virtual const std::wstring& getSettlementName() const;
+  virtual const std::wstring& getSettlementType() const;
+  virtual const std::wstring& getPeasantType() const;
+  virtual int getPeasantNumber() const;
+  virtual double getWages() const;
+  virtual int getWagesMax() const;
   int getWagesAfterOrders() const;
-  int getTaxableIncome() const;
+  virtual int getTaxableIncome() const;
   int getTaxableIncomeAfterOrders() const;
-  int getEntertainment() const;
+  virtual int getEntertainment() const;
   int getEntertainmentAfterOrders() const;
-  bool getVisited() const;
-  const std::vector<std::wstring>& getExitDirections() const;
+  virtual bool getVisited() const;
+  virtual const std::vector<std::wstring>& getExitDirections() const;
   bool isOcean() const;
-  const std::map<std::wstring, int> &getResources() const;
+  virtual const std::map<std::wstring, int> &getResources() const;
   const std::map<std::wstring, int>& getResourcesAfterOrders() const;
-  const std::map<std::wstring, std::pair<int, int>>& getWanted() const;
+  virtual const std::map<std::wstring, std::pair<int, int>>& getWanted() const;
   const std::map<std::wstring, std::pair<int, int>>& getWantedAfterOrders() const;
-  const std::map<std::wstring, std::pair<int, int>>& getForSale() const;
+  virtual const std::map<std::wstring, std::pair<int, int>>& getForSale() const;
   const std::map<std::wstring, std::pair<int, int>>& getForSaleAfterOrders() const;
-  const std::wstring& getRegionReport() const;
+  virtual const std::wstring& getRegionReport() const;
 
   void setMonth(int month);
   void setYear(int year);
@@ -117,24 +117,24 @@ public:
   void setWagesAfterOrders(int wagesAfterOrders);
   void setTaxableIncome(int taxableIncome);
   void setTaxableIncomeAfterOrders(int taxableIncomeAfterOrders);
-  void setEntertainment(int entertainment);
+  virtual void setEntertainment(int entertainment);
   void setEntertainmentAfterOrders(int entertainmentAfterOrders);
   void setVisited(bool visited);
-  void clearExitDirections();
-  void addExitDirection(std::wstring direction);
-  void setResources(std::map<std::wstring, int> resources);
+  virtual void clearExitDirections();
+  virtual void addExitDirection(std::wstring direction);
+  virtual void setResources(std::map<std::wstring, int> resources);
   void setResourcesAfterOrders(std::map<std::wstring, int> resourcesAfterOrders);
   void setResource(std::wstring token, int amount);
   void setResourceAfterOrders(std::wstring token, int amount);
-  void setWanted(std::map<std::wstring, std::pair<int, int>> wanted);
+  virtual void setWanted(std::map<std::wstring, std::pair<int, int>> wanted);
   void setWantedAfterOrders(std::map<std::wstring, std::pair<int, int>> wantedAfterOrders);
-  void setForSale(std::map<std::wstring, std::pair<int, int>> forSale);
+  virtual void setForSale(std::map<std::wstring, std::pair<int, int>> forSale);
   void setForSaleAfterOrders(std::map<std::wstring, std::pair<int, int>> forSaleAfterOrders);
   void setWantedItem(std::wstring token, int amount, int price);
   void setWantedItemAfterOrders(std::wstring token, int amount, int price);
   void setForSaleItem(std::wstring token, int amount, int price);
   void setForSaleItemAfterOrders(std::wstring token, int amount, int price);
-  void setRegionReport(std::wstring regionReport);
+  virtual void setRegionReport(std::wstring regionReport);
 
 
 

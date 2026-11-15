@@ -53,39 +53,39 @@ public:
       int month,
       int year,
       bool onGuard = false);
-  ~Unit() = default;
+  virtual ~Unit() = default;
 
   Unit(const Unit&) = default;
   Unit& operator=(const Unit&) = default;
   Unit(Unit&&) = default;
   Unit& operator=(Unit&&) = default;
 
-  int getUnitNumber() const;
-  const std::wstring& getUnitName() const;
+  virtual int getUnitNumber() const;
+  virtual const std::wstring& getUnitName() const;
   const std::wstring& getUnitNameAfterOrders() const;
-  int getFactionNumber() const;
-  int getStructureId() const;
+  virtual int getFactionNumber() const;
+  virtual int getStructureId() const;
   int getFutureStructureId() const;
-  int getXCoordinate() const;
-  int getYCoordinate() const;
-  int getZCoordinate() const;
-  const std::vector<std::wstring>& getFlags() const;
-  const std::map<std::wstring, int>& getItems() const;
+  virtual int getXCoordinate() const;
+  virtual int getYCoordinate() const;
+  virtual int getZCoordinate() const;
+  virtual const std::vector<std::wstring>& getFlags() const;
+  virtual const std::map<std::wstring, int>& getItems() const;
   const std::map<std::wstring, int>& getItemsAfterOrders() const;
-  int getWeight() const;
-  int getCapacityWalk() const;
-  int getCapacityRide() const;
-  int getCapacityFly() const;
-  int getCapacitySwim() const;
-  const std::map<std::wstring, int>& getSkills() const;
+  virtual int getWeight() const;
+  virtual int getCapacityWalk() const;
+  virtual int getCapacityRide() const;
+  virtual int getCapacityFly() const;
+  virtual int getCapacitySwim() const;
+  virtual const std::map<std::wstring, int>& getSkills() const;
   const std::map<std::wstring, int>& getSkillsAfterOrders() const;
-  const std::vector<std::wstring>& getCanStudySkillTokens() const;
-  const std::vector<std::wstring>& getOrders() const;
+  virtual const std::vector<std::wstring>& getCanStudySkillTokens() const;
+  virtual const std::vector<std::wstring>& getOrders() const;
   const std::vector<std::wstring>& getWarnings() const;
-  int getMonth() const;
-  int getYear() const;
-  bool isOnGuard() const;
-  int getSkillDays(const std::wstring& skillToken) const;
+  virtual int getMonth() const;
+  virtual int getYear() const;
+  virtual bool isOnGuard() const;
+  virtual int getSkillDays(const std::wstring& skillToken) const;
   int getSkillsAfterOrdersDays(const std::wstring& skillToken) const;
 
   void setUnitName(std::wstring unitName);
@@ -109,11 +109,11 @@ public:
   void setCapacitySwim(int capacitySwim);
   void setSkills(std::map<std::wstring, int> skills);
   void setSkillsAfterOrders(std::map<std::wstring, int> skillsAfterOrders);
-  void setCanStudySkillTokens(std::vector<std::wstring> canStudySkillTokens);
-  void setOrders(std::vector<std::wstring> orders);
+  virtual void setCanStudySkillTokens(std::vector<std::wstring> canStudySkillTokens);
+  virtual void setOrders(std::vector<std::wstring> orders);
   void setMonth(int month);
   void setYear(int year);
-  void setOnGuard(bool onGuard);
+  virtual void setOnGuard(bool onGuard);
   void addSkill(std::wstring token, int days);
   void addSkillAfterOrders(std::wstring token, int days);
   void addOrder(std::wstring order);

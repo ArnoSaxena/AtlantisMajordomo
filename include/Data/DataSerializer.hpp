@@ -24,6 +24,7 @@
 
 #include <string>
 #include <memory>
+#include <iosfwd>
 
 class AppData;
 
@@ -36,6 +37,18 @@ class AppData;
 class DataSerializer
 {
 public:
+  class Services
+  {
+  public:
+    virtual ~Services() = default;
+
+    // Return null when the file cannot be opened.
+    virtual std::unique_ptr<std::wistream> openForReading(const std::wstring& filePath) = 0;
+    virtual std::unique_ptr<std::wostream> openForWriting(const std::wstring& filePath) = 0;
+    // Rebuild derived orders and simulation after all loaded data is available.
+    virtual void finishLoad(AppData& appData) = 0;
+  };
+
   DataSerializer() = default;
   ~DataSerializer() = default;
 
@@ -51,6 +64,7 @@ public:
   * @return true on success, false on error.
   */
   static bool saveToFile(const AppData& appData, const std::wstring& filePath);
+  static bool saveToFile(const AppData& appData, const std::wstring& filePath, Services& services);
 
   /**
   * @brief Loads AppData from a JSON file.
@@ -59,6 +73,7 @@ public:
   * @return true on success, false on error.
   */
   static bool loadFromFile(AppData& appData, const std::wstring& filePath);
+  static bool loadFromFile(AppData& appData, const std::wstring& filePath, Services& services);
 
   /**
   * @brief Gets the last error message from serialization/deserialization.

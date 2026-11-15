@@ -59,10 +59,11 @@ bool tokenizeOrderLine(const std::wstring& line,
   bool currentWasQuoted = false;
   bool inQuotes = false;
   bool escapeNext = false;
+  const std::wstring input = StringUtils::trimWhitespace(line);
 
-  for (std::size_t index = 0; index < line.size(); ++index)
+  for (std::size_t index = 0; index < input.size(); ++index)
   {
-    const wchar_t ch = line[index];
+    const wchar_t ch = input[index];
     if (escapeNext)
     {
       currentToken.push_back(ch);
@@ -76,7 +77,7 @@ bool tokenizeOrderLine(const std::wstring& line,
       {
         escapeNext = true;
       }
-      else
+      else if (index + 1 >= input.size() || input[index + 1] != L'"')
       {
         currentToken.push_back(ch);
       }
@@ -88,6 +89,16 @@ bool tokenizeOrderLine(const std::wstring& line,
       inQuotes = !inQuotes;
       currentWasQuoted = true;
       continue;
+    }
+
+    if (!inQuotes && ch == L';')
+    {
+      break;
+    }
+
+    if (!inQuotes && ch == L'@' && index != 0)
+    {
+      return false;
     }
 
     if (!inQuotes && iswspace(ch))
@@ -316,6 +327,7 @@ std::wstring findMonthLongOrderText(const std::vector<std::wstring>& orders)
 
 bool tryParseGiveTakeOrder(const std::wstring& orderLine, WarningGiveTakeOrder& parsedOrder)
 {
+  parsedOrder = {};
   std::vector<std::wstring> tokens;
   std::vector<bool> tokenWasQuoted;
   if (!tokenizeOrderLine(orderLine, tokens, tokenWasQuoted) || tokens.empty())
@@ -358,11 +370,11 @@ bool tryParseGiveTakeOrder(const std::wstring& orderLine, WarningGiveTakeOrder& 
 
   if (parsedOrder.isTake)
   {
-    // Accept both "TAKE FROM <unit> ..." and "TAKE <unit> ..." variants.
-    if (tokenIndex < tokens.size() && StringUtils::toUpper(tokens[tokenIndex]) == L"FROM")
+    if (tokenIndex >= tokens.size() || StringUtils::toUpper(tokens[tokenIndex]) != L"FROM")
     {
-      ++tokenIndex;
+      return false;
     }
+    ++tokenIndex;
   }
 
   parsedOrder.otherUnitIsNew = false;
@@ -381,6 +393,12 @@ bool tryParseGiveTakeOrder(const std::wstring& orderLine, WarningGiveTakeOrder& 
   if (tokenIndex >= tokens.size())
   {
     return false;
+  }
+
+  if (!parsedOrder.isTake && StringUtils::toUpper(tokens[tokenIndex]) == L"UNIT")
+  {
+    parsedOrder.isUnitTransfer = true;
+    return tokenIndex + 1 == tokens.size();
   }
 
   const std::wstring amountToken = StringUtils::toUpper(tokens[tokenIndex]);
@@ -417,41 +435,10 @@ bool tryParseGiveTakeOrder(const std::wstring& orderLine, WarningGiveTakeOrder& 
     return tokenIndex == tokens.size();
   }
 
-  if (amountToken == L"EXCEPT")
-  {
-    parsedOrder.mode = WarningGiveMode::AllExcept;
-    ++tokenIndex;
-    if (tokenIndex + 1 >= tokens.size())
-    {
-      return false;
-    }
-
-    if (!tryParseIntStrict(tokens[tokenIndex], parsedOrder.exceptQuantity) || parsedOrder.exceptQuantity < 0)
-    {
-      return false;
-    }
-    ++tokenIndex;
-
-    parsedOrder.itemOperand = tokens[tokenIndex];
-    parsedOrder.itemOperandWasQuoted = tokenWasQuoted[tokenIndex];
-    ++tokenIndex;
-    return tokenIndex == tokens.size();
-  }
-
   parsedOrder.mode = WarningGiveMode::Quantity;
   if (!tryParseIntStrict(tokens[tokenIndex], parsedOrder.quantity) || parsedOrder.quantity <= 0)
   {
-    // Alternate form: GIVE <unit> <item> <quantity>
-    parsedOrder.itemOperand = tokens[tokenIndex];
-    parsedOrder.itemOperandWasQuoted = tokenWasQuoted[tokenIndex];
-    ++tokenIndex;
-
-    if (tokenIndex >= tokens.size() || !tryParseIntStrict(tokens[tokenIndex], parsedOrder.quantity) || parsedOrder.quantity <= 0)
-    {
-      return false;
-    }
-    ++tokenIndex;
-    return tokenIndex == tokens.size();
+    return false;
   }
   ++tokenIndex;
 
@@ -463,6 +450,92 @@ bool tryParseGiveTakeOrder(const std::wstring& orderLine, WarningGiveTakeOrder& 
   parsedOrder.itemOperand = tokens[tokenIndex];
   parsedOrder.itemOperandWasQuoted = tokenWasQuoted[tokenIndex];
   ++tokenIndex;
+
+  return tokenIndex == tokens.size();
+}
+
+bool tryParseTransportOrder(const std::wstring& orderLine, TransportOrder& parsedOrder)
+{
+  parsedOrder = {};
+  std::vector<std::wstring> tokens;
+  std::vector<bool> tokenWasQuoted;
+  if (!tokenizeOrderLine(orderLine, tokens, tokenWasQuoted) || tokens.empty())
+  {
+    return false;
+  }
+
+  std::size_t tokenIndex = 0;
+  if (tokens.front().front() == L'@')
+  {
+    if (tokens.front().size() == 1)
+    {
+      tokenIndex = 1;
+    }
+    else
+    {
+      tokens.front().erase(tokens.front().begin());
+    }
+  }
+
+  if (tokenIndex >= tokens.size())
+  {
+    return false;
+  }
+
+  const std::wstring keyword = StringUtils::toUpper(tokens[tokenIndex++]);
+  if (keyword != L"TRANSPORT" && keyword != L"DISTRIBUTE")
+  {
+    return false;
+  }
+
+  if (tokenIndex < tokens.size() && StringUtils::toUpper(tokens[tokenIndex]) == L"NEW")
+  {
+    parsedOrder.targetIsNewUnit = true;
+    ++tokenIndex;
+  }
+
+  if (tokenIndex >= tokens.size() ||
+      !tryParseIntStrict(tokens[tokenIndex], parsedOrder.targetUnitNumber) ||
+      parsedOrder.targetUnitNumber <= 0)
+  {
+    return false;
+  }
+  ++tokenIndex;
+
+  if (tokenIndex >= tokens.size())
+  {
+    return false;
+  }
+
+  const std::wstring amountToken = StringUtils::toUpper(tokens[tokenIndex++]);
+  if (amountToken == L"ALL")
+  {
+    parsedOrder.mode = WarningGiveMode::All;
+  }
+  else if (!tryParseIntStrict(amountToken, parsedOrder.quantity) || parsedOrder.quantity <= 0)
+  {
+    return false;
+  }
+
+  if (tokenIndex >= tokens.size())
+  {
+    return false;
+  }
+
+  parsedOrder.itemOperand = tokens[tokenIndex];
+  parsedOrder.itemOperandWasQuoted = tokenWasQuoted[tokenIndex++];
+  if (parsedOrder.mode == WarningGiveMode::All && tokenIndex < tokens.size())
+  {
+    if (StringUtils::toUpper(tokens[tokenIndex++]) != L"EXCEPT" ||
+        tokenIndex >= tokens.size() ||
+        !tryParseIntStrict(tokens[tokenIndex], parsedOrder.exceptQuantity) ||
+        parsedOrder.exceptQuantity < 0)
+    {
+      return false;
+    }
+    parsedOrder.mode = WarningGiveMode::AllExcept;
+    ++tokenIndex;
+  }
 
   return tokenIndex == tokens.size();
 }

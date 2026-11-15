@@ -37,7 +37,7 @@ class StructureRepository
 {
 public:
   StructureRepository() = default;
-  ~StructureRepository() = default;
+  virtual ~StructureRepository() = default;
 
   StructureRepository(const StructureRepository&) = default;
   StructureRepository& operator=(const StructureRepository&) = default;
@@ -50,7 +50,7 @@ public:
   * Returns false if a structure with the same (id, x, y, z) combination
   * already exists. Sets lastError_ in that case.
   */
-  bool add(int structureId,
+  virtual bool add(int structureId,
           int xCoordinate,
           int yCoordinate,
           int zCoordinate,
@@ -90,7 +90,7 @@ public:
   /**
   * @brief Find a structure by ID and coordinates.
   */
-  Structure* findByIdAndCoordinates(int structureId,
+  virtual Structure* findByIdAndCoordinates(int structureId,
                                     int xCoordinate,
                                     int yCoordinate,
                                     int zCoordinate);
@@ -98,7 +98,7 @@ public:
   /**
   * @brief Find a structure by ID and coordinates (const version).
   */
-  const Structure* findByIdAndCoordinates(int structureId,
+  virtual const Structure* findByIdAndCoordinates(int structureId,
                                           int xCoordinate,
                                           int yCoordinate,
                                           int zCoordinate) const;
@@ -112,11 +112,11 @@ public:
                                                          int zCoordinate,
                                                          const std::wstring& structureType) const;
 
-  void clear();
+  virtual void clear();
 
-  std::size_t size() const;
+  virtual std::size_t size() const;
   Structure& at(std::size_t index);
-  const Structure& at(std::size_t index) const;
+  virtual const Structure& at(std::size_t index) const;
 
   const std::wstring& getLastError() const;
 

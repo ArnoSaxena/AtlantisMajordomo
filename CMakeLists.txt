@@ -4,9 +4,11 @@ project(AtlantisMajordomo VERSION 1.0.0 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-if(NOT CMAKE_CONFIGURATION_TYPES)
+if(NOT CMAKE_CONFIGURATION_TYPES AND NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
 endif()
+
+option(ATLANTIS_BUILD_TESTS "Build Catch2 tests" OFF)
 
 # ---------------------------------------------------------------------------
 # Common sources (shared by all platforms)
@@ -140,6 +142,7 @@ elseif(UNIX)
   set(GUI_SOURCES
     src/GUI/Linux/AtlantisMajordomo.qrc
     src/GUI/Linux/MainWindowQt.cpp
+    src/GUI/Linux/LocalEngineTabContentQt.cpp
     src/GUI/Linux/ReportsTabContentQt.cpp
     src/GUI/Linux/EventsTabContentQt.cpp
     src/GUI/Linux/BattlesTabContentQt.cpp
@@ -157,6 +160,7 @@ elseif(UNIX)
     src/GUI/Linux/MapTabContentQt_Events.cpp
     src/GUI/Linux/MapTabContentQt_MapCanvas.cpp
     include/GUI/MainWindowQt.hpp
+    include/GUI/LocalEngineTabContentQt.hpp
     include/GUI/ReportsTabContentQt.hpp
     include/GUI/EventsTabContentQt.hpp
     include/GUI/BattlesTabContentQt.hpp
@@ -201,4 +205,72 @@ endif()
 # Shared settings
 # ---------------------------------------------------------------------------
 target_include_directories(AtlantisMajordomo PRIVATE include)
+
+if(ATLANTIS_BUILD_TESTS)
+  enable_testing()
+
+  find_package(Catch2 3 QUIET)
+  if(NOT Catch2_FOUND)
+    include(FetchContent)
+    if(POLICY CMP0135)
+      cmake_policy(SET CMP0135 NEW)
+    endif()
+    FetchContent_Declare(
+      Catch2
+      URL https://codeload.github.com/catchorg/Catch2/tar.gz/refs/tags/v3.7.1
+      URL_HASH SHA256=c991b247a1a0d7bb9c39aa35faf0fe9e19764213f28ffba3109388e62ee0269c
+    )
+    FetchContent_MakeAvailable(Catch2)
+  endif()
+
+  set(TEST_COMMON_SOURCES ${COMMON_SOURCES})
+  list(REMOVE_ITEM TEST_COMMON_SOURCES src/Main.cpp)
+  add_executable(AtlantisMajordomoTests
+    tests/Data/AppDataTests.cpp
+    tests/Data/BattleRepositoryTests.cpp
+    tests/Data/BattleTests.cpp
+    tests/Data/CommandsTests.cpp
+    tests/Data/DataSerializerTests.cpp
+    tests/Data/EventTests.cpp
+    tests/Data/EventRepositoryTests.cpp
+    tests/Data/FactionTests.cpp
+    tests/Data/FactionRepositoryTests.cpp
+    tests/Data/ItemTests.cpp
+    tests/Data/ItemRepositoryTests.cpp
+    tests/Data/OrderTests.cpp
+    tests/Data/OrderRepositoryTests.cpp
+    tests/Data/RegionTests.cpp
+    tests/Data/RegionRepositoryTests.cpp
+    tests/Data/ReportTests.cpp
+    tests/Data/ReportRepositoryTests.cpp
+    tests/Data/SkillTests.cpp
+    tests/Data/SkillRepositoryTests.cpp
+    tests/Data/StructInfoTests.cpp
+    tests/Data/StructInfoRepositoryTests.cpp
+    tests/Data/StructureTests.cpp
+    tests/Data/StructureRepositoryTests.cpp
+    tests/Data/UnitTests.cpp
+    tests/Data/UnitRepositoryTests.cpp
+    tests/Data/UnitNewTests.cpp
+    tests/Data/UnitNewRepositoryTests.cpp
+    tests/Function/AppDataUtilsTests.cpp
+    tests/Function/BattleFormattingUtilsTests.cpp
+    tests/Function/CommandSimulationServiceTests.cpp
+    tests/Function/CoordinateFormattingUtilsTests.cpp
+    tests/Function/MonthUtilsTests.cpp
+    tests/Function/OrderParsingUtilsTests.cpp
+    ${TEST_COMMON_SOURCES}
+  )
+  set_target_properties(AtlantisMajordomoTests PROPERTIES AUTOMOC OFF AUTORCC OFF)
+  target_include_directories(AtlantisMajordomoTests PRIVATE include tests)
+  target_link_libraries(AtlantisMajordomoTests PRIVATE Catch2::Catch2WithMain)
+  if(WIN32)
+    target_compile_definitions(AtlantisMajordomoTests PRIVATE
+      UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX
+    )
+  endif()
+
+  include(Catch)
+  catch_discover_tests(AtlantisMajordomoTests)
+endif()
 

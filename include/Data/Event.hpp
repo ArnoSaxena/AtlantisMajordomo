@@ -28,20 +28,20 @@ class Event
 {
 public:
   Event(int unitId, int eventId, std::wstring message, int month = 0, int year = 0);
-  ~Event() = default;
+  virtual ~Event() = default;
 
   Event(const Event&) = default;
   Event& operator=(const Event&) = default;
   Event(Event&&) = default;
   Event& operator=(Event&&) = default;
 
-  int getUnitId() const;
+  virtual int getUnitId() const;
   int getEventId() const;
-  const std::wstring& getMessage() const;
+  virtual const std::wstring& getMessage() const;
   const std::wstring& getIdentifier() const;
-  int getMonth() const;
-  int getYear() const;
-  bool isErrorEvent() const;
+  virtual int getMonth() const;
+  virtual int getYear() const;
+  virtual bool isErrorEvent() const;
   void setErrorEvent(bool errorEvent);
 
   static std::wstring calculateIdentifier(int unitId, const std::wstring& message, int month, int year);

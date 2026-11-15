@@ -40,14 +40,14 @@ public:
   // Returns the smallest unit number for a given faction, or 0 if none found.
   int findSmallestUnitNumberForFaction(int factionNumber) const;
   UnitRepository() = default;
-  ~UnitRepository() = default;
+  virtual ~UnitRepository() = default;
 
   UnitRepository(const UnitRepository&) = default;
   UnitRepository& operator=(const UnitRepository&) = default;
   UnitRepository(UnitRepository&&) = default;
   UnitRepository& operator=(UnitRepository&&) = default;
 
-  bool add(int unitNumber,
+  virtual bool add(int unitNumber,
           std::wstring unitName,
           int factionNumber,
           int structureId,
@@ -87,13 +87,13 @@ public:
 
   bool removeByNumber(int unitNumber);
 
-  Unit* findByNumber(int unitNumber);
-  const Unit* findByNumber(int unitNumber) const;
+  virtual Unit* findByNumber(int unitNumber);
+  virtual const Unit* findByNumber(int unitNumber) const;
 
-  void clear();
+  virtual void clear();
 
-  std::size_t size() const;
-  const Unit& at(std::size_t index) const;
+  virtual std::size_t size() const;
+  virtual const Unit& at(std::size_t index) const;
 
   const std::wstring& getLastError() const;
 

@@ -62,15 +62,15 @@ public:
   static constexpr int kMaxLevel = 5;
 
   Skill(std::wstring identifierToken, std::wstring name);
-  ~Skill() = default;
+  virtual ~Skill() = default;
 
   Skill(const Skill&) = default;
   Skill& operator=(const Skill&) = default;
   Skill(Skill&&) = default;
   Skill& operator=(Skill&&) = default;
 
-  const std::wstring& getIdentifierToken() const;
-  const std::wstring& getName() const;
+  virtual const std::wstring& getIdentifierToken() const;
+  virtual const std::wstring& getName() const;
   void setName(std::wstring name);
 
   // Set all data for a specific level. Returns false if level is out of range.
@@ -80,26 +80,26 @@ public:
 
   bool hasLevel(int level) const;
   std::vector<int> getLevels() const;
-  const SkillLevelData* getLevelData(int level) const;
+  virtual const SkillLevelData* getLevelData(int level) const;
   SkillLevelData* getLevelData(int level);
 
   // Level-specific accessors (return defaults when level data is absent)
   bool isProduction(int level) const;
   const std::map<std::wstring, int>& getProductionItems(int level) const;
-  bool isMagic() const;
-  bool isMagicFoundation() const;
+  virtual bool isMagic() const;
+  virtual bool isMagicFoundation() const;
   const std::wstring& getDescription(int level) const;
   const std::wstring getAllLevelDescriptions() const;
-  int getStudyCost() const;
-  const std::vector<SkillPrerequisite>& getPrerequisites() const;
+  virtual int getStudyCost() const;
+  virtual const std::vector<SkillPrerequisite>& getPrerequisites() const;
 
   // Level-specific setters (silently ignored for invalid or absent levels)
   void setProductionItems(int level, std::map<std::wstring, int> items);
-  void setMagic(bool magic);
-  void setMagicFoundation(bool magicFoundation);
+  virtual void setMagic(bool magic);
+  virtual void setMagicFoundation(bool magicFoundation);
   void setDescription(int level, std::wstring description);
-  void setStudyCost(int studyCost);
-  void setPrerequisites(std::vector<SkillPrerequisite> prerequisites);
+  virtual void setStudyCost(int studyCost);
+  virtual void setPrerequisites(std::vector<SkillPrerequisite> prerequisites);
 
   // Training utility function
   static int trainingDaysToLevel(int trainingDays);

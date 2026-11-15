@@ -168,6 +168,9 @@ public:
   // Aggregates valid CLAIM orders across units and UnitNew entries.
   static ClaimSummary summarizeClaims(const AppData& appData);
 
+  // Aggregates valid CLAIM orders only from the main faction's units and UnitNew entries.
+  static ClaimSummary summarizeMainFactionClaims(const AppData& appData);
+
   /**
   * @brief Gets full-month command keywords as comma-separated text.
   */

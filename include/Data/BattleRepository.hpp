@@ -25,6 +25,7 @@
 #include "Data/Battle.hpp"
 
 #include <cstddef>
+#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
@@ -32,17 +33,18 @@
 /**
 * @brief Repository for parsed battle reports.
 *
-* Maintains an in-memory collection of battles loaded from reports.
+* Owns an in-memory collection of battles loaded from reports.
+* Copies clone each battle, retaining independent repository contents.
 * Battle identity is the artificial identifier stored in Battle::identifier.
 */
 class BattleRepository
 {
 public:
   BattleRepository() = default;
-  ~BattleRepository() = default;
+  virtual ~BattleRepository() = default;
 
-  BattleRepository(const BattleRepository&) = default;
-  BattleRepository& operator=(const BattleRepository&) = default;
+  BattleRepository(const BattleRepository& other);
+  BattleRepository& operator=(const BattleRepository& other);
   BattleRepository(BattleRepository&&) = default;
   BattleRepository& operator=(BattleRepository&&) = default;
 
@@ -52,6 +54,14 @@ public:
   * @return true if inserted; false if duplicate identifier exists.
   */
   bool add(Battle battleValue);
+
+  /**
+  * @brief Takes ownership of a battle, preserving its dynamic type.
+  * @return true if inserted; false if duplicate identifier exists.
+  * @throws std::invalid_argument if battleValue is null.
+  * Ownership is transferred even when a duplicate is rejected.
+  */
+  bool add(std::unique_ptr<Battle> battleValue);
 
   /**
   * @brief Finds a battle by artificial identifier.
@@ -116,7 +126,7 @@ public:
   bool isParticipantInAnyBattleForPeriod(int unitId, int month, int year) const;
 
   /** @brief Removes all stored battles. */
-  void clear();
+  virtual void clear();
 
   /** @brief Gets number of stored battles. */
   std::size_t size() const;
@@ -130,5 +140,5 @@ public:
   const Battle& at(std::size_t index) const;
 
 private:
-  std::vector<Battle> battles_;
+  std::vector<std::unique_ptr<Battle>> battles_;
 };

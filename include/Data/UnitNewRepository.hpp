@@ -35,21 +35,32 @@
 * UnitNumber is used as the stable identifier and cannot be modified after
 * construction. For new units, the combination of unitNumber and coordinates
 * must remain unique within the repository. Within one coordinates set, the
-* unitNumber must be unique as well. While there can be multiple units whit
+* unitNumber must be unique as well. While there can be multiple units with
 * the same unitNumber within the repository.
+*
+* **Lifecycle and Clearing Constraints**:
+* UnitNew entities are generated only by order simulations (FORM orders).
+* This repository must be cleared:
+* - When a new report is loaded that covers a later period than the current one
+* - When order simulation is rebuilt for a new game month
+* - When order simulation is triggered for any other reason
+*
+* The clear() method is called by OrderBusinessLogic::rebuildUnitNewRepositoryFromOrders()
+* and by ReportRepository::addFromFile() when a later report is loaded.
+* UnitNew entities are ephemeral and should never persist across these operations.
 */
 class UnitNewRepository
 {
 public:
   UnitNewRepository() = default;
-  ~UnitNewRepository() = default;
+  virtual ~UnitNewRepository() = default;
 
   UnitNewRepository(const UnitNewRepository&) = default;
   UnitNewRepository& operator=(const UnitNewRepository&) = default;
   UnitNewRepository(UnitNewRepository&&) = default;
   UnitNewRepository& operator=(UnitNewRepository&&) = default;
 
-  bool add(int unitNumber,
+  virtual bool add(int unitNumber,
            std::wstring unitName,
            int structureId,
            int xCoordinate,
@@ -70,8 +81,8 @@ public:
   bool removeByNumberAndCoordinates(int unitNumber, int xCoordinate, int yCoordinate, int zCoordinate);
   void removeByOriginUnit(int originUnitNumber);
 
-  UnitNew* findByNumberAndCoordinates(int unitNumber, int xCoordinate, int yCoordinate, int zCoordinate);
-  const UnitNew* findByNumberAndCoordinates(int unitNumber, int xCoordinate, int yCoordinate, int zCoordinate) const;
+  virtual UnitNew* findByNumberAndCoordinates(int unitNumber, int xCoordinate, int yCoordinate, int zCoordinate);
+  virtual const UnitNew* findByNumberAndCoordinates(int unitNumber, int xCoordinate, int yCoordinate, int zCoordinate) const;
   std::vector<UnitNew*> findByOriginUnit(int originUnitNumber);
   std::vector<const UnitNew*> findByOriginUnit(int originUnitNumber) const;
 
@@ -80,10 +91,10 @@ public:
                                       int yCoordinate,
                                       int zCoordinate) const;
 
-  void clear();
+  virtual void clear();
 
-  std::size_t size() const;
-  const UnitNew& at(std::size_t index) const;
+  virtual std::size_t size() const;
+  virtual const UnitNew& at(std::size_t index) const;
 
   const std::wstring& getLastError() const;
   int countTotalWarnings() const;

@@ -30,6 +30,7 @@
 #include "GUI/SettingsDialogQt.hpp"
 #include "GUI/MapTabContentQt.hpp"
 #include "GUI/TradeTaxTabContentQt.hpp"
+#include "GUI/LocalEngineTabContentQt.hpp"
 
 #include "Data/AppData.hpp"
 #include "Data/Commands.hpp"
@@ -48,12 +49,7 @@
 #include "Function/MainFactionExportUtils.hpp"
 
 #include <QCloseEvent>
-#include <QCheckBox>
-#include <QHBoxLayout>
-#include <QLabel>
 #include <QFileDialog>
-#include <QLineEdit>
-#include <QPushButton>
 #include <QFont>
 #include <QGuiApplication>
 #include <QIcon>
@@ -66,6 +62,7 @@
 #include <QTimer>
 #include <QVBoxLayout>
 #include <QWidget>
+
 
 #include <algorithm>
 #include <array>
@@ -526,97 +523,23 @@ void MainWindow::setupTabs()
     localEngineTab_ = addTab("Local Engine");
 }
 
-void MainWindow::prepareLocal()
-{
-}
-
-void MainWindow::browseLocalEnginePath()
-{
-    const QString initialPath = localEnginePathEdit_ != nullptr && !localEnginePathEdit_->text().isEmpty()
-        ? localEnginePathEdit_->text()
-        : QString::fromStdWString(appConfig_.getDataFilePath());
-
-    const QString filePath = QFileDialog::getOpenFileName(
-        this,
-        "Select Engine",
-        initialPath,
-        "Engine Files (*.exe *.bat *.cmd *.sh *.py);;All Files (*)");
-
-    if (!filePath.isEmpty())
-    {
-        localEnginePathEdit_->setText(filePath);
-    }
-}
-
-void MainWindow::updateLocalEngineControls()
-{
-    if (localEngineTab_ == nullptr || localEngineCheck_ == nullptr)
-    {
-        return;
-    }
-
-    const bool enabled = localEngineCheck_->isChecked();
-    const auto controls = localEngineTab_->findChildren<QWidget*>(QString(), Qt::FindDirectChildrenOnly);
-    for (QWidget* control : controls)
-    {
-        if (control != localEngineCheck_)
-        {
-            control->setEnabled(enabled);
-        }
-    }
-}
-
 // ---------------------------------------------------------------------------
 // Deferred initialisation  (equivalent to WM_APP_INIT + WM_APP_AUTOLOAD)
 // ---------------------------------------------------------------------------
 
 void MainWindow::deferredInit()
 {
-    // Local Engine tab
-    localEngineLabel_ = new QLabel("Engine", localEngineTab_);
-    localEngineCheck_ = new QCheckBox("Local", localEngineTab_);
-    localEngineCheck_->setChecked(false);
-    localEnginePathEdit_ = new QLineEdit(localEngineTab_);
-    localEnginePathEdit_->setPlaceholderText("Select engine path");
-    localEngineBrowseButton_ = new QPushButton("Browse", localEngineTab_);
-
-    auto* engineLayout = new QHBoxLayout();
-    engineLayout->setContentsMargins(0, 0, 0, 0);
-    engineLayout->addWidget(localEngineLabel_);
-    engineLayout->addWidget(localEnginePathEdit_, 1);
-    engineLayout->addWidget(localEngineBrowseButton_);
-
+    localEngineTabContent_ = new LocalEngineTabContentQt(appData_, appConfig_, localEngineTab_);
     auto* localEngineLayout = new QVBoxLayout(localEngineTab_);
-    localEngineLayout->setContentsMargins(12, 12, 12, 12);
-    localEngineLayout->addWidget(localEngineCheck_);
-    localEngineLayout->addLayout(engineLayout);
-    localEngineLayout->addStretch();
-
-    connect(localEngineCheck_, &QCheckBox::toggled, this, [this](bool checked)
-    {
-        if (checked)
-        {
-            const auto reply = QMessageBox::question(this,
-                                                    "Local Engine",
-                                                    "Prepare local?",
-                                                    QMessageBox::StandardButton::Ok | QMessageBox::StandardButton::Cancel,
-                                                    QMessageBox::StandardButton::Cancel);
-
-            if (reply != QMessageBox::StandardButton::Ok)
-            {
-                localEngineCheck_->setChecked(false);
-                updateLocalEngineControls();
-                return;
-            }
-
-            prepareLocal();
-        }
-
-        updateLocalEngineControls();
+    localEngineLayout->setContentsMargins(0, 0, 0, 0);
+    localEngineLayout->addWidget(localEngineTabContent_);
+    connect(localEngineTabContent_, &LocalEngineTabContentQt::beforeReportImport, this, [this]() {
+        if (mapTabContent_) mapTabContent_->commitPendingEdits();
     });
-
-    connect(localEngineBrowseButton_, &QPushButton::clicked, this, &MainWindow::browseLocalEnginePath);
-    updateLocalEngineControls();
+    connect(localEngineTabContent_, &LocalEngineTabContentQt::reportImported, this, [this]() {
+        refreshAllTabs();
+        tabWidget_->setCurrentWidget(mapTab_);
+    });
 
     // Reports tab
     reportsTabContent_ = new ReportsTabContentQt(appData_, appConfig_, reportsTab_);
@@ -691,8 +614,6 @@ void MainWindow::deferredInit()
                 }
             });
 
-    // TODO: Create remaining Qt tab content widgets here as they are implemented.
-
     autoLoad();
 }
 
@@ -734,7 +655,6 @@ void MainWindow::refreshAllTabs()
         {}
     });
 
-    // TODO: Call refresh() on remaining Qt tab content widgets as they are implemented.
 }
 
 // ---------------------------------------------------------------------------
@@ -763,6 +683,7 @@ void MainWindow::resizeEvent(QResizeEvent* event)
 
 void MainWindow::onFileNew()
 {
+    if (mapTabContent_) mapTabContent_->commitPendingEdits();
     appData_.clear();
     refreshAllTabs();
     QMessageBox::information(this, "New", "New session started.");
@@ -770,6 +691,7 @@ void MainWindow::onFileNew()
 
 void MainWindow::onFileOpen()
 {
+    if (mapTabContent_) mapTabContent_->commitPendingEdits();
     const QString filePath = QFileDialog::getOpenFileName(
         this,
         "Open Dataset",
@@ -795,6 +717,7 @@ void MainWindow::onFileOpen()
 
 void MainWindow::onFileSave()
 {
+    if (mapTabContent_) mapTabContent_->commitPendingEdits();
     const QString filePath = QFileDialog::getSaveFileName(
         this,
         "Save Dataset",
@@ -819,6 +742,7 @@ void MainWindow::onFileSave()
 
 void MainWindow::onFileLoadReport()
 {
+    if (mapTabContent_) mapTabContent_->commitPendingEdits();
     const QString initialDir = QString::fromStdWString(appConfig_.getReportImportFolder());
     const QStringList files = QFileDialog::getOpenFileNames(
         this,
@@ -877,6 +801,7 @@ void MainWindow::onFileLoadReport()
 
 void MainWindow::onFileImportData()
 {
+    if (mapTabContent_) mapTabContent_->commitPendingEdits();
     const QString filePath = QFileDialog::getOpenFileName(
         this,
         "Import Data",
@@ -917,6 +842,7 @@ void MainWindow::onFileImportData()
 
 void MainWindow::onFileExportOrders()
 {
+    if (mapTabContent_) mapTabContent_->commitPendingEdits();
     MainFactionExportUtils::ExportContext ctx;
     std::wstring errorMessage;
     if (!MainFactionExportUtils::tryBuildContext(appData_, ctx, errorMessage))
@@ -924,6 +850,7 @@ void MainWindow::onFileExportOrders()
         QMessageBox::warning(this, "Export Orders", QString::fromStdWString(errorMessage));
         return;
     }
+    if (localEngineTabContent_) localEngineTabContent_->setMainFactionNumber(ctx.factionNumber);
 
     // Determine initial save path: prefer configured export folder, fall back to save file dir
     QString initialDir = QString::fromStdWString(appConfig_.getExportOrdersFolder());
@@ -956,12 +883,19 @@ void MainWindow::onFileExportOrders()
         std::filesystem::path(filePath.toStdWString()).parent_path().wstring());
     appConfig_.save();
 
+    QString displayedPath = filePath;
+    if (localEngineTabContent_ && localEngineTabContent_->isLocalEnabled()
+        && !localEngineTabContent_->copyOrders(filePath, ctx.factionNumber, displayedPath))
+        return;
+    if (localEngineTabContent_) localEngineTabContent_->setOrdersPath(displayedPath);
+
     QMessageBox::information(this, "Export Orders",
         QString("Orders exported successfully to:\n\n%1").arg(filePath));
 }
 
 void MainWindow::onFileImportOrders()
 {
+    if (mapTabContent_) mapTabContent_->commitPendingEdits();
     // Determine initial directory: prefer configured export folder, fall back to save file dir
     QString initialDir = QString::fromStdWString(appConfig_.getExportOrdersFolder());
     if (initialDir.isEmpty())

@@ -22,6 +22,9 @@
 // 304c89c8-6d3c-4586-b0c4-fad2e67b2f65
 #pragma once
 
+#include <cstdint>
+#include <functional>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -45,17 +48,24 @@ struct BattleSpoil
 class Battle
 {
 public:
+  using IdentifierWordSource = std::function<std::uint64_t()>;
+
   /** @brief Constructs a battle with an auto-generated unique identifier. */
   Battle();
-  ~Battle() = default;
+  /** @brief Constructs an identifier from two words supplied by the injected source. */
+  explicit Battle(const IdentifierWordSource& identifierWords);
+  virtual ~Battle() = default;
 
   Battle(const Battle&) = default;
   Battle& operator=(const Battle&) = default;
   Battle(Battle&&) = default;
   Battle& operator=(Battle&&) = default;
 
+  /** @brief Creates a non-null independent copy, preserving the dynamic type in overrides. */
+  virtual std::unique_ptr<Battle> clone() const;
+
   /** @brief Gets the artificial unique battle identifier. */
-  const std::wstring& getIdentifier() const;
+  virtual const std::wstring& getIdentifier() const;
   /** @brief Gets the full raw battle text captured from report lines. */
   const std::wstring& getFullText() const;
   /** @brief Gets attacker unit id from battle header. */
@@ -67,15 +77,15 @@ public:
   /** @brief Gets defender unit name from battle header. */
   const std::wstring& getDefenderUnitName() const;
   /** @brief Gets battle region x coordinate. */
-  int getRegionXCoordinate() const;
+  virtual int getRegionXCoordinate() const;
   /** @brief Gets battle region y coordinate. */
-  int getRegionYCoordinate() const;
+  virtual int getRegionYCoordinate() const;
   /** @brief Gets battle region z coordinate. */
-  int getRegionZCoordinate() const;
+  virtual int getRegionZCoordinate() const;
   /** @brief Gets report month this battle belongs to. */
-  int getMonth() const;
+  virtual int getMonth() const;
   /** @brief Gets report year this battle belongs to. */
-  int getYear() const;
+  virtual int getYear() const;
   /** @brief Gets region type from battle header. */
   const std::wstring& getRegionType() const;
   /** @brief Gets province name from battle header. */
@@ -87,14 +97,14 @@ public:
   /** @brief Gets defender side casualty count. */
   int getDefenderLosses() const;
   /** @brief Gets attacker side damaged unit ids. */
-  const std::vector<int>& getAttackerDamagedUnitIds() const;
+  virtual const std::vector<int>& getAttackerDamagedUnitIds() const;
   /** @brief Gets defender side damaged unit ids. */
-  const std::vector<int>& getDefenderDamagedUnitIds() const;
+  virtual const std::vector<int>& getDefenderDamagedUnitIds() const;
 
   /** @brief Gets attacker side participant unit ids. */
-  const std::vector<int>& getAttackerParticipantUnitIds() const;
+  virtual const std::vector<int>& getAttackerParticipantUnitIds() const;
   /** @brief Gets defender side participant unit ids. */
-  const std::vector<int>& getDefenderParticipantUnitIds() const;
+  virtual const std::vector<int>& getDefenderParticipantUnitIds() const;
 
   /** @brief Gets parsed spoils list (amount + token). */
   const std::vector<BattleSpoil>& getSpoils() const;

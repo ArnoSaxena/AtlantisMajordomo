@@ -53,8 +53,8 @@ void CommandSimulationService::processMainFactionClaimEffects(AppData& appData)
 
   auto& unitRepository = appData.unitRepository();
   auto& unitNewRepository = appData.unitNewRepository();
-  // Reuse Commands-level CLAIM parsing/aggregation so there is one source of truth.
-  const Commands::ClaimSummary claimSummary = Commands::summarizeClaims(appData);
+  // Only process claims from the main faction's units and UnitNew entries
+  const Commands::ClaimSummary claimSummary = Commands::summarizeMainFactionClaims(appData);
   const int totalClaimAmount = claimSummary.totalClaimAmount;
 
   // Apply post-order value even when insufficient, so UI can reflect deficit state.
@@ -94,6 +94,18 @@ void CommandSimulationService::processMainFactionClaimEffects(AppData& appData)
 
 void CommandSimulationService::recalculateAfterOrdersValues(AppData& appData)
 {
+  // Initialize unclaimedSilverAfterOrders for all factions to their current value
+  // (main faction will be updated by processMainFactionClaimEffects)
+  auto& factionRepository = appData.factionRepository();
+  for (std::size_t factionIndex = 0; factionIndex < factionRepository.size(); ++factionIndex)
+  {
+    Faction* faction = factionRepository.findByNumber(factionRepository.at(factionIndex).getFactionNumber());
+    if (faction)
+    {
+      faction->setUnclaimedSilverAfterOrders(faction->getUnclaimedSilver());
+    }
+  }
+
   // PROMOTE is an instantaneous ownership-transfer order. Apply its effect here
   // so the structure owner is updated at the same time as the unit/item summaries.
   auto& unitRepository = appData.unitRepository();

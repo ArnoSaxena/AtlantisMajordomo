@@ -1,0 +1,284 @@
+Atlantis Report For:
+Nekojin Empire (17) (War 1, Trade 1, Magic 1)
+April, Year 1
+
+Atlantis Engine Version: 4.3.0
+Miskatonic, Version: 1.0.35
+
+Faction Status:
+Tax Regions: 1 (25)
+Trade Regions: 0 (25)
+Mages: 3 (3)
+Apprentices: 0 (3)
+
+Your faction is neutral.
+
+Events during turn:
+Unit (84): Claims $100.
+Unit (83): Claims $100.
+Unit (192): Claims $100.
+Unit (193): Collects $500 in taxes in desert (3,9) in Fontennuondel.
+Unit (83): Casts Earth Lore, raising 22 silver.
+Unit (83): Gets practice in pattern (+5).
+Unit (196): Discovers that ocean (1,11) in Cykranosh Ocean is ocean.
+Unit (195): Walks from desert (3,11) in Fontennuondel to desert (3,13)
+  in Fontennuondel.
+Unit (197): Walks from desert (2,8) in Fontennuondel to mountain (1,7)
+  in Sulwor.
+Unit (194): Walks from desert (4,10) in Fontennuondel to swamp (5,11)
+  in Tonentin.
+Unit (84): Gets practice in observation (+5).
+Unit (192): Gets practice in observation (+5).
+Unit (84): Studies fire.
+Unit (83): Studies force.
+Unit (192): Studies earth lore.
+Unit (197): Claims 10 silver for maintenance.
+Unit (196): Claims 10 silver for maintenance.
+Unit (194): Claims 10 silver for maintenance.
+Unit (195): Claims 10 silver for maintenance.
+
+Skill reports:
+
+fire [FIRE] 1:  A mage with this skill can cast a fireball in battle.
+  This ability does between 2 and 10 times the skill level of the mage
+  energy attacks. In order to use this spell in combat, the mage
+  should use the COMBAT order to set it as his combat spell. This
+  skill requires force [FORC] 1 to begin to study. This skill costs
+  100 silver per month of study.
+
+force [FORC] 2: No skill report.
+
+Item reports:
+
+orc [ORC], weight 10, walking capacity 5. This race may know 1 skills.
+  This race takes 2 hits to kill. This race has alignment evil. This
+  race may study combat [COMB], lumberjack [LUMB], monster training
+  [MTRA] to level 5 and all other non-magic skills to level 3. This
+  race may study all magic skills to 4.
+
+lizardman [LIZA], weight 10, walking capacity 5, swimming capacity 1.
+  This race may know 1 skills. This race takes 2 hits to kill. This
+  race has alignment neutral. This race may study lumberjack [LUMB],
+  fishing [FISH], herb lore [HERB] to level 5 and all other non-magic
+  skills to level 3. This race may study all magic skills to 4.
+
+Declared Attitudes (default Neutral):
+Hostile : none.
+Unfriendly : none.
+Neutral : none.
+Friendly : none.
+Ally : none.
+
+Unclaimed silver: 5522.
+
+mountain (1,7) in Sulwor, 373 peasants (orcs), $2238.
+------------------------------------------------------------
+  Wages: $11 (Max: $820).
+  Wanted: none.
+  For Sale: 74 orcs [ORC] at $88.
+  Entertainment available: $111.
+  Products: 25 livestock [LIVE], 23 iron [IRON], 11 stone [STON].
+
+Exits:
+  North : mountain (1,5) in Sulwor.
+  Northeast : ocean (2,6) in Cykranosh Ocean.
+  Southeast : desert (2,8) in Fontennuondel.
+  South : ocean (1,9) in Cykranosh Ocean.
+  Southwest : mountain (0,8) in Sulwor.
+  Northwest : mountain (0,6) in Sulwor.
+
+- Unit (204), human [HUMN].
+- Observer (405), human [HUMN]; I'll just take a look.
+* Unit (197), Nekojin Empire (17), behind, revealing faction,
+  receiving no aid, human [HUMN]. Weight: 10. Capacity: 0/0/15/0.
+  Upkeep: $10. Skills: none.
+
+
+desert (3,9) in Fontennuondel, 193 peasants (humans), $1158.
+------------------------------------------------------------
+  Wages: $11 (Max: $424).
+  Wanted: none.
+  For Sale: 38 humans [HUMN] at $88.
+  Entertainment available: $57.
+  Products: 18 livestock [LIVE], 6 iron [IRON], 17 stone [STON], 19
+    camels [CAME].
+
+Exits:
+  North : ocean (3,7) in Cykranosh Ocean.
+  Northeast : ocean (4,8) in Cykranosh Ocean.
+  Southeast : desert (4,10) in Fontennuondel.
+  South : desert (3,11) in Fontennuondel.
+  Southwest : desert (2,10) in Fontennuondel.
+  Northwest : desert (2,8) in Fontennuondel.
+
+There is a Gate here (Gate 5 of 13).
+
+* Unit (84), Nekojin Empire (17), behind, revealing faction, leader
+  [LEAD]. Weight: 10. Capacity: 0/0/25/0. Upkeep: $0. Skills:
+  observation [OBSE] 1 (35), force [FORC] 1 (30), fire [FIRE] 1 (30).
+  Can Study: force [FORC], pattern [PATT], spirit [SPIR], force shield
+  [FSHI], energy shield [ESHI].
+* Unit (83), Nekojin Empire (17), behind, revealing faction, faction
+  leader [FLEAD], wizard staff [WSTA], wizard robe [WIZR], 22 silver
+  [SILV]. Weight: 12. Capacity: 0/0/25/0. Upkeep: $0. Skills: pattern
+  [PATT] 1 (45), spirit [SPIR] 1 (30), force [FORC] 2 (90), gate lore
+  [GATE] 1 (30), earth lore [EART] 1 (30). Can Study: force [FORC],
+  pattern [PATT], spirit [SPIR], fire [FIRE], earthquake [EQUA], force
+  shield [FSHI], energy shield [ESHI], spirit shield [SSHI], magical
+  healing [MHEA], farsight [FARS], mind reading [MIND], weather lore
+  [WEAT], wolf lore [WOLF], bird lore [BIRD], necromancy [NECR], demon
+  lore [DEMO], illusion [ILLU], artifact lore [ARTI].
+* Unit (192), Nekojin Empire (17), behind, revealing faction, leader
+  [LEAD]. Weight: 10. Capacity: 0/0/25/0. Upkeep: $0. Skills:
+  observation [OBSE] 1 (35), pattern [PATT] 1 (30), earth lore [EART]
+  1 (30). Can Study: force [FORC], pattern [PATT], spirit [SPIR],
+  magical healing [MHEA], mind reading [MIND], wolf lore [WOLF], bird
+  lore [BIRD].
+* Unit (193), on guard, Nekojin Empire (17), behind, revealing
+  faction, 10 humans [HUMN], 400 silver [SILV]. Weight: 100. Capacity:
+  0/0/150/0. Upkeep: $100. Skills: combat [COMB] 1 (30).
+- Unit (211), Farmers Guild (18), avoiding, behind, human [HUMN].
+- Tan Ce Zhe (159), Tianzi (14), avoiding, behind, human [HUMN].
+- scout (154), Brown Bread (12), avoiding, behind, lizardman [LIZA].
+
+
+desert (2,10) in Fontennuondel, 131 peasants (gnolls), $131.
+------------------------------------------------------------
+  Wages: $6 (Max: $157).
+  Wanted: none.
+  For Sale: 26 gnolls [GNOL] at $48.
+  Entertainment available: $6.
+  Products: 11 livestock [LIVE], 5 iron [IRON], 18 stone [STON].
+
+Exits:
+  North : desert (2,8) in Fontennuondel.
+  Northeast : desert (3,9) in Fontennuondel.
+  Southeast : desert (3,11) in Fontennuondel.
+  South : desert (2,12) in Fontennuondel.
+  Southwest : ocean (1,11) in Cykranosh Ocean.
+  Northwest : ocean (1,9) in Cykranosh Ocean.
+
+- Unit (202), Farmers Guild (18), avoiding, behind, human [HUMN].
+* Unit (196), Nekojin Empire (17), behind, revealing faction,
+  receiving no aid, human [HUMN]. Weight: 10. Capacity: 0/0/15/0.
+  Upkeep: $10. Skills: none.
+- Unit (201), Farmers Guild (18), avoiding, behind, human [HUMN].
+
++ Crypt [1] : Crypt, closed to player units.
+  - Undead (409), 99 skeletons [SKEL], 6 undead [UNDE].
+
+
+swamp (5,11) in Tonentin, 191 peasants (lizardmen), $955.
+------------------------------------------------------------
+  Wages: $10 (Max: $382).
+  Wanted: none.
+  For Sale: 38 lizardmen [LIZA] at $120.
+  Entertainment available: $47.
+  Products: 15 livestock [LIVE], 14 wood [WOOD], 15 herbs [HERB].
+
+Exits:
+  North : ocean (5,9) in Cykranosh Ocean.
+  Northeast : ocean (6,10) in Cykranosh Ocean.
+  Southeast : swamp (6,12) in Tonentin.
+  South : swamp (5,13) in Tonentin.
+  Southwest : desert (4,12) in Fontennuondel.
+  Northwest : desert (4,10) in Fontennuondel.
+
+- Unit (199), Farmers Guild (18), avoiding, behind, human [HUMN].
+- Tan Ce Zhe (337), Tianzi (14), avoiding, behind, gnoll [GNOL].
+* Unit (194), Nekojin Empire (17), behind, revealing faction,
+  receiving no aid, human [HUMN]. Weight: 10. Capacity: 0/0/15/0.
+  Upkeep: $10. Skills: none.
+
+
+desert (3,13) in Fontennuondel, 151 peasants (humans), $151.
+------------------------------------------------------------
+  Wages: $6 (Max: $181).
+  Wanted: none.
+  For Sale: 30 humans [HUMN] at $48.
+  Entertainment available: $7.
+  Products: 16 livestock [LIVE], 7 iron [IRON], 15 stone [STON].
+
+Exits:
+  North : desert (3,11) in Fontennuondel.
+  Northeast : desert (4,12) in Fontennuondel.
+  Southeast : plain (4,14) in Toreg.
+  South : plain (3,15) in Toreg.
+  Southwest : ocean (2,14) in Cykranosh Ocean.
+  Northwest : desert (2,12) in Fontennuondel.
+
+- Unit (200), Farmers Guild (18), avoiding, behind, human [HUMN].
+- Taxer (282), Brown Bread (12), avoiding, behind, 3 humans [HUMN].
+- Taxer (285), Brown Bread (12), avoiding, behind, 20 humans [HUMN].
+- Hors (286), Brown Bread (12), avoiding, behind, human [HUMN].
+* Unit (195), Nekojin Empire (17), behind, revealing faction,
+  receiving no aid, human [HUMN]. Weight: 10. Capacity: 0/0/15/0.
+  Upkeep: $10. Skills: none.
+
+
+
+Orders Template (Long Format):
+
+#atlantis 17 "foobar12345"
+
+;*** mountain (1,7) in Sulwor ***
+
+unit 197
+;Unit (197), behind, revealing faction, receiving no aid, human [HUMN].
+;  Weight: 10. Capacity: 0/0/15/0. Upkeep: $10. Skills: none.
+
+;*** desert (3,9) in Fontennuondel ***
+
+unit 84
+;Unit (84), behind, revealing faction, leader [LEAD]. Weight: 10.
+;  Capacity: 0/0/25/0. Upkeep: $0. Skills: observation [OBSE] 1 (35),
+;  force [FORC] 1 (30), fire [FIRE] 1 (30). Can Study: force [FORC],
+;  pattern [PATT], spirit [SPIR], force shield [FSHI], energy shield
+;  [ESHI].
+
+unit 83
+;Unit (83), behind, revealing faction, faction leader [FLEAD], wizard
+;  staff [WSTA], wizard robe [WIZR], 22 silver [SILV]. Weight: 12.
+;  Capacity: 0/0/25/0. Upkeep: $0. Skills: pattern [PATT] 1 (45),
+;  spirit [SPIR] 1 (30), force [FORC] 2 (90), gate lore [GATE] 1 (30),
+;  earth lore [EART] 1 (30). Can Study: force [FORC], pattern [PATT],
+;  spirit [SPIR], fire [FIRE], earthquake [EQUA], force shield [FSHI],
+;  energy shield [ESHI], spirit shield [SSHI], magical healing [MHEA],
+;  farsight [FARS], mind reading [MIND], weather lore [WEAT], wolf lore
+;  [WOLF], bird lore [BIRD], necromancy [NECR], demon lore [DEMO],
+;  illusion [ILLU], artifact lore [ARTI].
+
+unit 192
+;Unit (192), behind, revealing faction, leader [LEAD]. Weight: 10.
+;  Capacity: 0/0/25/0. Upkeep: $0. Skills: observation [OBSE] 1 (35),
+;  pattern [PATT] 1 (30), earth lore [EART] 1 (30). Can Study: force
+;  [FORC], pattern [PATT], spirit [SPIR], magical healing [MHEA], mind
+;  reading [MIND], wolf lore [WOLF], bird lore [BIRD].
+
+unit 193
+;Unit (193), on guard, behind, revealing faction, 10 humans [HUMN], 400
+;  silver [SILV]. Weight: 100. Capacity: 0/0/150/0. Upkeep: $100.
+;  Skills: combat [COMB] 1 (30).
+@guard 1
+@tax
+
+;*** desert (2,10) in Fontennuondel ***
+
+unit 196
+;Unit (196), behind, revealing faction, receiving no aid, human [HUMN].
+;  Weight: 10. Capacity: 0/0/15/0. Upkeep: $10. Skills: none.
+
+;*** swamp (5,11) in Tonentin ***
+
+unit 194
+;Unit (194), behind, revealing faction, receiving no aid, human [HUMN].
+;  Weight: 10. Capacity: 0/0/15/0. Upkeep: $10. Skills: none.
+
+;*** desert (3,13) in Fontennuondel ***
+
+unit 195
+;Unit (195), behind, revealing faction, receiving no aid, human [HUMN].
+;  Weight: 10. Capacity: 0/0/15/0. Upkeep: $10. Skills: none.
+
+#end
+

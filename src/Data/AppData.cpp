@@ -27,11 +27,40 @@
 #include <cwctype>
 #include <utility>
 
-AppData::AppData() = default;
+AppData::AppData(Repositories repositories)
+  : reportRepository_(repositories.reports)
+  , factionRepository_(repositories.factions)
+  , itemRepository_(repositories.items)
+  , skillRepository_(repositories.skills)
+  , regionRepository_(repositories.regions)
+  , unitRepository_(repositories.units)
+  , unitNewRepository_(repositories.newUnits)
+  , battleRepository_(repositories.battles)
+  , eventRepository_(repositories.events)
+  , structureRepository_(repositories.structures)
+  , structInfoRepository_(repositories.structureInfo)
+  , orderRepository_(repositories.orders)
+{
+}
 
 AppData& AppData::getInstance()
 {
-  static AppData instance;
+  static ReportRepository reports;
+  static FactionRepository factions;
+  static ItemRepository items;
+  static SkillRepository skills;
+  static RegionRepository regions;
+  static UnitRepository units;
+  static UnitNewRepository newUnits;
+  static BattleRepository battles;
+  static EventRepository events;
+  static StructureRepository structures;
+  static StructInfoRepository structureInfo;
+  static OrderRepository orders;
+  static AppData instance({
+    reports, factions, items, skills, regions, units, newUnits,
+    battles, events, structures, structureInfo, orders
+  });
   return instance;
 }
 

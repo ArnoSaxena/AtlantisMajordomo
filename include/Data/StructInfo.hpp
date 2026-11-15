@@ -38,25 +38,25 @@ public:
             int magesCapacity,
             bool isShip,
             bool isFlying);
-  ~StructInfo() = default;
+  virtual ~StructInfo() = default;
 
   StructInfo(const StructInfo&) = default;
   StructInfo& operator=(const StructInfo&) = default;
   StructInfo(StructInfo&&) = default;
   StructInfo& operator=(StructInfo&&) = default;
 
-  const std::wstring& getStructureType() const;
-  int getNeeds() const;
-  int getMagesCapacity() const;
-  bool isShip() const;
-  bool protoIsFlying() const;
-  const std::wstring& getItemIdentifierToken() const;
+  virtual const std::wstring& getStructureType() const;
+  virtual int getNeeds() const;
+  virtual int getMagesCapacity() const;
+  virtual bool isShip() const;
+  virtual bool protoIsFlying() const;
+  virtual const std::wstring& getItemIdentifierToken() const;
 
   void setStructureType(std::wstring structureType);
   void setNeeds(int needs);
   void setMagesCapacity(int magesCapacity);
   void setIsShip(bool isShip);
-  void setIsFlying(bool isFlying);
+  virtual void setIsFlying(bool isFlying);
   void setItemIdentifierToken(std::wstring itemIdentifierToken);
 
   static std::wstring extractRoadDirectionFromStructureType(const std::wstring& structureType);

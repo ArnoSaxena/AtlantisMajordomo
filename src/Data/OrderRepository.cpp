@@ -64,6 +64,24 @@ const std::vector<Order>* OrderRepository::getOrdersForUnit(int issuingUnitNumbe
     return filteredOrders.empty() ? nullptr : &filteredOrders;
 }
 
+std::vector<std::reference_wrapper<const Order>> OrderRepository::getOrderReferencesForUnit(
+    int issuingUnitNumber, bool fromNewUnit) const
+{
+    std::vector<std::reference_wrapper<const Order>> result;
+    const auto it = orders_.find(issuingUnitNumber);
+    if (it != orders_.end())
+    {
+        for (const Order& order : it->second)
+        {
+            if (order.getFromNewUnit() == fromNewUnit)
+            {
+                result.push_back(std::cref(order));
+            }
+        }
+    }
+    return result;
+}
+
 const std::vector<Order>& OrderRepository::getOrdersForRegion(int xCoordinate, int yCoordinate, int zCoordinate) const
 {
     static const std::vector<Order> emptyOrders;

@@ -25,6 +25,7 @@
 #include "Data/Order.hpp"
 
 #include <cstddef>
+#include <functional>
 #include <map>
 #include <string>
 #include <vector>
@@ -40,7 +41,7 @@ class OrderRepository
 {
 public:
     OrderRepository() = default;
-    ~OrderRepository() = default;
+    virtual ~OrderRepository() = default;
 
     OrderRepository(const OrderRepository&) = default;
     OrderRepository& operator=(const OrderRepository&) = default;
@@ -49,9 +50,15 @@ public:
 
     void addOrder(int issuingUnitNumber, bool fromNewUnit, int xCoordinate, int yCoordinate, int zCoordinate, std::wstring orderToken, std::wstring fullOrderText);
     const std::vector<Order> *getOrdersForUnit(int issuingUnitNumber, bool fromNewUnit) const;
+    /**
+     * @brief Borrows matching orders without copying or slicing their dynamic types.
+     * References remain valid until the stored orders are modified or cleared.
+     */
+    virtual std::vector<std::reference_wrapper<const Order>> getOrderReferencesForUnit(
+        int issuingUnitNumber, bool fromNewUnit) const;
     const std::vector<Order> &getOrdersForRegion(int xCoordinate, int yCoordinate, int zCoordinate) const;
     bool removeOrdersForUnit(int issuingUnitNumber, bool fromNewUnit);
-    void clear();
+    virtual void clear();
 
 private:  
     std::map<int, std::vector<Order>> orders_;

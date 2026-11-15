@@ -143,27 +143,18 @@ std::set<std::wstring> collectTouchedItemTokensForUnit(const AppData& appData,
         }
         else if (command == L"TRANSPORT" || command == L"DISTRIBUTE")
         {
-            std::size_t cursor = tokenIndex + 1;
-            if (!tryConsumeUnitReference(tokens, cursor) || cursor >= tokens.size())
+            OrderParsingUtils::TransportOrder parsed;
+            if (!OrderParsingUtils::tryParseTransportOrder(order.getFullOrderText(), parsed))
             {
                 continue;
             }
 
-            const std::wstring quantityToken = StringUtils::toUpper(tokens[cursor]);
-            ++cursor;
-            if (quantityToken == L"ALL" || quantityToken == L"EXCEPT")
+            std::wstring resolvedToken;
+            if (tryResolveOrderItemToken(appData, parsed.itemOperand, resolvedToken) && !resolvedToken.empty())
             {
-                itemTokenIndex = cursor;
+                touchedTokens.insert(resolvedToken);
             }
-            else
-            {
-                int quantity = 0;
-                if (!OrderParsingUtils::tryParseIntStrict(quantityToken, quantity) || quantity <= 0)
-                {
-                    continue;
-                }
-                itemTokenIndex = cursor;
-            }
+            continue;
         }
 
         if (itemTokenIndex == std::wstring::npos || itemTokenIndex >= tokens.size())

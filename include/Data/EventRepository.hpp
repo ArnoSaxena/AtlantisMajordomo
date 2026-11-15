@@ -33,7 +33,7 @@ class EventRepository
 {
 public:
   EventRepository() = default;
-  ~EventRepository() = default;
+  virtual ~EventRepository() = default;
 
   EventRepository(const EventRepository&) = default;
   EventRepository& operator=(const EventRepository&) = default;
@@ -42,6 +42,7 @@ public:
 
   bool add(Event eventValue);
   bool add(int unitId, const std::wstring& message);
+  virtual bool add(int unitId, const std::wstring& message, int month, int year, bool errorEvent);
   bool removeByIdentifier(const std::wstring& identifier);
 
   Event* findByIdentifier(const std::wstring& identifier);
@@ -53,10 +54,10 @@ public:
   bool getLatestPeriod(int& month, int& year) const;
   std::vector<const Event*> findLatestEventsByUnitId(int unitId) const;
 
-  void clear();
+  virtual void clear();
 
-  std::size_t size() const;
-  const Event& at(std::size_t index) const;
+  virtual std::size_t size() const;
+  virtual const Event& at(std::size_t index) const;
 
   const std::wstring& getLastError() const;
 

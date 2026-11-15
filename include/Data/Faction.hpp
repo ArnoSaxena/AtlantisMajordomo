@@ -63,32 +63,32 @@ public:
           Attitude defaultAttitude = Attitude::Neutral,
           std::map<int, Attitude> declaredAttitudes = {},
           int unclaimedSilver = 0);
-  ~Faction() = default;
+  virtual ~Faction() = default;
 
   Faction(const Faction&) = default;
   Faction& operator=(const Faction&) = default;
   Faction(Faction&&) = default;
   Faction& operator=(Faction&&) = default;
 
-  int getFactionNumber() const;
-  const std::wstring& getName() const;
-  bool isMainFaction() const;
-  int getMonth() const;
-  int getYear() const;
-  const std::wstring& getPassword() const;
-  int getTaxedOrTradedRegionsCurrent() const;
-  int getTaxedOrTradedRegionsMax() const;
-  int getQuartermastersCurrent() const;
-  int getQuartermastersMax() const;
-  int getMagesCurrent() const;
-  int getMagesMax() const;
-  int getApprenticesCurrent() const;
-  int getApprenticesMax() const;
-  int getUnclaimedSilver() const;
-  int getUnclaimedSilverAfterOrders() const;
-  int getCommandUnitNumber() const;
-  Attitude getDefaultAttitude() const;
-  const std::map<int, Attitude>& getDeclaredAttitudes() const;
+  virtual int getFactionNumber() const;
+  virtual const std::wstring& getName() const;
+  virtual bool isMainFaction() const;
+  virtual int getMonth() const;
+  virtual int getYear() const;
+  virtual const std::wstring& getPassword() const;
+  virtual int getTaxedOrTradedRegionsCurrent() const;
+  virtual int getTaxedOrTradedRegionsMax() const;
+  virtual int getQuartermastersCurrent() const;
+  virtual int getQuartermastersMax() const;
+  virtual int getMagesCurrent() const;
+  virtual int getMagesMax() const;
+  virtual int getApprenticesCurrent() const;
+  virtual int getApprenticesMax() const;
+  virtual int getUnclaimedSilver() const;
+  virtual int getUnclaimedSilverAfterOrders() const;
+  virtual int getCommandUnitNumber() const;
+  virtual Attitude getDefaultAttitude() const;
+  virtual const std::map<int, Attitude>& getDeclaredAttitudes() const;
 
   void setName(std::wstring name);
   void setMainFaction(bool mainFaction);
@@ -103,11 +103,11 @@ public:
   void setMagesMax(int value);
   void setApprenticesCurrent(int value);
   void setApprenticesMax(int value);
-  void setUnclaimedSilver(int value);
-  void setUnclaimedSilverAfterOrders(int value);
-  void setCommandUnitNumber(int unitNumber);
-  void setDefaultAttitude(Attitude attitude);
-  void setDeclaredAttitude(int factionNumber, Attitude attitude);
+  virtual void setUnclaimedSilver(int value);
+  virtual void setUnclaimedSilverAfterOrders(int value);
+  virtual void setCommandUnitNumber(int unitNumber);
+  virtual void setDefaultAttitude(Attitude attitude);
+  virtual void setDeclaredAttitude(int factionNumber, Attitude attitude);
   void removeDeclaredAttitude(int factionNumber);
   void clearDeclaredAttitudes();
 

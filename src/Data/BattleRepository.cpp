@@ -24,11 +24,46 @@
 
 #include <algorithm>
 #include <set>
+#include <stdexcept>
 #include <utility>
+
+BattleRepository::BattleRepository(const BattleRepository& other)
+{
+  battles_.reserve(other.battles_.size());
+  for (const auto& battle : other.battles_)
+  {
+    auto copy = battle->clone();
+    if (!copy)
+    {
+      throw std::logic_error("Battle::clone returned a null battle");
+    }
+    battles_.push_back(std::move(copy));
+  }
+}
+
+BattleRepository& BattleRepository::operator=(const BattleRepository& other)
+{
+  if (this != &other)
+  {
+    BattleRepository copy(other);
+    battles_.swap(copy.battles_);
+  }
+  return *this;
+}
 
 bool BattleRepository::add(Battle battleValue)
 {
-  if (findByIdentifier(battleValue.getIdentifier()) != nullptr)
+  return add(std::make_unique<Battle>(std::move(battleValue)));
+}
+
+bool BattleRepository::add(std::unique_ptr<Battle> battleValue)
+{
+  if (!battleValue)
+  {
+    throw std::invalid_argument("Cannot add a null battle");
+  }
+
+  if (findByIdentifier(battleValue->getIdentifier()) != nullptr)
   {
     return false;
   }
@@ -42,20 +77,21 @@ const Battle* BattleRepository::findByIdentifier(const std::wstring& identifier)
   const auto it = std::find_if(
     battles_.cbegin(),
     battles_.cend(),
-    [&identifier](const Battle& battle)
+    [&identifier](const auto& battle)
     {
-      return battle.getIdentifier() == identifier;
+      return battle->getIdentifier() == identifier;
     }
   );
 
-  return it == battles_.cend() ? nullptr : &(*it);
+  return it == battles_.cend() ? nullptr : it->get();
 }
 
 std::vector<std::pair<int, int>> BattleRepository::getAvailablePeriodsDescending() const
 {
   std::set<std::pair<int, int>, std::greater<>> uniquePeriods;
-  for (const Battle& battle : battles_)
+  for (const auto& storedBattle : battles_)
   {
+    const Battle& battle = *storedBattle;
     if (battle.getMonth() < 1 || battle.getMonth() > 12 || battle.getYear() <= 0)
     {
       continue;
@@ -90,8 +126,9 @@ bool BattleRepository::getLatestPeriod(int& month, int& year) const
 std::vector<const Battle*> BattleRepository::findByPeriod(int month, int year) const
 {
   std::vector<const Battle*> results;
-  for (const Battle& battle : battles_)
+  for (const auto& storedBattle : battles_)
   {
+    const Battle& battle = *storedBattle;
     if (battle.getMonth() == month && battle.getYear() == year)
     {
       results.push_back(&battle);
@@ -110,8 +147,9 @@ bool BattleRepository::hasBattleInRegionForPeriod(int xCoordinate,
   const auto it = std::find_if(
     battles_.cbegin(),
     battles_.cend(),
-    [xCoordinate, yCoordinate, zCoordinate, month, year](const Battle& battle)
+    [xCoordinate, yCoordinate, zCoordinate, month, year](const auto& storedBattle)
     {
+      const Battle& battle = *storedBattle;
       return battle.getRegionXCoordinate() == xCoordinate &&
              battle.getRegionYCoordinate() == yCoordinate &&
              battle.getRegionZCoordinate() == zCoordinate &&
@@ -130,8 +168,9 @@ bool BattleRepository::isParticipantInAnyBattleForPeriod(int unitId, int month, 
     return false;
   }
 
-  for (const Battle& battle : battles_)
+  for (const auto& storedBattle : battles_)
   {
+    const Battle& battle = *storedBattle;
     if (battle.getMonth() != month || battle.getYear() != year)
     {
       continue;
@@ -153,8 +192,9 @@ bool BattleRepository::isUnitDamagedInAnyBattleForPeriod(int unitId, int month, 
     return false;
   }
 
-  for (const Battle& battle : battles_)
+  for (const auto& storedBattle : battles_)
   {
+    const Battle& battle = *storedBattle;
     if (battle.getMonth() != month || battle.getYear() != year)
     {
       continue;
@@ -192,5 +232,5 @@ std::size_t BattleRepository::size() const
 
 const Battle& BattleRepository::at(std::size_t index) const
 {
-  return battles_.at(index);
+  return *battles_.at(index);
 }

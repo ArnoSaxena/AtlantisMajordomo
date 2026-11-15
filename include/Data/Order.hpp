@@ -43,7 +43,7 @@ public:
         zCoordinate_(zCoordinate),
         orderToken_(orderToken),
         fullOrderText_(fullOrderText) {}
-    ~Order() = default;
+    virtual ~Order() = default;
 
     Order(const Order&) = default;
     Order& operator=(const Order&) = default;
@@ -52,11 +52,11 @@ public:
 
     int getIssuingUnitNumber() const;
     bool getFromNewUnit() const;
-    int getXCoordinate() const;
-    int getYCoordinate() const;
-    int getZCoordinate() const;
+    virtual int getXCoordinate() const;
+    virtual int getYCoordinate() const;
+    virtual int getZCoordinate() const;
     const std::wstring& getOrderToken() const;
-    const std::wstring& getFullOrderText() const;
+    virtual const std::wstring& getFullOrderText() const;
 
     void setIssuingUnitNumber(int issuingUnitNumber);
     void setFromNewUnit(bool fromNewUnit);

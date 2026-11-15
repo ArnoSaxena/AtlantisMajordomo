@@ -11,6 +11,7 @@ Usage:
     python build_multi.py --clean-all                     # Remove all artifacts (build, venv, cache)
     python build_multi.py --clean --build-type release    # Clean and build release
     python build_multi.py --run                           # Build and run
+    python build_multi.py --test                          # Build and run Catch2 tests
     python build_multi.py -g "Unix Makefiles"             # Use a specific CMake generator
 """
 
@@ -18,6 +19,7 @@ import argparse
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import platform as platform_module
@@ -38,8 +40,9 @@ def get_default_cmake_generator():
     Read default CMake generator from user folder file.
 
     Hardcoded file name: cmake_build_generator.txt
-    Falls back to Visual Studio 17 2022 on Windows or Unix Makefiles on Linux
-    when the file is missing or invalid.
+    Falls back to Visual Studio 17 2022 on Windows or Ninja on Linux
+    when the file is missing or empty. Configured generator names are passed
+    unchanged to CMake, including newer Visual Studio versions.
     """
     generator_file = os.path.join(os.path.expanduser("~"), "cmake_build_generator.txt")
 
@@ -90,6 +93,12 @@ parser.add_argument(
     action='store_true',
     required=False,
     help='Run the executable after building'
+)
+
+parser.add_argument(
+    '--test',
+    action='store_true',
+    help='Build and run Catch2 tests after building the application'
 )
 
 parser.add_argument(
@@ -158,6 +167,40 @@ def describe_windows_return_code(return_code):
 #
 
 
+def stop_command_tree(process):
+    """Stop only the command and descendants started by this workflow."""
+    if IS_WINDOWS:
+        script = r"""
+$ErrorActionPreference = 'Stop'
+function Stop-CommandTree([int]$ProcessId) {
+    $children = @(Get-CimInstance Win32_Process -Filter "ParentProcessId = $ProcessId")
+    foreach ($child in $children) {
+        Stop-CommandTree $child.ProcessId
+    }
+    $target = Get-Process -Id $ProcessId -ErrorAction SilentlyContinue
+    if ($null -ne $target) {
+        Stop-Process -Id $ProcessId -Force -ErrorAction Stop
+        Wait-Process -InputObject $target -Timeout 10 -ErrorAction Stop
+    }
+}
+Stop-CommandTree """ + str(process.pid)
+        cleanup = subprocess.run(
+            ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],
+            shell=False,
+        )
+        if cleanup.returncode != 0:
+            raise RuntimeError(
+                f"Could not stop command process tree (PID {process.pid}); "
+                "check for remaining child processes"
+            )
+    else:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+    process.wait()
+
+
 def execute_cmd(cmd, description=""):
     """
     Execute a shell command and handle errors.
@@ -175,11 +218,21 @@ def execute_cmd(cmd, description=""):
     if args.verbose:
         print(f"[CMD] {command_display}\n")
 
-    result = subprocess.run(cmd, shell=False)
-    if result.returncode != 0:
-        details = f"return code {result.returncode}"
+    process_options = (
+        {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
+        if IS_WINDOWS else {"start_new_session": True}
+    )
+    process = subprocess.Popen(cmd, shell=False, **process_options)
+    try:
+        return_code = process.wait()
+    except KeyboardInterrupt:
+        stop_command_tree(process)
+        raise
+
+    if return_code != 0:
+        details = f"return code {return_code}"
         if IS_WINDOWS:
-            details += f" [{describe_windows_return_code(result.returncode)}]"
+            details += f" [{describe_windows_return_code(return_code)}]"
 
         raise RuntimeError(f"Command failed with {details}: {command_display}")
 
@@ -190,22 +243,30 @@ def normalize_path(path):
 
 def is_stale_cmake_cache():
     """
-    Check whether build/CMakeCache.txt points to a different source directory.
+    Check whether the cache uses a different source directory or generator.
     """
     cache_file = os.path.join(BUILD_DIR, "CMakeCache.txt")
     if not os.path.isfile(cache_file):
         return False
 
+    cached_source = None
+    cached_generator = None
     try:
         with open(cache_file, "r", encoding="utf-8", errors="ignore") as file:
             for line in file:
                 if line.startswith("CMAKE_HOME_DIRECTORY:INTERNAL="):
                     cached_source = line.split("=", 1)[1].strip()
-                    return normalize_path(cached_source) != normalize_path(src_working_dir)
+                elif line.startswith("CMAKE_GENERATOR:INTERNAL="):
+                    cached_generator = line.split("=", 1)[1].strip()
     except OSError:
         return False
 
-    return False
+    return (
+        cached_source is not None
+        and normalize_path(cached_source) != normalize_path(src_working_dir)
+    ) or (
+        cached_generator is not None and cached_generator != args.generator
+    )
 
 
 def clean():
@@ -349,7 +410,7 @@ def configure():
     os.makedirs(BUILD_DIR, exist_ok=True)
 
     if is_stale_cmake_cache():
-        print("[!] Detected stale CMake cache for a different source directory")
+        print("[!] Detected CMake cache for a different source directory or generator")
         print("[*] Cleaning build directory before configure")
         clean()
         os.makedirs(BUILD_DIR, exist_ok=True)
@@ -373,6 +434,7 @@ def configure():
             "-B", BUILD_DIR,
         ]
 
+    cmake_cmd.append(f"-DATLANTIS_BUILD_TESTS={'ON' if args.test else 'OFF'}")
     execute_cmd(cmake_cmd, f"Configuring CMake ({args.generator})")
 
 
@@ -380,26 +442,23 @@ def build():
     """
     Build the project.
     """
-    is_vs_generator = "Visual Studio" in args.generator
-
-    if is_vs_generator:
-        cmake_cmd = ["cmake", "--build", BUILD_DIR, "--config", args.build_type.capitalize()]
-    else:
-        cmake_cmd = ["cmake", "--build", BUILD_DIR]
-
+    cmake_cmd = ["cmake", "--build", BUILD_DIR, "--config", args.build_type.capitalize()]
     execute_cmd(cmake_cmd, f"Building AtlantisMajordomo ({args.build_type})")
 
 
-def find_executable():
+def find_executable(executable_name=EXECUTABLE_NAME):
     """
     Find the built executable.
+
+    Args:
+        executable_name: Filename to locate; defaults to the application.
 
     Returns:
         Path to the executable or None if not found
     """
     possible_paths = [
-        os.path.join(BUILD_DIR, args.build_type.capitalize(), EXECUTABLE_NAME),
-        os.path.join(BUILD_DIR, EXECUTABLE_NAME),
+        os.path.join(BUILD_DIR, args.build_type.capitalize(), executable_name),
+        os.path.join(BUILD_DIR, executable_name),
         os.path.join(BUILD_DIR, args.build_type.capitalize()),
     ]
 
@@ -408,7 +467,7 @@ def find_executable():
             return path
         # Check if it's a directory, look for exe inside
         if os.path.isdir(path):
-            exe_path = os.path.join(path, EXECUTABLE_NAME)
+            exe_path = os.path.join(path, executable_name)
             if os.path.isfile(exe_path):
                 return exe_path
 
@@ -428,6 +487,21 @@ def run():
 
     print(f"[+] Found executable: {exe_path}")
     execute_cmd([exe_path], "Running AtlantisMajordomo")
+
+
+def run_tests():
+    """
+    Run Catch2 once, reporting every independent case and its duration.
+    """
+    test_name = "AtlantisMajordomoTests.exe" if IS_WINDOWS else "AtlantisMajordomoTests"
+    test_executable = find_executable(test_name)
+    if test_executable is None:
+        raise RuntimeError(f"Could not find Catch2 test executable in: {BUILD_DIR}")
+
+    execute_cmd(
+        [test_executable, "--durations", "yes"],
+        "Running Catch2 tests"
+    )
 
 
 def main():
@@ -477,6 +551,9 @@ def main():
         build()
 
         print("\n[+] Build completed successfully!")
+
+        if args.test:
+            run_tests()
 
         # Run if requested
         if args.run:

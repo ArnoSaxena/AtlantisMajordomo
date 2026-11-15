@@ -47,6 +47,26 @@
 class AppData
 {
 public:
+  struct Repositories
+  {
+    ReportRepository& reports;
+    FactionRepository& factions;
+    ItemRepository& items;
+    SkillRepository& skills;
+    RegionRepository& regions;
+    UnitRepository& units;
+    UnitNewRepository& newUnits;
+    BattleRepository& battles;
+    EventRepository& events;
+    StructureRepository& structures;
+    StructInfoRepository& structureInfo;
+    OrderRepository& orders;
+  };
+
+  // The supplied repositories must outlive this instance.
+  explicit AppData(Repositories repositories);
+  virtual ~AppData() = default;
+
   static AppData& getInstance();
   static AppData* getCurrent();
 
@@ -55,79 +75,76 @@ public:
   AppData(AppData&&) = delete;
   AppData& operator=(AppData&&) = delete;
 
-  ReportRepository& reportRepository();
-  const ReportRepository& reportRepository() const;
+  virtual ReportRepository& reportRepository();
+  virtual const ReportRepository& reportRepository() const;
 
-  FactionRepository& factionRepository();
-  const FactionRepository& factionRepository() const;
+  virtual FactionRepository& factionRepository();
+  virtual const FactionRepository& factionRepository() const;
 
-  ItemRepository& itemRepository();
-  const ItemRepository& itemRepository() const;
+  virtual ItemRepository& itemRepository();
+  virtual const ItemRepository& itemRepository() const;
 
-  SkillRepository& skillRepository();
-  const SkillRepository& skillRepository() const;
+  virtual SkillRepository& skillRepository();
+  virtual const SkillRepository& skillRepository() const;
 
-  RegionRepository& regionRepository();
-  const RegionRepository& regionRepository() const;
+  virtual RegionRepository& regionRepository();
+  virtual const RegionRepository& regionRepository() const;
 
-  UnitRepository& unitRepository();
-  const UnitRepository& unitRepository() const;
+  virtual UnitRepository& unitRepository();
+  virtual const UnitRepository& unitRepository() const;
 
-  UnitNewRepository& unitNewRepository();
-  const UnitNewRepository& unitNewRepository() const;
+  virtual UnitNewRepository& unitNewRepository();
+  virtual const UnitNewRepository& unitNewRepository() const;
 
   BattleRepository& battleRepository();
   const BattleRepository& battleRepository() const;
 
-  EventRepository& eventRepository();
-  const EventRepository& eventRepository() const;
+  virtual EventRepository& eventRepository();
+  virtual const EventRepository& eventRepository() const;
 
-  StructureRepository& structureRepository();
-  const StructureRepository& structureRepository() const;
+  virtual StructureRepository& structureRepository();
+  virtual const StructureRepository& structureRepository() const;
 
-  StructInfoRepository& structInfoRepository();
-  const StructInfoRepository& structInfoRepository() const;
+  virtual StructInfoRepository& structInfoRepository();
+  virtual const StructInfoRepository& structInfoRepository() const;
 
   OrderRepository& orderRepository();
-  const OrderRepository& orderRepository() const;
+  virtual const OrderRepository& orderRepository() const;
 
-  int getShipStructureIdThreshold() const;
-  void setShipStructureIdThreshold(int threshold);
+  virtual int getShipStructureIdThreshold() const;
+  virtual void setShipStructureIdThreshold(int threshold);
 
-  const std::wstring& getFlyingShipsCsv() const;
-  void setFlyingShipsCsv(std::wstring flyingShipsCsv);
+  virtual const std::wstring& getFlyingShipsCsv() const;
+  virtual void setFlyingShipsCsv(std::wstring flyingShipsCsv);
 
-  const std::wstring& getMagicSkillTriggersCsv() const;
-  void setMagicSkillTriggersCsv(std::wstring magicSkillTriggersCsv);
+  virtual const std::wstring& getMagicSkillTriggersCsv() const;
+  virtual void setMagicSkillTriggersCsv(std::wstring magicSkillTriggersCsv);
 
-  bool getOnlyLeaderCanTeach() const;
-  void setOnlyLeaderCanTeach(bool onlyLeaderCanTeach);
+  virtual bool getOnlyLeaderCanTeach() const;
+  virtual void setOnlyLeaderCanTeach(bool onlyLeaderCanTeach);
 
-  bool getLeaderMages() const;
-  void setLeaderMages(bool leaderMages);
+  virtual bool getLeaderMages() const;
+  virtual void setLeaderMages(bool leaderMages);
 
   std::vector<std::wstring> getFlyingShipTypeTokens() const;
   std::vector<std::wstring> getMagicSkillTriggerPhrases() const;
-  void refreshStructureDerivedFlags();
+  virtual void refreshStructureDerivedFlags();
 
-  void clear();
+  virtual void clear();
 
 private:
-  AppData();
-  ~AppData() = default;
-
-  ReportRepository  reportRepository_;
-  FactionRepository factionRepository_;
-  ItemRepository    itemRepository_;
-  SkillRepository   skillRepository_;
-  RegionRepository  regionRepository_;
-  UnitRepository    unitRepository_;
-  UnitNewRepository unitNewRepository_;
-  BattleRepository  battleRepository_;
-  EventRepository   eventRepository_;
-  StructureRepository structureRepository_;
-  StructInfoRepository structInfoRepository_;
-  OrderRepository orderRepository_;
+  ReportRepository& reportRepository_;
+  FactionRepository& factionRepository_;
+  ItemRepository& itemRepository_;
+  SkillRepository& skillRepository_;
+  RegionRepository& regionRepository_;
+  UnitRepository& unitRepository_;
+  UnitNewRepository& unitNewRepository_;
+  BattleRepository& battleRepository_;
+  EventRepository& eventRepository_;
+  StructureRepository& structureRepository_;
+  StructInfoRepository& structInfoRepository_;
+  OrderRepository& orderRepository_;
 
   int shipStructureIdThreshold_ { 100 };
   std::wstring flyingShipsCsv_;

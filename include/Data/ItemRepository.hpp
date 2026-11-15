@@ -37,14 +37,14 @@ class ItemRepository
 {
 public:
   ItemRepository() = default;
-  ~ItemRepository() = default;
+  virtual ~ItemRepository() = default;
 
   ItemRepository(const ItemRepository&) = default;
   ItemRepository& operator=(const ItemRepository&) = default;
   ItemRepository(ItemRepository&&) = default;
   ItemRepository& operator=(ItemRepository&&) = default;
 
-  bool add(std::wstring identifierToken,
+  virtual bool add(std::wstring identifierToken,
           std::wstring itemName,
           int weight,
           bool meeleWeapon,
@@ -61,8 +61,8 @@ public:
 
   bool removeByIdentifierToken(const std::wstring& identifierToken);
 
-  Item* findByIdentifierToken(const std::wstring& identifierToken);
-  const Item* findByIdentifierToken(const std::wstring& identifierToken) const;
+  virtual Item* findByIdentifierToken(const std::wstring& identifierToken);
+  virtual const Item* findByIdentifierToken(const std::wstring& identifierToken) const;
 
   const Item* findByItemName(const std::wstring& itemName) const;
 
@@ -78,17 +78,17 @@ public:
   *
   * @return The identifier token when a match is found, or @p nameOrToken unchanged.
   */
-  std::wstring resolveRaceNameToToken(const std::wstring& nameOrToken) const;
+  virtual std::wstring resolveRaceNameToToken(const std::wstring& nameOrToken) const;
 
-  void clear();
+  virtual void clear();
 
-  std::size_t size() const;
-  const Item& at(std::size_t index) const;
+  virtual std::size_t size() const;
+  virtual const Item& at(std::size_t index) const;
 
   const std::wstring& getLastError() const;
 
   int calculateTotalWeight(const std::map<std::wstring, int>& itemCounts) const;
-  int calculateManItemCount(const std::map<std::wstring, int>& itemCounts) const;
+  virtual int calculateManItemCount(const std::map<std::wstring, int>& itemCounts) const;
 
 private:
   std::vector<Item> items_;

@@ -49,7 +49,7 @@ class ReportRepository
 {
 public:
   ReportRepository() = default;
-  ~ReportRepository() = default;
+  virtual ~ReportRepository() = default;
 
   ReportRepository(const ReportRepository&) = delete;
   ReportRepository& operator=(const ReportRepository&) = delete;
@@ -74,7 +74,7 @@ public:
                   bool syncFactionFromHeader = true);
   bool removeAt(std::size_t index);
 
-  void clear();
+  virtual void clear();
 
   std::size_t size() const;
   const Report& at(std::size_t index) const;
@@ -85,8 +85,8 @@ public:
   * @param[out] year Latest year when true is returned.
   * @return true if at least one valid report period exists.
   */
-  bool getLatestPeriod(int& month, int& year) const;
-  void setLatestPeriod(int month, int year);
+  virtual bool getLatestPeriod(int& month, int& year) const;
+  virtual void setLatestPeriod(int month, int year);
 
   const std::wstring& getLastError() const;
 

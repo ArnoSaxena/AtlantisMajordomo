@@ -62,16 +62,7 @@ using OrderParsingUtils::tryResolveItemTokenForWarning;
 using WarningGiveMode = OrderParsingUtils::WarningGiveMode;
 using WarningGiveTakeOrder = OrderParsingUtils::WarningGiveTakeOrder;
 
-struct WarningTransportOrder
-{
-  int targetUnitNumber { 0 };
-  bool targetIsNewUnit { false };
-  WarningGiveMode mode { WarningGiveMode::Quantity };
-  int quantity { 0 };
-  int exceptQuantity { 0 };
-  std::wstring itemOperand;
-  bool itemOperandWasQuoted { false };
-};
+using WarningTransportOrder = OrderParsingUtils::TransportOrder;
 
 
 const Item* findItemByTokenNormalizedForWarning(const AppData& appData, const std::wstring& itemToken)
@@ -536,113 +527,6 @@ bool isWithinTransportRangeForWarning(const Unit& sourceUnit, const UnitNew& tar
                                       targetUnit.getYCoordinate()) <= 2;
 }
 
-bool tryParseTransportOrderForWarning(const std::wstring& orderLine, WarningTransportOrder& parsedOrder)
-{
-  std::vector<std::wstring> tokens;
-  std::vector<bool> tokenWasQuoted;
-  if (!tokenizeOrderLine(orderLine, tokens, tokenWasQuoted) || tokens.empty())
-  {
-    return false;
-  }
-
-  std::size_t tokenIndex = 0;
-  if (!tokens.front().empty() && tokens.front().front() == L'@')
-  {
-    if (tokens.front().size() == 1)
-    {
-      tokenIndex = 1;
-    }
-    else
-    {
-      tokens.front().erase(tokens.front().begin());
-    }
-  }
-
-  if (tokenIndex >= tokens.size())
-  {
-    return false;
-  }
-
-  const std::wstring keyword = StringUtils::toUpper(tokens[tokenIndex]);
-  if (keyword != L"TRANSPORT" && keyword != L"DISTRIBUTE")
-  {
-    return false;
-  }
-  ++tokenIndex;
-
-  parsedOrder.targetIsNewUnit = false;
-  if (tokenIndex < tokens.size() && StringUtils::toUpper(tokens[tokenIndex]) == L"NEW")
-  {
-    parsedOrder.targetIsNewUnit = true;
-    ++tokenIndex;
-  }
-
-  if (tokenIndex >= tokens.size() || !tryParseIntStrict(tokens[tokenIndex], parsedOrder.targetUnitNumber)
-      || parsedOrder.targetUnitNumber <= 0)
-  {
-    return false;
-  }
-  ++tokenIndex;
-
-  if (tokenIndex >= tokens.size())
-  {
-    return false;
-  }
-
-  const std::wstring amountToken = StringUtils::toUpper(tokens[tokenIndex]);
-  if (amountToken == L"ALL")
-  {
-    parsedOrder.mode = WarningGiveMode::All;
-    ++tokenIndex;
-    if (tokenIndex >= tokens.size())
-    {
-      return false;
-    }
-
-    parsedOrder.itemOperand = tokens[tokenIndex];
-    parsedOrder.itemOperandWasQuoted = tokenWasQuoted[tokenIndex];
-    ++tokenIndex;
-
-    if (tokenIndex < tokens.size())
-    {
-      if (StringUtils::toUpper(tokens[tokenIndex]) != L"EXCEPT")
-      {
-        return false;
-      }
-      ++tokenIndex;
-
-      if (tokenIndex >= tokens.size() || !tryParseIntStrict(tokens[tokenIndex], parsedOrder.exceptQuantity)
-          || parsedOrder.exceptQuantity < 0)
-      {
-        return false;
-      }
-      parsedOrder.mode = WarningGiveMode::AllExcept;
-      ++tokenIndex;
-    }
-
-    return tokenIndex == tokens.size();
-  }
-
-  parsedOrder.mode = WarningGiveMode::Quantity;
-  if (!tryParseIntStrict(tokens[tokenIndex], parsedOrder.quantity) || parsedOrder.quantity <= 0)
-  {
-    return false;
-  }
-  ++tokenIndex;
-
-  if (tokenIndex >= tokens.size())
-  {
-    return false;
-  }
-
-  parsedOrder.itemOperand = tokens[tokenIndex];
-  parsedOrder.itemOperandWasQuoted = tokenWasQuoted[tokenIndex];
-  ++tokenIndex;
-
-  parsedOrder.exceptQuantity = 0;
-  return tokenIndex == tokens.size();
-}
-
 } // anonymous namespace
 
 // External wrapper with external linkage forwarding to internal implementation.
@@ -1028,53 +912,14 @@ const Skill* tryResolveStudySkill(const AppData& appData,
                                   const std::wstring& skillOperand,
                                   std::wstring& resolvedSkillToken)
 {
-  const std::wstring trimmedOperand = StringUtils::trimWhitespace(skillOperand);
-  const std::wstring normalizedOperand = StringUtils::toUpper(trimmedOperand);
-  const std::wstring normalizedTokenOperand = StringUtils::normalizeToken(trimmedOperand);
-
-  if (normalizedOperand.empty() && normalizedTokenOperand.empty())
+  resolvedSkillToken.clear();
+  const Skill* skill = appData.skillRepository().findByIdentifier(
+    StringUtils::toUpper(StringUtils::trimWhitespace(skillOperand)));
+  if (skill)
   {
-    return nullptr;
+    resolvedSkillToken = skill->getIdentifierToken();
   }
-
-  if (!normalizedTokenOperand.empty())
-  {
-    if (const Skill* byIdentifier = appData.skillRepository().findByIdentifier(normalizedTokenOperand))
-    {
-      resolvedSkillToken = byIdentifier->getIdentifierToken();
-      return byIdentifier;
-    }
-  }
-
-  if (const Skill* byIdentifier = appData.skillRepository().findByIdentifier(normalizedOperand))
-  {
-    resolvedSkillToken = byIdentifier->getIdentifierToken();
-    return byIdentifier;
-  }
-
-  for (std::size_t index = 0; index < appData.skillRepository().size(); ++index)
-  {
-    const Skill& skill = appData.skillRepository().at(index);
-    const std::wstring normalizedIdentifier = StringUtils::normalizeToken(skill.getIdentifierToken());
-    if ((!normalizedTokenOperand.empty() && normalizedIdentifier == normalizedTokenOperand) ||
-      (!normalizedOperand.empty() && normalizedIdentifier == normalizedOperand))
-    {
-      resolvedSkillToken = skill.getIdentifierToken();
-      return &skill;
-    }
-  }
-
-  for (std::size_t index = 0; index < appData.skillRepository().size(); ++index)
-  {
-    const Skill& skill = appData.skillRepository().at(index);
-    if (StringUtils::toUpper(StringUtils::trimWhitespace(skill.getName())) == normalizedOperand)
-    {
-      resolvedSkillToken = skill.getIdentifierToken();
-      return &skill;
-    }
-  }
-
-  return nullptr;
+  return skill;
 }
 
 void checkGiveTakeWarningsForMainFaction(AppData& appData, int mainFactionNumber)
@@ -1291,7 +1136,7 @@ void checkTransportWarningsForMainFaction(AppData& appData, int mainFactionNumbe
     for (const std::wstring& orderLine : filterOrdersIgnoringFormBlocks(unit->getOrders()))
     {
       WarningTransportOrder parsedOrder;
-      if (!tryParseTransportOrderForWarning(orderLine, parsedOrder))
+      if (!OrderParsingUtils::tryParseTransportOrder(orderLine, parsedOrder))
       {
         continue;
       }
@@ -1404,6 +1249,7 @@ void checkStudyWarningsForMainFaction(AppData& appData, int mainFactionNumber)
       const Skill* skillObj = tryResolveStudySkill(appData, skillOperand, resolvedSkillToken);
       if (!skillObj)
       {
+        unit->addWarning(L"STUDY: syntax error: expected an exact skill token, got " + skillOperand);
         continue;
       }
 
@@ -1573,6 +1419,7 @@ void checkStudyWarningsForMainFaction(AppData& appData, int mainFactionNumber)
       const Skill* skillObj = tryResolveStudySkill(appData, skillOperand, resolvedSkillToken);
       if (!skillObj)
       {
+        unitNew->addWarning(L"STUDY: syntax error: expected an exact skill token, got " + skillOperand);
         continue;
       }
 
@@ -1751,31 +1598,13 @@ void checkTeachWarningsForMainFaction(AppData& appData, int mainFactionNumber)
         bool studentIsStudying = false;
         for (const std::wstring& studentOrder : studentUnit->getOrders())
         {
-          std::vector<std::wstring> studentTokens;
-          std::vector<bool> studentTokenWasQuoted;
-          if (!tokenizeOrderLine(studentOrder, studentTokens, studentTokenWasQuoted))
+          std::wstring skillOperand;
+          std::wstring resolvedSkillToken;
+          if (tryParseStudyOrder(studentOrder, skillOperand) &&
+              tryResolveStudySkill(appData, skillOperand, resolvedSkillToken))
           {
-            continue;
-          }
-          if (!studentTokens.empty())
-          {
-            std::wstring firstToken = studentTokens[0];
-            if (!firstToken.empty() && firstToken[0] == L'@')
-            {
-              if (firstToken.size() > 1)
-              {
-                firstToken = firstToken.substr(1);
-              }
-              else if (studentTokens.size() > 1)
-              {
-                firstToken = studentTokens[1];
-              }
-            }
-            if (StringUtils::toUpper(firstToken) == L"STUDY")
-            {
-              studentIsStudying = true;
-              break;
-            }
+            studentIsStudying = true;
+            break;
           }
         }
 

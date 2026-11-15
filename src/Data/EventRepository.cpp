@@ -45,6 +45,13 @@ bool EventRepository::add(int unitId, const std::wstring& message)
   return add(Event(unitId, eventId, message));
 }
 
+bool EventRepository::add(int unitId, const std::wstring& message, int month, int year, bool errorEvent)
+{
+  Event event(unitId, getNextEventId(), message, month, year);
+  event.setErrorEvent(errorEvent);
+  return add(std::move(event));
+}
+
 bool EventRepository::removeByIdentifier(const std::wstring& identifier)
 {
   for (auto iterator = events_.begin(); iterator != events_.end(); ++iterator)
